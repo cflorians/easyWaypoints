@@ -106,14 +106,14 @@ public class WaypointRenderer {
             // Render textured teardrop pin:
             // 1. See-through pass (translucent original color, always passes depth testing)
             VertexConsumer bufferSeeThrough = context.bufferSource().getBuffer(WAYPOINT_SEE_THROUGH);
-            drawMarker(poseStack, bufferSeeThrough, r, g, b, 160, markerSize);
+            drawMarker(poseStack, bufferSeeThrough, r, g, b, 160, markerSize, false);
             context.bufferSource().endBatch(WAYPOINT_SEE_THROUGH);
 
             // 2. Visible pass (full waypoint color, normal depth testing, slightly offset in Z to avoid Z-fighting/double-blend white color)
             poseStack.pushPose();
             poseStack.translate(0.0f, 0.0f, -0.05f);
             VertexConsumer bufferVisible = context.bufferSource().getBuffer(WAYPOINT_VISIBLE);
-            drawMarker(poseStack, bufferVisible, r, g, b, 255, markerSize);
+            drawMarker(poseStack, bufferVisible, r, g, b, 255, markerSize, true);
             context.bufferSource().endBatch(WAYPOINT_VISIBLE);
             poseStack.popPose();
 
@@ -175,32 +175,64 @@ public class WaypointRenderer {
         context.bufferSource().endBatch();
     }
 
-    private static void drawMarker(PoseStack poseStack, VertexConsumer buffer, int r, int g, int b, int a, float size) {
+    private static void drawMarker(PoseStack poseStack, VertexConsumer buffer, int r, int g, int b, int a, float size, boolean hasOverlayAndNormal) {
         Matrix4f poseMatrix = poseStack.last().pose();
         // Maintain 5:7 texture aspect ratio for the 5x7px marker
         float halfWidth = size * (5.0f / 7.0f) / 2.0f;
         int lightmap = 240; // 240 is 15 * 16 (full block & sky light) to make the marker fullbright and immune to shading changes
 
-        // Vertex format layout: POSITION_COLOR_TEX_LIGHTMAP
-        // Vertex 1: Top-Left
-        buffer.addVertex(poseMatrix, -halfWidth, size, 0.0f)
-                .setColor(r, g, b, a)
-                .setUv(0.0f, 0.0f)
-                .setUv2(lightmap, lightmap);
-        // Vertex 2: Top-Right
-        buffer.addVertex(poseMatrix, halfWidth, size, 0.0f)
-                .setColor(r, g, b, a)
-                .setUv(1.0f, 0.0f)
-                .setUv2(lightmap, lightmap);
-        // Vertex 3: Bottom-Right
-        buffer.addVertex(poseMatrix, halfWidth, 0.0f, 0.0f)
-                .setColor(r, g, b, a)
-                .setUv(1.0f, 1.0f)
-                .setUv2(lightmap, lightmap);
-        // Vertex 4: Bottom-Left
-        buffer.addVertex(poseMatrix, -halfWidth, 0.0f, 0.0f)
-                .setColor(r, g, b, a)
-                .setUv(0.0f, 1.0f)
-                .setUv2(lightmap, lightmap);
+        if (hasOverlayAndNormal) {
+            // Vertex format layout for entities: POSITION_COLOR_TEX_OVERLAY_LIGHTMAP_NORMAL
+            // Vertex 1: Top-Left
+            buffer.addVertex(poseMatrix, -halfWidth, size, 0.0f)
+                    .setColor(r, g, b, a)
+                    .setUv(0.0f, 0.0f)
+                    .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY)
+                    .setUv2(lightmap, lightmap)
+                    .setNormal(0.0f, 0.0f, 1.0f);
+            // Vertex 2: Top-Right
+            buffer.addVertex(poseMatrix, halfWidth, size, 0.0f)
+                    .setColor(r, g, b, a)
+                    .setUv(1.0f, 0.0f)
+                    .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY)
+                    .setUv2(lightmap, lightmap)
+                    .setNormal(0.0f, 0.0f, 1.0f);
+            // Vertex 3: Bottom-Right
+            buffer.addVertex(poseMatrix, halfWidth, 0.0f, 0.0f)
+                    .setColor(r, g, b, a)
+                    .setUv(1.0f, 1.0f)
+                    .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY)
+                    .setUv2(lightmap, lightmap)
+                    .setNormal(0.0f, 0.0f, 1.0f);
+            // Vertex 4: Bottom-Left
+            buffer.addVertex(poseMatrix, -halfWidth, 0.0f, 0.0f)
+                    .setColor(r, g, b, a)
+                    .setUv(0.0f, 1.0f)
+                    .setOverlay(net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY)
+                    .setUv2(lightmap, lightmap)
+                    .setNormal(0.0f, 0.0f, 1.0f);
+        } else {
+            // Vertex format layout for text: POSITION_COLOR_TEX_LIGHTMAP
+            // Vertex 1: Top-Left
+            buffer.addVertex(poseMatrix, -halfWidth, size, 0.0f)
+                    .setColor(r, g, b, a)
+                    .setUv(0.0f, 0.0f)
+                    .setUv2(lightmap, lightmap);
+            // Vertex 2: Top-Right
+            buffer.addVertex(poseMatrix, halfWidth, size, 0.0f)
+                    .setColor(r, g, b, a)
+                    .setUv(1.0f, 0.0f)
+                    .setUv2(lightmap, lightmap);
+            // Vertex 3: Bottom-Right
+            buffer.addVertex(poseMatrix, halfWidth, 0.0f, 0.0f)
+                    .setColor(r, g, b, a)
+                    .setUv(1.0f, 1.0f)
+                    .setUv2(lightmap, lightmap);
+            // Vertex 4: Bottom-Left
+            buffer.addVertex(poseMatrix, -halfWidth, 0.0f, 0.0f)
+                    .setColor(r, g, b, a)
+                    .setUv(0.0f, 1.0f)
+                    .setUv2(lightmap, lightmap);
+        }
     }
 }
