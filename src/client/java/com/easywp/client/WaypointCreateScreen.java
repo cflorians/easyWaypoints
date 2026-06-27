@@ -25,7 +25,7 @@ public class WaypointCreateScreen extends Screen {
 
     public WaypointCreateScreen(BlockPos pos) {
         super(Component.literal("Crear Waypoint"));
-        this.originalPos = pos;
+        this.originalPos = pos != null ? pos : BlockPos.ZERO;
         this.editingWaypoint = null;
     }
 

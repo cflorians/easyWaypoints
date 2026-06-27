@@ -54,12 +54,34 @@ public class ModKeyBindings {
             while (createWaypointKey.consumeClick()){
                 if (client.player != null && client.level != null){
                     BlockPos targetPos = null;
-                    if (client.hitResult != null && client.hitResult.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
-                        net.minecraft.world.phys.BlockHitResult blockHit = (net.minecraft.world.phys.BlockHitResult) client.hitResult;
-                        targetPos = blockHit.getBlockPos().relative(blockHit.getDirection());
-                    } else {
-                        targetPos = client.player.blockPosition();
+                    try {
+                        net.minecraft.world.phys.HitResult hitResult = client.hitResult;
+                        if (hitResult != null && hitResult.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                            if (hitResult instanceof net.minecraft.world.phys.BlockHitResult) {
+                                net.minecraft.world.phys.BlockHitResult blockHit = (net.minecraft.world.phys.BlockHitResult) hitResult;
+                                BlockPos hitPos = blockHit.getBlockPos();
+                                net.minecraft.core.Direction direction = blockHit.getDirection();
+                                if (hitPos != null && direction != null) {
+                                    targetPos = hitPos.relative(direction);
+                                }
+                            }
+                        }
+                    } catch (Throwable t) {
+                        t.printStackTrace();
                     }
+
+                    if (targetPos == null) {
+                        try {
+                            targetPos = client.player.blockPosition();
+                        } catch (Throwable t) {
+                            t.printStackTrace();
+                        }
+                    }
+
+                    if (targetPos == null) {
+                        targetPos = BlockPos.ZERO;
+                    }
+
                     client.setScreen(new WaypointCreateScreen(targetPos));
                 }
             }
