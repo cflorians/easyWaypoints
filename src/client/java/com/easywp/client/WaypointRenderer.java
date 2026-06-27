@@ -81,10 +81,10 @@ public class WaypointRenderer {
                 renderY = relY * scaleFactor;
                 renderZ = relZ * scaleFactor;
                 // Constant visual size at max projection distance
-                markerSize = (float) (maxRenderDistance / 10.0);
+                markerSize = (float) (maxRenderDistance / 14.0);
             } else {
                 // Dynamic scale based on distance
-                markerSize = (float) Math.max(1.0, distance / 10.0);
+                markerSize = (float) Math.max(0.65, distance / 14.0);
             }
 
             // Format: NAME (123m)
@@ -136,19 +136,19 @@ public class WaypointRenderer {
                     nameText,
                     xOffset,
                     0.0f,
-                    0xFFFFFFFF,
+                    0xA0FFFFFF,
                     false,
                     poseStack.last().pose(),
                     context.bufferSource(),
                     Font.DisplayMode.SEE_THROUGH,
-                    0x90000000,
+                    0,
                     0xF000F0
             );
             context.bufferSource().endBatch();
 
             // Pass 2: Normal text (visible directly, perfect background, slightly offset in Z to draw on top of see-through pass)
             poseStack.pushPose();
-            poseStack.translate(0.0f, 0.0f, -0.02f);
+            poseStack.translate(0.0f, 0.0f, -0.05f);
             font.drawInBatch(
                     nameText,
                     xOffset,
