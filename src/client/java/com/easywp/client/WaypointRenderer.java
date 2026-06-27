@@ -182,27 +182,28 @@ public class WaypointRenderer {
 
     private static void drawMarker(PoseStack poseStack, VertexConsumer buffer, int r, int g, int b, int a, float size) {
         Matrix4f poseMatrix = poseStack.last().pose();
-        float halfSize = size / 2.0f;
+        // Maintain 5:7 texture aspect ratio for the 5x7px marker
+        float halfWidth = size * (5.0f / 7.0f) / 2.0f;
         int lightmap = 240; // 240 is 15 * 16 (full block & sky light) to make the marker fullbright and immune to shading changes
 
         // Vertex format layout: POSITION_COLOR_TEX_LIGHTMAP
         // Vertex 1: Top-Left
-        buffer.addVertex(poseMatrix, -halfSize, size, 0.0f)
+        buffer.addVertex(poseMatrix, -halfWidth, size, 0.0f)
                 .setColor(r, g, b, a)
                 .setUv(0.0f, 0.0f)
                 .setUv2(lightmap, lightmap);
         // Vertex 2: Top-Right
-        buffer.addVertex(poseMatrix, halfSize, size, 0.0f)
+        buffer.addVertex(poseMatrix, halfWidth, size, 0.0f)
                 .setColor(r, g, b, a)
                 .setUv(1.0f, 0.0f)
                 .setUv2(lightmap, lightmap);
         // Vertex 3: Bottom-Right
-        buffer.addVertex(poseMatrix, halfSize, 0.0f, 0.0f)
+        buffer.addVertex(poseMatrix, halfWidth, 0.0f, 0.0f)
                 .setColor(r, g, b, a)
                 .setUv(1.0f, 1.0f)
                 .setUv2(lightmap, lightmap);
         // Vertex 4: Bottom-Left
-        buffer.addVertex(poseMatrix, -halfSize, 0.0f, 0.0f)
+        buffer.addVertex(poseMatrix, -halfWidth, 0.0f, 0.0f)
                 .setColor(r, g, b, a)
                 .setUv(0.0f, 1.0f)
                 .setUv2(lightmap, lightmap);
