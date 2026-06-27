@@ -3,9 +3,9 @@
 	"id": "easywp",
 	"version": "${version}",
 	"name": "easyWp",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "Un mod de waypoints ligero y optimizado con oclusión pixel-perfect nativa, bypass de niebla de shaders y persistencia JSON independiente por mundo y servidor.",
 	"authors": [
-		"Me!"
+		"Carlos Florian"
 	],
 	"contact": {
 		"homepage": "https://fabricmc.net/",
