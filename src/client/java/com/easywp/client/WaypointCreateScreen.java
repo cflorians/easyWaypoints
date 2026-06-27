@@ -189,6 +189,9 @@ public class WaypointCreateScreen extends Screen {
             }
         }
 
+        // Save updated waypoints list to disk
+        WaypointRenderer.saveToFile();
+
         // Enable waypoints visibility on save
         ModKeyBindings.showWaypoints = true;
     }

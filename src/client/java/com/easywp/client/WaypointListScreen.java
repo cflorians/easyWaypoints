@@ -69,6 +69,7 @@ public class WaypointListScreen extends Screen {
             this.addRenderableWidget(
                 Button.builder(Component.literal("X"), btn -> {
                     WaypointRenderer.waypoints.remove(wp);
+                    WaypointRenderer.saveToFile();
                     // Refresh screen widgets
                     this.rebuildWidgets();
                 }).pos(centerX + 87, itemY).size(18, 18).build()
