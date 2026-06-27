@@ -14,6 +14,9 @@ import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 
@@ -67,8 +70,29 @@ public class WaypointRenderer {
 
             double distance = Math.sqrt(relX * relX + relY * relY + relZ * relZ);
 
-            // Project waypoints at 3.0 blocks max to bypass horizon fog and keep them readable
-            double maxRenderDistance = 3.0;
+            // Check if there are rendered blocks between the camera and the real waypoint
+            boolean isObstructed = false;
+            if (client.level != null) {
+                try {
+                    Vec3 start = cameraPos;
+                    Vec3 end = new Vec3(targetX, targetY, targetZ);
+                    BlockHitResult hitResult = client.level.clip(new ClipContext(
+                        start,
+                        end,
+                        ClipContext.Block.COLLIDER,
+                        ClipContext.Fluid.NONE,
+                        client.player
+                    ));
+                    if (hitResult != null && hitResult.getType() == HitResult.Type.BLOCK) {
+                        isObstructed = true;
+                    }
+                } catch (Throwable t) {
+                    t.printStackTrace();
+                }
+            }
+
+            // Project waypoints at 16.0 blocks max to bypass horizon fog and keep them readable
+            double maxRenderDistance = 16.0;
 
             double renderX = relX;
             double renderY = relY;
@@ -81,10 +105,10 @@ public class WaypointRenderer {
                 renderY = relY * scaleFactor;
                 renderZ = relZ * scaleFactor;
                 // Constant visual size at max projection distance
-                markerSize = (float) (maxRenderDistance / 14.0);
+                markerSize = (float) (maxRenderDistance / 10.0);
             } else {
                 // Dynamic scale based on distance
-                markerSize = (float) Math.max(0.21, distance / 14.0);
+                markerSize = (float) Math.max(0.8, distance / 10.0);
             }
 
             // Format: NAME (123m)
@@ -103,42 +127,68 @@ public class WaypointRenderer {
             int g = (wpColor >> 8) & 0xFF;
             int b = wpColor & 0xFF;
 
-            // Render textured teardrop pin:
-            // Single see-through pass (solid color, always passes depth testing, immune to culling/shaders)
-            VertexConsumer bufferSeeThrough = context.bufferSource().getBuffer(WAYPOINT_SEE_THROUGH);
-            drawMarker(poseStack, bufferSeeThrough, r, g, b, 255, markerSize, false);
-            context.bufferSource().endBatch(WAYPOINT_SEE_THROUGH);
+            if (isObstructed) {
+                // Obstructed (behind rendered blocks): Draw see-through pass with alpha 140 (translucent)
+                VertexConsumer bufferSeeThrough = context.bufferSource().getBuffer(WAYPOINT_SEE_THROUGH);
+                drawMarker(poseStack, bufferSeeThrough, r, g, b, 140, markerSize, false);
+                context.bufferSource().endBatch(WAYPOINT_SEE_THROUGH);
 
-            // Render name tag:
-            poseStack.pushPose();
-            // Position text tag above the marker
-            poseStack.translate(0.0f, markerSize * 1.15f, 0.0f);
-            float textScale = 0.025f * markerSize;
-            if (distance > 100.0) {
-                // Scale boost for readability at long distance to combat shader blurring
-                textScale *= (float) Math.min(1.4, 1.0 + (distance - 100.0) * 0.002);
+                // Render name tag: see-through without background box
+                poseStack.pushPose();
+                poseStack.translate(0.0f, markerSize * 1.15f, 0.0f);
+                float textScale = 0.032f * markerSize;
+                if (distance > 100.0) {
+                    textScale *= (float) Math.min(1.4, 1.0 + (distance - 100.0) * 0.002);
+                }
+                poseStack.scale(-textScale, -textScale, textScale);
+                
+                float xOffset = -font.width(nameText) / 2.0f + 1.0f;
+                font.drawInBatch(
+                        nameText,
+                        xOffset,
+                        0.0f,
+                        0xA0FFFFFF,
+                        false,
+                        poseStack.last().pose(),
+                        context.bufferSource(),
+                        Font.DisplayMode.SEE_THROUGH,
+                        0,
+                        0xF000F0
+                );
+                context.bufferSource().endBatch();
+                poseStack.popPose();
+            } else {
+                // Visible (no rendered blocks in line of sight): Draw solid normal pass (alpha 255)
+                VertexConsumer bufferVisible = context.bufferSource().getBuffer(WAYPOINT_VISIBLE);
+                drawMarker(poseStack, bufferVisible, r, g, b, 255, markerSize, true);
+                context.bufferSource().endBatch(WAYPOINT_VISIBLE);
+
+                // Render name tag: normal display mode with gray background box (highly readable)
+                poseStack.pushPose();
+                poseStack.translate(0.0f, markerSize * 1.15f, 0.0f);
+                float textScale = 0.032f * markerSize;
+                if (distance > 100.0) {
+                    textScale *= (float) Math.min(1.4, 1.0 + (distance - 100.0) * 0.002);
+                }
+                poseStack.scale(-textScale, -textScale, textScale);
+                
+                float xOffset = -font.width(nameText) / 2.0f + 1.0f;
+                font.drawInBatch(
+                        nameText,
+                        xOffset,
+                        0.0f,
+                        0xFFFFFFFF,
+                        false,
+                        poseStack.last().pose(),
+                        context.bufferSource(),
+                        Font.DisplayMode.NORMAL,
+                        0x90000000,
+                        0xF000F0
+                );
+                context.bufferSource().endBatch();
+                poseStack.popPose();
             }
-            poseStack.scale(-textScale, -textScale, textScale); // Scale down text and preserve winding order
             
-            // Visual offset correction
-            float xOffset = -font.width(nameText) / 2.0f + 1.0f;
-
-            // Single see-through text pass with background box to prevent any z-fighting/flickering
-            font.drawInBatch(
-                    nameText,
-                    xOffset,
-                    0.0f,
-                    0xFFFFFFFF,
-                    false,
-                    poseStack.last().pose(),
-                    context.bufferSource(),
-                    Font.DisplayMode.SEE_THROUGH,
-                    0x90000000,
-                    0xF000F0
-            );
-            context.bufferSource().endBatch();
-            
-            poseStack.popPose();
             poseStack.popPose();
 
             // Force immediate flush of all elements for this waypoint to avoid delayed rendering or chunk/entity culling issues
