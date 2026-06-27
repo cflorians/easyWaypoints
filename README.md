@@ -1,9 +1,14 @@
 # easyWp
 
-## Setup
+A lightweight, optimized waypoints mod for Minecraft Fabric.
 
-For setup instructions, please see the [Fabric Documentation page](https://docs.fabricmc.net/develop/getting-started/creating-a-project#setting-up) related to the IDE that you are using.
+## Features
+
+- **Native Pixel-Perfect Occlusion:** Render waypoint indicators behind blocks with high accuracy.
+- **Shader Fog Bypass:** Markers remain legible and visible through shader fog effects.
+- **Smart JSON Persistence:** Individual waypoint data files per server and world.
+- **Custom Controls:** Configure keybindings easily to add, list, and modify waypoints.
 
 ## License
 
-This template is available under the CC0 license. Feel free to learn from it and incorporate it in your own projects.
+Licensed under the CC0 1.0 Universal license.
