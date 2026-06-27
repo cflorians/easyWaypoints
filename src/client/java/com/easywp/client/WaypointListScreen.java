@@ -23,7 +23,10 @@ public class WaypointListScreen extends Screen {
         int centerX = this.width / 2;
         int centerY = this.height / 2;
 
-        List<Waypoint> waypoints = WaypointRenderer.waypoints;
+        String currentDimension = this.minecraft.level != null ? this.minecraft.level.dimension().identifier().toString() : "minecraft:overworld";
+        List<Waypoint> waypoints = WaypointRenderer.waypoints.stream()
+            .filter(wp -> wp.getDimension() == null || wp.getDimension().equals(currentDimension))
+            .collect(java.util.stream.Collectors.toList());
         int totalWaypoints = waypoints.size();
         int maxPages = Math.max(1, (int) Math.ceil((double) totalWaypoints / ITEMS_PER_PAGE));
 
@@ -65,7 +68,7 @@ public class WaypointListScreen extends Screen {
 
             this.addRenderableWidget(
                 Button.builder(Component.literal("X"), btn -> {
-                    WaypointRenderer.waypoints.remove(index);
+                    WaypointRenderer.waypoints.remove(wp);
                     // Refresh screen widgets
                     this.rebuildWidgets();
                 }).pos(centerX + 87, itemY).size(18, 18).build()
@@ -112,7 +115,10 @@ public class WaypointListScreen extends Screen {
         // Title
         graphics.centeredText(this.font, Component.literal("Lista de Waypoints"), centerX, centerY - 75, 0xFFFFFFFF);
 
-        List<Waypoint> waypoints = WaypointRenderer.waypoints;
+        String currentDimension = this.minecraft.level != null ? this.minecraft.level.dimension().identifier().toString() : "minecraft:overworld";
+        List<Waypoint> waypoints = WaypointRenderer.waypoints.stream()
+            .filter(wp -> wp.getDimension() == null || wp.getDimension().equals(currentDimension))
+            .collect(java.util.stream.Collectors.toList());
         int totalWaypoints = waypoints.size();
         int maxPages = Math.max(1, (int) Math.ceil((double) totalWaypoints / ITEMS_PER_PAGE));
         int startIndex = currentPage * ITEMS_PER_PAGE;

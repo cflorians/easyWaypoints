@@ -6,15 +6,21 @@ public class Waypoint {
     private String name;
     private BlockPos pos;
     private int color; // ARGB color
+    private String dimension;
 
     public Waypoint(String name, BlockPos pos) {
         this(name, pos, 0xFF00FF00); // Default to green (ARGB: green is 0xFF00FF00)
     }
 
     public Waypoint(String name, BlockPos pos, int color) {
+        this(name, pos, color, "minecraft:overworld");
+    }
+
+    public Waypoint(String name, BlockPos pos, int color, String dimension) {
         this.name = name;
         this.pos = pos;
         this.color = color;
+        this.dimension = dimension;
     }
 
     public String getName() {
@@ -39,5 +45,13 @@ public class Waypoint {
 
     public void setColor(int color) {
         this.color = color;
+    }
+
+    public String getDimension() {
+        return dimension;
+    }
+
+    public void setDimension(String dimension) {
+        this.dimension = dimension;
     }
 }

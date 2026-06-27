@@ -163,11 +163,16 @@ public class WaypointCreateScreen extends Screen {
         } catch (NumberFormatException e) {}
 
         BlockPos newPos = BlockPos.containing(x, y, z);
+        String dimension = "minecraft:overworld";
+        if (this.minecraft.level != null) {
+            dimension = this.minecraft.level.dimension().identifier().toString();
+        }
 
         if (this.editingWaypoint != null) {
             this.editingWaypoint.setName(name);
             this.editingWaypoint.setPos(newPos);
             this.editingWaypoint.setColor(this.selectedColor);
+            this.editingWaypoint.setDimension(dimension);
 
             if (this.minecraft.player != null) {
                 this.minecraft.gui.setOverlayMessage(Component.literal(
@@ -175,7 +180,7 @@ public class WaypointCreateScreen extends Screen {
                 ), true);
             }
         } else {
-            WaypointRenderer.waypoints.add(new Waypoint(name, newPos, this.selectedColor));
+            WaypointRenderer.waypoints.add(new Waypoint(name, newPos, this.selectedColor, dimension));
 
             if (this.minecraft.player != null) {
                 this.minecraft.gui.setOverlayMessage(Component.literal(
