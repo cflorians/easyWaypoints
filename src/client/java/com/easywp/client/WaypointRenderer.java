@@ -67,8 +67,8 @@ public class WaypointRenderer {
 
             double distance = Math.sqrt(relX * relX + relY * relY + relZ * relZ);
 
-            // Project waypoints at 32 blocks max to bypass horizon fog and keep them readable
-            double maxRenderDistance = 32.0;
+            // Project waypoints at 3.0 blocks max to bypass horizon fog and keep them readable
+            double maxRenderDistance = 3.0;
 
             double renderX = relX;
             double renderY = relY;
@@ -84,7 +84,7 @@ public class WaypointRenderer {
                 markerSize = (float) (maxRenderDistance / 14.0);
             } else {
                 // Dynamic scale based on distance
-                markerSize = (float) Math.max(0.65, distance / 14.0);
+                markerSize = (float) Math.max(0.21, distance / 14.0);
             }
 
             // Format: NAME (123m)
@@ -104,18 +104,10 @@ public class WaypointRenderer {
             int b = wpColor & 0xFF;
 
             // Render textured teardrop pin:
-            // 1. See-through pass (translucent original color, always passes depth testing)
+            // Single see-through pass (solid color, always passes depth testing, immune to culling/shaders)
             VertexConsumer bufferSeeThrough = context.bufferSource().getBuffer(WAYPOINT_SEE_THROUGH);
-            drawMarker(poseStack, bufferSeeThrough, r, g, b, 160, markerSize, false);
+            drawMarker(poseStack, bufferSeeThrough, r, g, b, 255, markerSize, false);
             context.bufferSource().endBatch(WAYPOINT_SEE_THROUGH);
-
-            // 2. Visible pass (full waypoint color, normal depth testing, slightly offset in Z to avoid Z-fighting/double-blend white color)
-            poseStack.pushPose();
-            poseStack.translate(0.0f, 0.0f, -0.05f);
-            VertexConsumer bufferVisible = context.bufferSource().getBuffer(WAYPOINT_VISIBLE);
-            drawMarker(poseStack, bufferVisible, r, g, b, 255, markerSize, true);
-            context.bufferSource().endBatch(WAYPOINT_VISIBLE);
-            poseStack.popPose();
 
             // Render name tag:
             poseStack.pushPose();
@@ -131,24 +123,7 @@ public class WaypointRenderer {
             // Visual offset correction
             float xOffset = -font.width(nameText) / 2.0f + 1.0f;
 
-            // Pass 1: See-through text (visible through walls, translucent fallback background)
-            font.drawInBatch(
-                    nameText,
-                    xOffset,
-                    0.0f,
-                    0xA0FFFFFF,
-                    false,
-                    poseStack.last().pose(),
-                    context.bufferSource(),
-                    Font.DisplayMode.SEE_THROUGH,
-                    0,
-                    0xF000F0
-            );
-            context.bufferSource().endBatch();
-
-            // Pass 2: Normal text (visible directly, perfect background, slightly offset in Z to draw on top of see-through pass)
-            poseStack.pushPose();
-            poseStack.translate(0.0f, 0.0f, -0.05f);
+            // Single see-through text pass with background box to prevent any z-fighting/flickering
             font.drawInBatch(
                     nameText,
                     xOffset,
@@ -157,12 +132,11 @@ public class WaypointRenderer {
                     false,
                     poseStack.last().pose(),
                     context.bufferSource(),
-                    Font.DisplayMode.NORMAL,
+                    Font.DisplayMode.SEE_THROUGH,
                     0x90000000,
                     0xF000F0
             );
             context.bufferSource().endBatch();
-            poseStack.popPose();
             
             poseStack.popPose();
             poseStack.popPose();
