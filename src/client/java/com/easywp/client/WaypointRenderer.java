@@ -107,12 +107,14 @@ public class WaypointRenderer {
             // 1. See-through pass (translucent original color, always passes depth testing)
             VertexConsumer bufferSeeThrough = context.bufferSource().getBuffer(WAYPOINT_SEE_THROUGH);
             drawMarker(poseStack, bufferSeeThrough, r, g, b, 160, markerSize);
+            context.bufferSource().endBatch(WAYPOINT_SEE_THROUGH);
 
             // 2. Visible pass (full waypoint color, normal depth testing, slightly offset in Z to avoid Z-fighting/double-blend white color)
             poseStack.pushPose();
-            poseStack.translate(0.0f, 0.0f, -0.01f);
+            poseStack.translate(0.0f, 0.0f, -0.05f);
             VertexConsumer bufferVisible = context.bufferSource().getBuffer(WAYPOINT_VISIBLE);
             drawMarker(poseStack, bufferVisible, r, g, b, 255, markerSize);
+            context.bufferSource().endBatch(WAYPOINT_VISIBLE);
             poseStack.popPose();
 
             // Render name tag:
@@ -129,56 +131,25 @@ public class WaypointRenderer {
             // Visual offset correction
             float xOffset = -font.width(nameText) / 2.0f + 1.0f;
 
-            if (distance < 20.0) {
-                // Near: render white text with background box as see-through to avoid occlusion
-                font.drawInBatch(
-                        nameText,
-                        xOffset,
-                        0.0f,
-                        0xFFFFFFFF,
-                        false,
-                        poseStack.last().pose(),
-                        context.bufferSource(),
-                        Font.DisplayMode.SEE_THROUGH,
-                        0x90000000,
-                        0xF000F0
-                );
-            } else {
-                // Far: dual-pass rendering for see-through rays effect
-                // Pass 1: translucent text (see-through) without background box
-                font.drawInBatch(
-                        nameText,
-                        xOffset,
-                        0.0f,
-                        0xA0FFFFFF,
-                        false,
-                        poseStack.last().pose(),
-                        context.bufferSource(),
-                        Font.DisplayMode.SEE_THROUGH,
-                        0,
-                        0xF000F0
-                );
-
-                // Pass 2: opaque text (visible) with background box, slightly offset to avoid z-fighting
-                poseStack.pushPose();
-                poseStack.translate(0.0f, 0.0f, -0.1f);
-                font.drawInBatch(
-                        nameText,
-                        xOffset,
-                        0.0f,
-                        0xFFFFFFFF,
-                        false,
-                        poseStack.last().pose(),
-                        context.bufferSource(),
-                        Font.DisplayMode.NORMAL,
-                        0x90000000,
-                        0xF000F0
-                );
-                poseStack.popPose();
-            }
-
+            // Render white text with background box as see-through in a single pass to prevent z-fighting and flickering at any distance
+            font.drawInBatch(
+                    nameText,
+                    xOffset,
+                    0.0f,
+                    0xFFFFFFFF,
+                    false,
+                    poseStack.last().pose(),
+                    context.bufferSource(),
+                    Font.DisplayMode.SEE_THROUGH,
+                    0x90000000,
+                    0xF000F0
+            );
+            
             poseStack.popPose();
             poseStack.popPose();
+
+            // Force immediate flush of all elements for this waypoint to avoid delayed rendering or chunk/entity culling issues
+            context.bufferSource().endBatch();
         }
 
         // Flush render buffer as required by END_MAIN event
