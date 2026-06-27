@@ -48,7 +48,12 @@ public class WaypointRenderer {
         Vec3 cameraPos = cameraState.pos;
         PoseStack poseStack = context.poseStack();
 
+        String currentDimension = client.level.dimension().identifier().toString();
+
         for (Waypoint wp : waypoints) {
+            if (wp.getDimension() != null && !wp.getDimension().equals(currentDimension)) {
+                continue;
+            }
             BlockPos wpPos = wp.getPos();
             
             // Tip of the arrow will point at the bottom center of the block (Y + 0.0, at the feet level)
@@ -62,8 +67,8 @@ public class WaypointRenderer {
 
             double distance = Math.sqrt(relX * relX + relY * relY + relZ * relZ);
 
-            // Project waypoints at 48 blocks max to bypass horizon fog and keep them readable
-            double maxRenderDistance = 48.0;
+            // Project waypoints at 32 blocks max to bypass horizon fog and keep them readable
+            double maxRenderDistance = 32.0;
 
             double renderX = relX;
             double renderY = relY;
@@ -101,7 +106,7 @@ public class WaypointRenderer {
             // Render textured teardrop pin:
             // 1. See-through pass (translucent original color, always passes depth testing)
             VertexConsumer bufferSeeThrough = context.bufferSource().getBuffer(WAYPOINT_SEE_THROUGH);
-            drawMarker(poseStack, bufferSeeThrough, r, g, b, 100, markerSize);
+            drawMarker(poseStack, bufferSeeThrough, r, g, b, 160, markerSize);
 
             // 2. Visible pass (full waypoint color, normal depth testing, slightly offset in Z to avoid Z-fighting/double-blend white color)
             poseStack.pushPose();
@@ -145,7 +150,7 @@ public class WaypointRenderer {
                         nameText,
                         xOffset,
                         0.0f,
-                        0x70FFFFFF,
+                        0xA0FFFFFF,
                         false,
                         poseStack.last().pose(),
                         context.bufferSource(),
