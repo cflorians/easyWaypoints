@@ -28,7 +28,7 @@ public class WaypointRenderer {
     public static final Identifier MARKER_TEXTURE = Identifier.fromNamespaceAndPath("easywp", "textures/waypoint_marker.png");
 
     public static final RenderType WAYPOINT_SEE_THROUGH = RenderTypes.textSeeThrough(MARKER_TEXTURE);
-    public static final RenderType WAYPOINT_VISIBLE = RenderTypes.text(MARKER_TEXTURE);
+    public static final RenderType WAYPOINT_VISIBLE = RenderTypes.entityTranslucent(MARKER_TEXTURE);
 
     public static void init(){
         if (initialized) return;
@@ -131,7 +131,7 @@ public class WaypointRenderer {
             // Visual offset correction
             float xOffset = -font.width(nameText) / 2.0f + 1.0f;
 
-            // Render white text with background box as see-through in a single pass to prevent z-fighting and flickering at any distance
+            // Pass 1: See-through text (visible through walls, translucent fallback background)
             font.drawInBatch(
                     nameText,
                     xOffset,
@@ -144,6 +144,25 @@ public class WaypointRenderer {
                     0x90000000,
                     0xF000F0
             );
+            context.bufferSource().endBatch();
+
+            // Pass 2: Normal text (visible directly, perfect background, slightly offset in Z to draw on top of see-through pass)
+            poseStack.pushPose();
+            poseStack.translate(0.0f, 0.0f, -0.02f);
+            font.drawInBatch(
+                    nameText,
+                    xOffset,
+                    0.0f,
+                    0xFFFFFFFF,
+                    false,
+                    poseStack.last().pose(),
+                    context.bufferSource(),
+                    Font.DisplayMode.NORMAL,
+                    0x90000000,
+                    0xF000F0
+            );
+            context.bufferSource().endBatch();
+            poseStack.popPose();
             
             poseStack.popPose();
             poseStack.popPose();
