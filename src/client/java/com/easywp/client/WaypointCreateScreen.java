@@ -15,6 +15,7 @@ public class WaypointCreateScreen extends Screen {
     private int selectedColor = 0xFF00FF00; // Default to green
     private final BlockPos originalPos;
     private final Waypoint editingWaypoint;
+    private boolean dimShared = false;
 
     // 12x3 color palette grid
     private static final int[][] COLOR_GRID = {
@@ -24,16 +25,32 @@ public class WaypointCreateScreen extends Screen {
     };
 
     public WaypointCreateScreen(BlockPos pos) {
-        super(Component.literal("Crear Waypoint"));
+        super(I18nHelper.getComponent("create.title.new"));
         this.originalPos = pos != null ? pos : BlockPos.ZERO;
         this.editingWaypoint = null;
+        
+        // Choose a random color from the COLOR_GRID palette
+        try {
+            java.util.Random rand = new java.util.Random();
+            int r = rand.nextInt(COLOR_GRID.length);
+            int c = rand.nextInt(COLOR_GRID[r].length);
+            this.selectedColor = COLOR_GRID[r][c];
+        } catch (Throwable t) {
+            this.selectedColor = 0xFF00FF00; // Fallback to green
+        }
     }
 
     public WaypointCreateScreen(Waypoint waypointToEdit) {
-        super(Component.literal("Editar Waypoint"));
+        super(I18nHelper.getComponent("create.title.edit"));
         this.originalPos = waypointToEdit.getPos();
         this.editingWaypoint = waypointToEdit;
         this.selectedColor = waypointToEdit.getColor();
+        this.dimShared = waypointToEdit.isShared();
+    }
+
+    private Component getShareButtonMessage() {
+        String yesNo = this.dimShared ? I18nHelper.translate("create.yes") : I18nHelper.translate("create.no");
+        return I18nHelper.getComponent("create.share_label", yesNo);
     }
 
     @Override
@@ -41,7 +58,7 @@ public class WaypointCreateScreen extends Screen {
         int centerX = this.width / 2;
         int centerY = this.height / 2;
 
-        this.nameField = new EditBox(this.font, centerX - 100, centerY - 60, 200, 20, Component.literal("Nombre"));
+        this.nameField = new EditBox(this.font, centerX - 100, centerY - 65, 200, 20, I18nHelper.getComponent("create.name_label"));
         if (this.editingWaypoint != null) {
             this.nameField.setValue(this.editingWaypoint.getName());
         } else {
@@ -49,26 +66,42 @@ public class WaypointCreateScreen extends Screen {
         }
         this.addRenderableWidget(this.nameField);
 
-        this.xField = new EditBox(this.font, centerX - 100, centerY - 20, 60, 20, Component.literal("X"));
+        this.xField = new EditBox(this.font, centerX - 100, centerY - 25, 60, 20, Component.literal("X"));
         this.xField.setValue(String.valueOf(originalPos.getX()));
         this.addRenderableWidget(this.xField);
 
-        this.yField = new EditBox(this.font, centerX - 30, centerY - 20, 60, 20, Component.literal("Y"));
+        this.yField = new EditBox(this.font, centerX - 30, centerY - 25, 60, 20, Component.literal("Y"));
         this.yField.setValue(String.valueOf(originalPos.getY()));
         this.addRenderableWidget(this.yField);
 
-        this.zField = new EditBox(this.font, centerX + 40, centerY - 20, 60, 20, Component.literal("Z"));
+        this.zField = new EditBox(this.font, centerX + 40, centerY - 25, 60, 20, Component.literal("Z"));
         this.zField.setValue(String.valueOf(originalPos.getZ()));
         this.addRenderableWidget(this.zField);
 
+        Button shareToggleBtn = Button.builder(getShareButtonMessage(), btn -> {
+            this.dimShared = !this.dimShared;
+            btn.setMessage(getShareButtonMessage());
+        }).pos(centerX - 100, centerY - 2).size(200, 16).build();
+
+        String currentDimension = "minecraft:overworld";
+        if (this.minecraft.level != null) {
+            currentDimension = this.minecraft.level.dimension().identifier().toString();
+        }
+        if (this.editingWaypoint != null && this.editingWaypoint.getDimension() != null) {
+            currentDimension = this.editingWaypoint.getDimension();
+        }
+        boolean isConvertibleDim = currentDimension.equals("minecraft:overworld") || currentDimension.equals("minecraft:the_nether");
+        shareToggleBtn.active = isConvertibleDim;
+        this.addRenderableWidget(shareToggleBtn);
+
         int startX = centerX - 88;
-        int startY = centerY + 12;
+        int startY = centerY + 16;
 
         for (int r = 0; r < 3; r++) {
             for (int c = 0; c < 12; c++) {
                 final int col = COLOR_GRID[r][c];
                 int btnX = startX + c * 15;
-                int btnY = startY + r * 15;
+                int btnY = startY + r * 14;
                 this.addRenderableWidget(
                     Button.builder(Component.literal(""), btn -> {
                         this.selectedColor = col;
@@ -78,20 +111,20 @@ public class WaypointCreateScreen extends Screen {
         }
 
         this.addRenderableWidget(
-            Button.builder(Component.literal("Guardar"), btn -> {
+            Button.builder(I18nHelper.getComponent("create.save"), btn -> {
                 saveWaypoint();
                 this.onClose();
             }).pos(centerX - 100, centerY + 60).size(62, 20).build()
         );
 
         this.addRenderableWidget(
-            Button.builder(Component.literal("Lista"), btn -> {
+            Button.builder(I18nHelper.getComponent("menu.title"), btn -> {
                 this.minecraft.setScreen(new WaypointListScreen(this));
             }).pos(centerX - 31, centerY + 60).size(62, 20).build()
         );
 
         this.addRenderableWidget(
-            Button.builder(Component.literal("Cancelar"), btn -> {
+            Button.builder(I18nHelper.getComponent("create.cancel"), btn -> {
                 this.onClose();
             }).pos(centerX + 38, centerY + 60).size(62, 20).build()
         );
@@ -102,26 +135,26 @@ public class WaypointCreateScreen extends Screen {
         int centerX = this.width / 2;
         int centerY = this.height / 2;
 
-        // Menu background box
-        graphics.fill(centerX - 110, centerY - 80, centerX + 110, centerY + 90, 0x90000000);
+        // Menu background box (slightly adjusted height)
+        graphics.fill(centerX - 110, centerY - 85, centerX + 110, centerY + 85, 0x90000000);
 
         // Menu title
-        String titleText = this.editingWaypoint != null ? "Editar Waypoint" : "Crear Waypoint";
-        graphics.centeredText(this.font, Component.literal(titleText), centerX, centerY - 75, 0xFFFFFFFF);
+        Component titleComp = this.editingWaypoint != null ? I18nHelper.getComponent("create.title.edit") : I18nHelper.getComponent("create.title.new");
+        graphics.centeredText(this.font, titleComp, centerX, centerY - 80, 0xFFFFFFFF);
 
         // Labels
-        graphics.text(this.font, Component.literal("Nombre:"), centerX - 100, centerY - 70, 0xFFA0A0A0);
-        graphics.text(this.font, Component.literal("Coordenadas (X / Y / Z):"), centerX - 100, centerY - 32, 0xFFA0A0A0);
+        graphics.text(this.font, I18nHelper.getComponent("create.name_label"), centerX - 100, centerY - 75, 0xFFA0A0A0);
+        graphics.text(this.font, I18nHelper.getComponent("create.coordinates_label"), centerX - 100, centerY - 37, 0xFFA0A0A0);
 
         super.extractRenderState(graphics, mouseX, mouseY, a);
 
         int startX = centerX - 88;
-        int startY = centerY + 12;
+        int startY = centerY + 16;
         for (int r = 0; r < 3; r++) {
             for (int c = 0; c < 12; c++) {
                 int col = COLOR_GRID[r][c];
                 int btnX = startX + c * 15;
-                int btnY = startY + r * 15;
+                int btnY = startY + r * 14;
                 
                 // Color filling
                 graphics.fill(btnX + 1, btnY + 1, btnX + 11, btnY + 11, col);
@@ -163,8 +196,8 @@ public class WaypointCreateScreen extends Screen {
         } catch (NumberFormatException e) {}
 
         BlockPos newPos = BlockPos.containing(x, y, z);
-        String dimension = "minecraft:overworld";
-        if (this.minecraft.level != null) {
+        String dimension = this.editingWaypoint != null ? this.editingWaypoint.getDimension() : "minecraft:overworld";
+        if (this.editingWaypoint == null && this.minecraft.level != null) {
             dimension = this.minecraft.level.dimension().identifier().toString();
         }
 
@@ -173,18 +206,19 @@ public class WaypointCreateScreen extends Screen {
             this.editingWaypoint.setPos(newPos);
             this.editingWaypoint.setColor(this.selectedColor);
             this.editingWaypoint.setDimension(dimension);
+            this.editingWaypoint.setShared(this.dimShared);
 
             if (this.minecraft.player != null) {
-                this.minecraft.gui.setOverlayMessage(Component.literal(
-                    "§a¡Waypoint editado! §7(" + name + ") en X: " + newPos.getX() + " Y: " + newPos.getY() + " Z: " + newPos.getZ()
+                this.minecraft.gui.setOverlayMessage(I18nHelper.getComponent(
+                    "create.feedback_edited", name, newPos.getX(), newPos.getY(), newPos.getZ()
                 ), true);
             }
         } else {
-            WaypointRenderer.waypoints.add(new Waypoint(name, newPos, this.selectedColor, dimension));
+            WaypointRenderer.waypoints.add(new Waypoint(name, newPos, this.selectedColor, dimension, this.dimShared));
 
             if (this.minecraft.player != null) {
-                this.minecraft.gui.setOverlayMessage(Component.literal(
-                    "§a¡Waypoint creado! §7(" + name + ") en X: " + newPos.getX() + " Y: " + newPos.getY() + " Z: " + newPos.getZ()
+                this.minecraft.gui.setOverlayMessage(I18nHelper.getComponent(
+                    "create.feedback_created", name, newPos.getX(), newPos.getY(), newPos.getZ()
                 ), true);
             }
         }

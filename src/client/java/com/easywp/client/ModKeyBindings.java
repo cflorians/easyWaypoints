@@ -46,42 +46,17 @@ public class ModKeyBindings {
             while (toggleWaypointsKey.consumeClick()){
                 showWaypoints = !showWaypoints;
                 if (client.player != null) {
-                    client.gui.setOverlayMessage(Component.literal("Waypoints: " + (showWaypoints ? "Visibles" : "Ocultos")), true);
+                    client.gui.setOverlayMessage(
+                        I18nHelper.getComponent(showWaypoints ? "hud.visible" : "hud.hidden"),
+                        true
+                    );
                 }
             }
 
             // Create waypoint
             while (createWaypointKey.consumeClick()){
                 if (client.player != null && client.level != null){
-                    BlockPos targetPos = null;
-                    try {
-                        net.minecraft.world.phys.HitResult hitResult = client.hitResult;
-                        if (hitResult != null && hitResult.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
-                            if (hitResult instanceof net.minecraft.world.phys.BlockHitResult) {
-                                net.minecraft.world.phys.BlockHitResult blockHit = (net.minecraft.world.phys.BlockHitResult) hitResult;
-                                BlockPos hitPos = blockHit.getBlockPos();
-                                net.minecraft.core.Direction direction = blockHit.getDirection();
-                                if (hitPos != null && direction != null) {
-                                    targetPos = hitPos.relative(direction);
-                                }
-                            }
-                        }
-                    } catch (Throwable t) {
-                        t.printStackTrace();
-                    }
-
-                    if (targetPos == null) {
-                        try {
-                            targetPos = client.player.blockPosition();
-                        } catch (Throwable t) {
-                            t.printStackTrace();
-                        }
-                    }
-
-                    if (targetPos == null) {
-                        targetPos = BlockPos.ZERO;
-                    }
-
+                    BlockPos targetPos = client.player.blockPosition();
                     client.setScreen(new WaypointCreateScreen(targetPos));
                 }
             }

@@ -9,7 +9,7 @@ public class EasyWpClient implements ClientModInitializer {
 		ModKeyBindings.register();
 		WaypointRenderer.init();
 
-		LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(context -> {
+		LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(context -> {
 			WaypointRenderer.render(context);
 		});
 	}

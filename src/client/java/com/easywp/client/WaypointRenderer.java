@@ -57,11 +57,53 @@ public class WaypointRenderer {
 
         String currentDimension = client.level.dimension().identifier().toString();
 
+        // Focus Mode check: see if there is at least one focused waypoint
+        boolean hasAnyFocused = false;
         for (Waypoint wp : waypoints) {
-            if (wp.getDimension() != null && !wp.getDimension().equals(currentDimension)) {
+            if (wp != null && wp.isFocused()) {
+                hasAnyFocused = true;
+                break;
+            }
+        }
+
+        for (Waypoint wp : waypoints) {
+            if (wp == null) {
                 continue;
             }
-            BlockPos wpPos = wp.getPos();
+            // Apply Mute/Hide and Focus filters
+            if (!wp.isVisible()) {
+                continue;
+            }
+            if (hasAnyFocused) {
+                if (!wp.isFocused() && !wp.isForceVisible()) {
+                    continue;
+                }
+            }
+
+            String wpDim = wp.getDimension() != null ? wp.getDimension() : "minecraft:overworld";
+            BlockPos wpPos = null;
+
+            if (wpDim.equals(currentDimension)) {
+                wpPos = wp.getPos();
+            } else if (wp.isShared()) {
+                if (wpDim.equals("minecraft:overworld") && currentDimension.equals("minecraft:the_nether")) {
+                    wpPos = new BlockPos(
+                        (int) Math.round(wp.getPos().getX() / 8.0),
+                        wp.getPos().getY(),
+                        (int) Math.round(wp.getPos().getZ() / 8.0)
+                    );
+                } else if (wpDim.equals("minecraft:the_nether") && currentDimension.equals("minecraft:overworld")) {
+                    wpPos = new BlockPos(
+                        (int) Math.round(wp.getPos().getX() * 8.0),
+                        wp.getPos().getY(),
+                        (int) Math.round(wp.getPos().getZ() * 8.0)
+                    );
+                }
+            }
+
+            if (wpPos == null) {
+                continue;
+            }
             
             // Tip of the arrow will point at the bottom center of the block (Y + 0.0, at the feet level)
             double targetX = wpPos.getX() + 0.5;
@@ -73,41 +115,32 @@ public class WaypointRenderer {
             double relZ = targetZ - cameraPos.z;
 
             double distance = Math.sqrt(relX * relX + relY * relY + relZ * relZ);
-            // Use the chunk render distance dynamically as the projection limit.
-            // This ensures pixel-perfect native GPU depth clipping works at all loaded distances,
-            // while preventing waypoints from disappearing beyond the render fog.
             double renderDistanceBlocks = client.options.renderDistance().get() * 16.0;
-            double maxRenderDistance = renderDistanceBlocks;
 
             double renderX = relX;
             double renderY = relY;
             double renderZ = relZ;
             float markerSize;
 
-            boolean isFarDistance = distance >= 115.0;
-            boolean forceSeeThroughOnly = distance > maxRenderDistance;
-
-            if (forceSeeThroughOnly || isFarDistance) {
-                // Project waypoint to exactly 32.0 blocks from the camera to bypass far clipping plane culling and shader fog
-                double projectionDistance = 32.0;
+            // Project all waypoints beyond 12.0 blocks to exactly 12.0 blocks from the camera
+            // to completely bypass volumetric shader fog and preserve absolute visibility and pixel precision
+            if (distance > 12.0) {
+                double projectionDistance = 12.0;
                 double scaleFactor = projectionDistance / distance;
                 renderX = relX * scaleFactor;
                 renderY = relY * scaleFactor;
                 renderZ = relZ * scaleFactor;
-                // Constant visual size relative to the 32.0 blocks projection distance
-                markerSize = (float) (projectionDistance / 16.0) * 0.7f;
+                markerSize = (float) (Math.max(0.4, distance / 16.0) * 0.7f * (projectionDistance / distance));
             } else {
-                // Render at exact world coordinates with dynamic size scaling (enables pixel-perfect native GPU occlusion)
                 markerSize = (float) Math.max(0.4, distance / 16.0) * 0.7f;
             }
 
-            // Raycast check: Used ONLY when the waypoint is far (>= 115 blocks) to handle shader fog bypass.
-            // When close (< 115 blocks), we use the GPU depth buffer (pixel-perfect) naturally.
+            // Raycast check performed only if the waypoint is within the active chunk render distance
             boolean isObstructed = false;
-            if (isFarDistance && client.level != null) {
+            if (distance <= renderDistanceBlocks && client.level != null 
+                    && Double.isFinite(targetX) && Double.isFinite(targetY) && Double.isFinite(targetZ)) {
                 try {
                     Vec3 start = cameraPos;
-                    // Aim at the visual center of the waypoint (0.8 blocks above the base Y coordinate)
                     Vec3 end = new Vec3(targetX, targetY + 0.8, targetZ);
                     BlockHitResult hitResult = client.level.clip(new ClipContext(
                         start,
@@ -118,9 +151,20 @@ public class WaypointRenderer {
                     ));
                     if (hitResult != null && hitResult.getType() == HitResult.Type.BLOCK) {
                         BlockPos hitPos = hitResult.getBlockPos();
-                        // Ignore collision if it is with the waypoint's base block coordinate itself
                         if (hitPos != null && !hitPos.equals(wpPos)) {
-                            isObstructed = true;
+                            // Check if the obstructing block is transparent/pass-through (like portals, glass, water)
+                            net.minecraft.world.level.block.state.BlockState state = client.level.getBlockState(hitPos);
+                            boolean isTransparentObstacle = state.isAir()
+                                    || state.getCollisionShape(client.level, hitPos).isEmpty()
+                                    || state.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)
+                                    || state.is(net.minecraft.world.level.block.Blocks.GLASS)
+                                    || state.is(net.minecraft.world.level.block.Blocks.TINTED_GLASS)
+                                    || state.getBlock().getClass().getSimpleName().toLowerCase().contains("glass")
+                                    || state.getBlock().getClass().getSimpleName().toLowerCase().contains("portal");
+                            
+                            if (!isTransparentObstacle) {
+                                isObstructed = true;
+                            }
                         }
                     }
                 } catch (Throwable t) {
@@ -128,125 +172,134 @@ public class WaypointRenderer {
                 }
             }
 
-            // Force see-through transparency if:
-            // 1. The waypoint is beyond active chunk render distance.
-            // 2. The waypoint is far (>= 100m) and the line of sight is obstructed.
-            forceSeeThroughOnly = (distance > renderDistanceBlocks) || (isFarDistance && isObstructed);
-
-            // Determine if the visible pass (solid) should be rendered.
-            int seeThroughAlpha = 160;
+            // Draw visible pass only if it is in render range AND not obstructed by terrain/blocks
+            boolean forceSeeThroughOnly = (distance > renderDistanceBlocks) || isObstructed;
             boolean drawVisiblePass = !forceSeeThroughOnly;
-            int textSeeThroughColor = 0xA0FFFFFF;
 
-            // Format: NAME (123m)
-            String nameText = wp.getName().toUpperCase() + " (" + (int)distance + "m)";
+            int seeThroughAlpha = 160;
+            int textSeeThroughColor = 0xA0FFFFFF;
+            String wpName = wp.getName() != null ? wp.getName() : "Waypoint";
+            String nameText = wpName.toUpperCase() + " (" + (int)distance + "m)";
 
             poseStack.pushPose();
             poseStack.translate(renderX, renderY, renderZ);
 
-            // Billboard rotation (make the billboard face the camera)
             poseStack.mulPose(Axis.YP.rotationDegrees(-cameraState.yRot));
             poseStack.mulPose(Axis.XP.rotationDegrees(cameraState.xRot));
 
-            // Extract waypoint colors
             int wpColor = wp.getColor();
             int r = (wpColor >> 16) & 0xFF;
             int g = (wpColor >> 8) & 0xFF;
             int b = wpColor & 0xFF;
 
-            // Render textured teardrop pin:
-            // 1. See-through pass (translucent original color, always passes depth testing)
-            VertexConsumer bufferSeeThrough = context.bufferSource().getBuffer(WAYPOINT_SEE_THROUGH);
-            drawMarker(poseStack, bufferSeeThrough, r, g, b, seeThroughAlpha, markerSize, false);
-            context.bufferSource().endBatch(WAYPOINT_SEE_THROUGH);
-
-            // 2. Visible pass (full waypoint color, normal depth testing, slightly offset in Z to avoid Z-fighting/double-blend white color)
-            // Rendered only when the waypoint is within the active chunk render distance.
-            // When partially covered by blocks, the GPU depth buffer will clip only the covered pixels, revealing the see-through pass underneath.
-            // Note: Since WAYPOINT_VISIBLE is now a Text RenderType, we build it with hasOverlayAndNormal = false.
+            // RENDER PASS: Render EXACTLY one pass (either Solid/Visible or See-Through)
+            // This prevents double blending of backgrounds and Z-fighting flickering.
             if (drawVisiblePass) {
-                poseStack.pushPose();
-                poseStack.translate(0.0f, 0.0f, -0.05f);
+                // 1. Solid Visible Pass (normal depth test, full opacity)
                 VertexConsumer bufferVisible = context.bufferSource().getBuffer(WAYPOINT_VISIBLE);
                 drawMarker(poseStack, bufferVisible, r, g, b, 255, markerSize, false);
                 context.bufferSource().endBatch(WAYPOINT_VISIBLE);
-                poseStack.popPose();
-            }
 
-            // Render name tag:
-            poseStack.pushPose();
-            // Position text tag above the marker (shifted up to prevent overlap with the smaller marker pin)
-            poseStack.translate(0.0f, markerSize * 1.50f, 0.0f);
-            float textScale = 0.035f * markerSize / 0.7f;
-            if (distance > 100.0) {
-                // Scale boost for readability at long distance to combat shader blurring
-                textScale *= (float) Math.min(1.4, 1.0 + (distance - 100.0) * 0.002);
-            }
-            poseStack.scale(-textScale, -textScale, textScale); // Scale down text and preserve winding order
-            
-            // Visual offset correction
-            float xOffset = -font.width(nameText) / 2.0f + 1.0f;
-
-            // Pass 1: See-through text (visible through walls, translucent fallback background)
-            font.drawInBatch(
-                    nameText,
-                    xOffset,
-                    0.0f,
-                    textSeeThroughColor,
-                    false,
-                    poseStack.last().pose(),
-                    context.bufferSource(),
-                    Font.DisplayMode.SEE_THROUGH,
-                    0,
-                    0xF000F0
-            );
-            context.bufferSource().endBatch();
-
-            // Pass 2: Normal text (visible directly, perfect background, slightly offset in Z to draw on top of see-through pass)
-            // Rendered only when the waypoint is within the active chunk render distance.
-            if (drawVisiblePass) {
+                // Render name tag for solid pass
                 poseStack.pushPose();
-                poseStack.translate(0.0f, 0.0f, -0.05f);
-                
-                int borderCol = 0xFF000000;
-                int textCol = 0xFFFFFFFF;
+                poseStack.translate(0.0f, markerSize * 1.50f, 0.0f);
+                float textScale = 0.035f * markerSize / 0.7f;
+                if (distance > 100.0) {
+                    textScale *= (float) Math.min(1.4, 1.0 + (distance - 100.0) * 0.002);
+                }
+                poseStack.scale(-textScale, -textScale, textScale);
+                float xOffset = -font.width(nameText) / 2.0f + 1.0f;
 
-                // Render a high-visibility black border around the text (4 offset black shadows)
-                // We use Font.DisplayMode.NORMAL for the black border to force a separate buffer/draw call from the center white text
-                float outlineOffset = 1.0f; // 1-pixel font-space offset
-                // Top border
-                font.drawInBatch(nameText, xOffset, -outlineOffset, borderCol, false, poseStack.last().pose(), context.bufferSource(), Font.DisplayMode.NORMAL, 0, 0xF000F0);
-                // Bottom border
-                font.drawInBatch(nameText, xOffset, outlineOffset, borderCol, false, poseStack.last().pose(), context.bufferSource(), Font.DisplayMode.NORMAL, 0, 0xF000F0);
-                // Left border
-                font.drawInBatch(nameText, xOffset - outlineOffset, 0.0f, borderCol, false, poseStack.last().pose(), context.bufferSource(), Font.DisplayMode.NORMAL, 0, 0xF000F0);
-                // Right border
-                font.drawInBatch(nameText, xOffset + outlineOffset, 0.0f, borderCol, false, poseStack.last().pose(), context.bufferSource(), Font.DisplayMode.NORMAL, 0, 0xF000F0);
-                context.bufferSource().endBatch(); // Flush borders before drawing the center text
-
-                // Central white text pass (no shadow, so it renders cleanly within the border)
-                // We use Font.DisplayMode.POLYGON_OFFSET which applies a hardware-level depth offset in OpenGL.
-                // This guarantees the white text is rendered in front of the black borders, preventing Z-fighting completely.
+                // Pass A: Background plate (using transparent text color to prevent duplicate letters)
                 font.drawInBatch(
                         nameText,
                         xOffset,
                         0.0f,
-                        textCol, // Completely white color
-                        false,      // Disable default drop shadow (handled manually above for a full border)
+                        0x00FFFFFF,  // Completely transparent text (alpha 0)
+                        false,
                         poseStack.last().pose(),
                         context.bufferSource(),
-                        Font.DisplayMode.POLYGON_OFFSET, // Disable block lighting shading to prevent it from looking black
-                        0,          // Remove the grey background box (set to transparent)
+                        Font.DisplayMode.POLYGON_OFFSET,
+                        0x40000000,  // Translucent black background
                         0xF000F0
                 );
+                
+                // Push text slightly forward in Z to eliminate Z-fighting and grey blending
+                poseStack.pushPose();
+                poseStack.translate(0.0f, 0.0f, -0.03f);
+                
+                // Pass B: Solid white text on top without background
+                font.drawInBatch(
+                        nameText,
+                        xOffset,
+                        0.0f,
+                        0xFFFFFFFF,  // Solid white text color
+                        false,       // No drop shadow
+                        poseStack.last().pose(),
+                        context.bufferSource(),
+                        Font.DisplayMode.POLYGON_OFFSET,
+                        0,           // No background plate
+                        0xF000F0
+                );
+                poseStack.popPose();
+                
+                context.bufferSource().endBatch();
+                poseStack.popPose();
+            } else {
+                // 2. See-Through Pass (ignored depth test, see through walls)
+                VertexConsumer bufferSeeThrough = context.bufferSource().getBuffer(WAYPOINT_SEE_THROUGH);
+                drawMarker(poseStack, bufferSeeThrough, r, g, b, seeThroughAlpha, markerSize, false);
+                context.bufferSource().endBatch(WAYPOINT_SEE_THROUGH);
+
+                // Render name tag for see-through pass
+                poseStack.pushPose();
+                poseStack.translate(0.0f, markerSize * 1.50f, 0.0f);
+                float textScale = 0.035f * markerSize / 0.7f;
+                if (distance > 100.0) {
+                    textScale *= (float) Math.min(1.4, 1.0 + (distance - 100.0) * 0.002);
+                }
+                poseStack.scale(-textScale, -textScale, textScale);
+                float xOffset = -font.width(nameText) / 2.0f + 1.0f;
+
+                // Pass A: Background plate see-through (transparent text)
+                font.drawInBatch(
+                        nameText,
+                        xOffset,
+                        0.0f,
+                        0x00FFFFFF,  // Completely transparent text
+                        false,
+                        poseStack.last().pose(),
+                        context.bufferSource(),
+                        Font.DisplayMode.SEE_THROUGH,
+                        0x40000000,  // Translucent black background
+                        0xF000F0
+                );
+
+                // Push text slightly forward in Z to eliminate Z-fighting
+                poseStack.pushPose();
+                poseStack.translate(0.0f, 0.0f, -0.03f);
+
+                // Pass B: See-through text on top without background
+                font.drawInBatch(
+                        nameText,
+                        xOffset,
+                        0.0f,
+                        textSeeThroughColor, // Translucent white text
+                        false,
+                        poseStack.last().pose(),
+                        context.bufferSource(),
+                        Font.DisplayMode.SEE_THROUGH,
+                        0,           // No background plate
+                        0xF000F0
+                );
+                poseStack.popPose();
+                
                 context.bufferSource().endBatch();
                 poseStack.popPose();
             }
             
             poseStack.popPose();
-            poseStack.popPose();
 
-            // Force immediate flush of all elements for this waypoint to avoid delayed rendering or chunk/entity culling issues
             context.bufferSource().endBatch();
         }
 
@@ -403,6 +456,9 @@ public class WaypointRenderer {
         int z;
         int color;
         String dimension;
+        boolean shared;
+        Boolean visible;
+        Boolean focused;
         
         public WaypointData(Waypoint wp) {
             this.name = wp.getName();
@@ -411,10 +467,21 @@ public class WaypointRenderer {
             this.z = wp.getPos().getZ();
             this.color = wp.getColor();
             this.dimension = wp.getDimension();
+            this.shared = wp.isShared();
+            this.visible = wp.isVisible();
+            this.focused = wp.isFocused();
         }
         
         public Waypoint toWaypoint() {
-            return new Waypoint(name, new BlockPos(x, y, z), color, dimension);
+            return new Waypoint(
+                name, 
+                new BlockPos(x, y, z), 
+                color, 
+                dimension, 
+                shared, 
+                visible == null ? true : visible, 
+                focused == null ? false : focused
+            );
         }
     }
 }
