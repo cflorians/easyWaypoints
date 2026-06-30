@@ -1,23 +1,15 @@
 package com.easywp.client;
 
-import com.mojang.blaze3d.pipeline.DepthStencilState;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.platform.CompareOp;
 import com.mojang.blaze3d.vertex.*;
 import com.mojang.math.Axis;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
-import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 
@@ -117,98 +109,116 @@ public class WaypointRenderer {
             double distance = Math.sqrt(relX * relX + relY * relY + relZ * relZ);
             double renderDistanceBlocks = client.options.renderDistance().get() * 16.0;
 
-            double renderX = relX;
-            double renderY = relY;
-            double renderZ = relZ;
-            float markerSize;
+            float realMarkerSize = (float) (0.5 + distance / 20.0) * 0.7f;
 
-            // Project all waypoints beyond 12.0 blocks to exactly 12.0 blocks from the camera
-            // to completely bypass volumetric shader fog and preserve absolute visibility and pixel precision
+            // For waypoints beyond 12 blocks, we compute a projected position at 12 blocks
+            // along the same direction vector to bypass volumetric shader fog.
+            // The visible pass always renders at the REAL position for GPU pixel-perfect depth testing.
+            double projRenderX = relX;
+            double projRenderY = relY;
+            double projRenderZ = relZ;
+            float projMarkerSize = realMarkerSize;
+
             if (distance > 12.0) {
                 double projectionDistance = 12.0;
                 double scaleFactor = projectionDistance / distance;
-                renderX = relX * scaleFactor;
-                renderY = relY * scaleFactor;
-                renderZ = relZ * scaleFactor;
-                markerSize = (float) (Math.max(0.4, distance / 16.0) * 0.7f * (projectionDistance / distance));
-            } else {
-                markerSize = (float) Math.max(0.4, distance / 16.0) * 0.7f;
+                projRenderX = relX * scaleFactor;
+                projRenderY = relY * scaleFactor;
+                projRenderZ = relZ * scaleFactor;
+                projMarkerSize = (float) (realMarkerSize * scaleFactor);
             }
 
-            // Raycast check performed only if the waypoint is within the active chunk render distance
-            boolean isObstructed = false;
-            if (distance <= renderDistanceBlocks && client.level != null 
-                    && Double.isFinite(targetX) && Double.isFinite(targetY) && Double.isFinite(targetZ)) {
-                try {
-                    Vec3 start = cameraPos;
-                    Vec3 end = new Vec3(targetX, targetY + 0.8, targetZ);
-                    BlockHitResult hitResult = client.level.clip(new ClipContext(
-                        start,
-                        end,
-                        ClipContext.Block.COLLIDER,
-                        ClipContext.Fluid.NONE,
-                        client.player
-                    ));
-                    if (hitResult != null && hitResult.getType() == HitResult.Type.BLOCK) {
-                        BlockPos hitPos = hitResult.getBlockPos();
-                        if (hitPos != null && !hitPos.equals(wpPos)) {
-                            // Check if the obstructing block is transparent/pass-through (like portals, glass, water)
-                            net.minecraft.world.level.block.state.BlockState state = client.level.getBlockState(hitPos);
-                            boolean isTransparentObstacle = state.isAir()
-                                    || state.getCollisionShape(client.level, hitPos).isEmpty()
-                                    || state.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)
-                                    || state.is(net.minecraft.world.level.block.Blocks.GLASS)
-                                    || state.is(net.minecraft.world.level.block.Blocks.TINTED_GLASS)
-                                    || state.getBlock().getClass().getSimpleName().toLowerCase().contains("glass")
-                                    || state.getBlock().getClass().getSimpleName().toLowerCase().contains("portal");
-                            
-                            if (!isTransparentObstacle) {
-                                isObstructed = true;
-                            }
-                        }
-                    }
-                } catch (Throwable t) {
-                    t.printStackTrace();
-                }
-            }
-
-            // Draw visible pass only if it is in render range AND not obstructed by terrain/blocks
-            boolean forceSeeThroughOnly = (distance > renderDistanceBlocks) || isObstructed;
-            boolean drawVisiblePass = !forceSeeThroughOnly;
+            // The visible pass draws at the real position only if chunks are loaded there
+            boolean drawVisiblePass = (distance <= renderDistanceBlocks);
 
             int seeThroughAlpha = 160;
             int textSeeThroughColor = 0xA0FFFFFF;
             String wpName = wp.getName() != null ? wp.getName() : "Waypoint";
             String nameText = wpName.toUpperCase() + " (" + (int)distance + "m)";
 
-            poseStack.pushPose();
-            poseStack.translate(renderX, renderY, renderZ);
-
-            poseStack.mulPose(Axis.YP.rotationDegrees(-cameraState.yRot));
-            poseStack.mulPose(Axis.XP.rotationDegrees(cameraState.xRot));
-
             int wpColor = wp.getColor();
             int r = (wpColor >> 16) & 0xFF;
             int g = (wpColor >> 8) & 0xFF;
             int b = wpColor & 0xFF;
 
-            // RENDER PASS: Render EXACTLY one pass (either Solid/Visible or See-Through)
-            // This prevents double blending of backgrounds and Z-fighting flickering.
+            // RENDER PASS 1: See-Through (translucent base, at projected position for fog bypass)
+            poseStack.pushPose();
+            poseStack.translate(projRenderX, projRenderY, projRenderZ);
+            poseStack.mulPose(Axis.YP.rotationDegrees(-cameraState.yRot));
+            poseStack.mulPose(Axis.XP.rotationDegrees(cameraState.xRot));
+
+            VertexConsumer bufferSeeThrough = context.bufferSource().getBuffer(WAYPOINT_SEE_THROUGH);
+            drawMarker(poseStack, bufferSeeThrough, r, g, b, seeThroughAlpha, projMarkerSize, false);
+            context.bufferSource().endBatch(WAYPOINT_SEE_THROUGH);
+
+            // Render name tag for see-through pass
+            poseStack.pushPose();
+            poseStack.translate(0.0f, projMarkerSize * 1.50f, 0.0f);
+            float projTextScale = 0.035f * projMarkerSize / 0.7f;
+            if (distance > 100.0) {
+                projTextScale *= (float) Math.min(1.4, 1.0 + (distance - 100.0) * 0.002);
+            }
+            poseStack.scale(-projTextScale, -projTextScale, projTextScale);
+            float xOffset = -font.width(nameText) / 2.0f + 1.0f;
+
+            // Pass A: Background plate see-through (transparent text)
+            font.drawInBatch(
+                    nameText,
+                    xOffset,
+                    0.0f,
+                    0x00FFFFFF,  // Completely transparent text
+                    false,
+                    poseStack.last().pose(),
+                    context.bufferSource(),
+                    Font.DisplayMode.SEE_THROUGH,
+                    0x40000000,  // Translucent black background
+                    0xF000F0
+            );
+
+            // Push text slightly forward in Z to eliminate Z-fighting
+            poseStack.pushPose();
+            poseStack.translate(0.0f, 0.0f, -0.03f);
+
+            // Pass B: See-through text on top without background
+            font.drawInBatch(
+                    nameText,
+                    xOffset,
+                    0.0f,
+                    textSeeThroughColor, // Translucent white text
+                    false,
+                    poseStack.last().pose(),
+                    context.bufferSource(),
+                    Font.DisplayMode.SEE_THROUGH,
+                    0,           // No background plate
+                    0xF000F0
+            );
+            poseStack.popPose();
+            
+            context.bufferSource().endBatch();
+            poseStack.popPose(); // text pose
+            poseStack.popPose(); // projected position pose
+
+            // RENDER PASS 2: Solid/Visible (at REAL position for pixel-perfect GPU depth testing)
+            // The GPU depth buffer naturally occludes pixels behind blocks, producing
+            // pixel-perfect partial translucency at any distance.
             if (drawVisiblePass) {
-                // 1. Solid Visible Pass (normal depth test, full opacity)
+                poseStack.pushPose();
+                poseStack.translate(relX, relY, relZ);
+                poseStack.mulPose(Axis.YP.rotationDegrees(-cameraState.yRot));
+                poseStack.mulPose(Axis.XP.rotationDegrees(cameraState.xRot));
+
                 VertexConsumer bufferVisible = context.bufferSource().getBuffer(WAYPOINT_VISIBLE);
-                drawMarker(poseStack, bufferVisible, r, g, b, 255, markerSize, false);
+                drawMarker(poseStack, bufferVisible, r, g, b, 255, realMarkerSize, false);
                 context.bufferSource().endBatch(WAYPOINT_VISIBLE);
 
                 // Render name tag for solid pass
                 poseStack.pushPose();
-                poseStack.translate(0.0f, markerSize * 1.50f, 0.0f);
-                float textScale = 0.035f * markerSize / 0.7f;
+                poseStack.translate(0.0f, realMarkerSize * 1.50f, 0.0f);
+                float realTextScale = 0.035f * realMarkerSize / 0.7f;
                 if (distance > 100.0) {
-                    textScale *= (float) Math.min(1.4, 1.0 + (distance - 100.0) * 0.002);
+                    realTextScale *= (float) Math.min(1.4, 1.0 + (distance - 100.0) * 0.002);
                 }
-                poseStack.scale(-textScale, -textScale, textScale);
-                float xOffset = -font.width(nameText) / 2.0f + 1.0f;
+                poseStack.scale(-realTextScale, -realTextScale, realTextScale);
 
                 // Pass A: Background plate (using transparent text color to prevent duplicate letters)
                 font.drawInBatch(
@@ -244,61 +254,9 @@ public class WaypointRenderer {
                 poseStack.popPose();
                 
                 context.bufferSource().endBatch();
-                poseStack.popPose();
-            } else {
-                // 2. See-Through Pass (ignored depth test, see through walls)
-                VertexConsumer bufferSeeThrough = context.bufferSource().getBuffer(WAYPOINT_SEE_THROUGH);
-                drawMarker(poseStack, bufferSeeThrough, r, g, b, seeThroughAlpha, markerSize, false);
-                context.bufferSource().endBatch(WAYPOINT_SEE_THROUGH);
-
-                // Render name tag for see-through pass
-                poseStack.pushPose();
-                poseStack.translate(0.0f, markerSize * 1.50f, 0.0f);
-                float textScale = 0.035f * markerSize / 0.7f;
-                if (distance > 100.0) {
-                    textScale *= (float) Math.min(1.4, 1.0 + (distance - 100.0) * 0.002);
-                }
-                poseStack.scale(-textScale, -textScale, textScale);
-                float xOffset = -font.width(nameText) / 2.0f + 1.0f;
-
-                // Pass A: Background plate see-through (transparent text)
-                font.drawInBatch(
-                        nameText,
-                        xOffset,
-                        0.0f,
-                        0x00FFFFFF,  // Completely transparent text
-                        false,
-                        poseStack.last().pose(),
-                        context.bufferSource(),
-                        Font.DisplayMode.SEE_THROUGH,
-                        0x40000000,  // Translucent black background
-                        0xF000F0
-                );
-
-                // Push text slightly forward in Z to eliminate Z-fighting
-                poseStack.pushPose();
-                poseStack.translate(0.0f, 0.0f, -0.03f);
-
-                // Pass B: See-through text on top without background
-                font.drawInBatch(
-                        nameText,
-                        xOffset,
-                        0.0f,
-                        textSeeThroughColor, // Translucent white text
-                        false,
-                        poseStack.last().pose(),
-                        context.bufferSource(),
-                        Font.DisplayMode.SEE_THROUGH,
-                        0,           // No background plate
-                        0xF000F0
-                );
-                poseStack.popPose();
-                
-                context.bufferSource().endBatch();
-                poseStack.popPose();
+                poseStack.popPose(); // text pose
+                poseStack.popPose(); // real position pose
             }
-            
-            poseStack.popPose();
 
             context.bufferSource().endBatch();
         }
