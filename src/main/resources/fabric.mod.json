@@ -3,7 +3,7 @@
 	"id": "easywp",
 	"version": "${version}",
 	"name": "easyWp",
-	"description": "Un mod de waypoints ligero y optimizado con oclusión pixel-perfect nativa, bypass de niebla de shaders y persistencia JSON independiente por mundo y servidor.",
+	"description": "A lightweight and optimized waypoints mod featuring native pixel-perfect occlusion, shader-fog bypass, and server/world-specific JSON persistence.",
 	"authors": [
 		"Carlos Florian"
 	],
