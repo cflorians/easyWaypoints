@@ -10,9 +10,7 @@ public class I18nHelper {
             if (code != null) {
                 return code;
             }
-        } catch (Throwable t) {
-            // Safe fallback if signature differs in specific envs
-        }
+        } catch (Throwable ignored) {}
         return "en_us";
     }
 
@@ -24,7 +22,6 @@ public class I18nHelper {
     public static String translate(String key) {
         boolean es = isSpanish();
         switch (key) {
-            // List Screen
             case "menu.title": 
                 return es ? "Lista de Waypoints" : "Waypoint List";
             case "menu.total": 
@@ -39,8 +36,7 @@ public class I18nHelper {
                 return es ? "Confirmar Borrado" : "Confirm Deletion";
             case "menu.confirm_delete_text": 
                 return es ? "¿Estás seguro de borrar \"%s\"?" : "Are you sure you want to delete \"%s\"?";
-            
-            // Create Screen
+
             case "create.title.new": 
                 return es ? "Crear Waypoint" : "Create Waypoint";
             case "create.title.edit": 
@@ -63,18 +59,23 @@ public class I18nHelper {
                 return es ? "§a¡Waypoint editado! §7(%s) en X: %d Y: %d Z: %d" : "§aWaypoint edited! §7(%s) at X: %d Y: %d Z: %d";
             case "create.feedback_created":
                 return es ? "§a¡Waypoint creado! §7(%s) en X: %d Y: %d Z: %d" : "§aWaypoint created! §7(%s) at X: %d Y: %d Z: %d";
-            
-            // HUD
+
             case "hud.visible": 
                 return es ? "§fWaypoints visibles" : "§fWaypoints visible";
             case "hud.hidden": 
                 return es ? "§7Waypoints ocultos" : "§7Waypoints hidden";
-                
+            case "hud.mode.world":
+                return es ? "§fModo Waypoints: Marcadores Clásicos" : "§fWaypoints Mode: Classic Markers";
+            case "hud.mode.locator_bar":
+                return es ? "§fModo Waypoints: Barra de Localización" : "§fWaypoints Mode: Locator Bar";
+            case "hud.mode.disabled":
+                return es ? "§7Modo Waypoints: Desactivado" : "§7Waypoints Mode: Disabled";
+
             default: 
                 return key;
         }
     }
-    
+
     public static Component getComponent(String key, Object... args) {
         return Component.literal(String.format(translate(key), args));
     }
