@@ -2,7 +2,8 @@
 	"required": true,
 	"package": "com.easywp.client.mixin",
 	"compatibilityLevel": "JAVA_25",
-	"client": [],
+	"client": [
+	],
 	"injectors": {
 		"defaultRequire": 1
 	},

@@ -9,5 +9,9 @@ pluginManagement {
 	}
 }
 
-// Should match your modid
 rootProject.name = 'easywp'
+
+include 'common'
+include 'versions:26.1'
+include 'versions:26.2'
+
