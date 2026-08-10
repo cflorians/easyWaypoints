@@ -1,4 +1,4 @@
-# Porting Guide & Migration Notes (Minecraft 26.2 & Future 1.21.x)
+# Porting Guide & Migration Notes (Minecraft 26.1 to 26.2)
 
 This document records the exact multi-module architecture, dependencies, and API migrations implemented when supporting Minecraft 26.2 alongside Minecraft 26.1.x.
 

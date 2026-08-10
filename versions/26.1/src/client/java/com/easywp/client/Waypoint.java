@@ -11,7 +11,7 @@ public class Waypoint {
     private boolean visible = true;
     private boolean focused = false;
     private boolean forceVisible = false;
-    
+
     public Waypoint(String name, BlockPos pos) {
         this(name, pos, 0xFF00FF00);
     }

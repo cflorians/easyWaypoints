@@ -25,16 +25,14 @@ Mod de waypoints (puntos de referencia) para **Minecraft Fabric**, ligero y no i
 
 ---
 
-## 2. Estado actual del repositorio (importante)
+## 2. Estado actual del repositorio
 
-El repositorio está **a mitad de una migración de arquitectura**, y esto se refleja en el árbol de archivos:
+El repositorio usa una estructura **multi-módulo** Gradle con dos ramas de Minecraft activas: `26.1` y `26.2`. No hay código legado ni carpetas de versiones históricas — `settings.gradle` declara exactamente `include 'common', 'versions:26.1', 'versions:26.2'`, y eso es todo lo que existe en el árbol de archivos.
 
-- **`src/` (raíz)** — el código "clásico" de un único módulo Fabric. Es el que compila `build.gradle` de la raíz junto con `common/`. Corresponde 1:1 al contenido de `versions/26.1/` (se verificó con `diff`, son idénticos).
-- **`common/`** y **`versions/`** (carpetas **sin trackear en git** todavía) — la nueva estructura **multi-módulo** descrita en [`PORTING.md`](PORTING.md), que permite compilar simultáneamente varias versiones de Minecraft (`26.1`, `26.2`, y ramas antiguas `1.21.1`, `1.21.3`, `1.21.8`, `1.21.11`) desde el mismo repositorio.
-- `settings.gradle` en la raíz **ya** apunta al esquema nuevo (`include 'common', 'versions:26.1', 'versions:26.2'`), pero el `src/` de la raíz sigue presente y no forma parte de ningún subproyecto declarado — es decir, hoy por hoy es código legado que convive con la nueva estructura hasta que se elimine o se termine de migrar.
-- `git status` muestra además que `WaypointHudRenderer.java` fue **eliminado** de `src/` — la arquitectura de renderizado por HUD (ver sección 5.3) se probó y se descartó para la rama principal de `26.1`, pero **sí se conserva** como solución definitiva en `versions/26.2/`, donde era necesaria.
+- **26.1** usa la arquitectura de renderizado "billboard 3D" clásica (sección 5.1).
+- **26.2** usa la arquitectura de "proyección mundo→HUD" (sección 5.2), necesaria por el rediseño del pipeline de render (`SubmitNodeCollector`) de esa versión.
 
-En resumen: si vas a tocar código de **26.1**, edítalo en `versions/26.1/` (y espejarlo en `src/` mientras ambos convivan, o eliminar `src/` cuando la migración se dé por completa). El código de **26.2** vive únicamente en `versions/26.2/` porque usa una arquitectura de render distinta.
+Un intento anterior de portar el mod a versiones previas de Minecraft (`1.21.1`, `1.21.3`, `1.21.8`, `1.21.11`) fue descartado; si se retoma en el futuro, ver el historial de git para la última referencia de esas carpetas.
 
 ---
 
@@ -46,14 +44,12 @@ easywp-template/
 ├── common/                                # (:common) código y recursos 100% compartidos
 │   └── src/main/java/com/easywp/EasyWp.java           # entry point del lado servidor/común
 ├── versions/
-│   ├── 1.21.1/  1.21.3/  1.21.8/  1.21.11/  # ramas históricas (no incluidas en settings.gradle aún)
 │   ├── 26.1/                              # (:versions:26.1) rama estable actual
 │   │   ├── gradle.properties              # minecraft_version=26.1.2, fabric_api=0.155.2+26.1.2
 │   │   └── src/client/java/com/easywp/client/...
 │   └── 26.2/                              # (:versions:26.2) rama con Blaze3D/SubmitNodeCollector nuevo
 │       ├── gradle.properties              # minecraft_version=26.2, fabric_api=0.156.0+26.2
 │       └── src/client/java/com/easywp/client/...
-├── src/                                   # copia legada de 26.1 (ver sección 2)
 ├── PORTING.md                             # notas de migración de API entre 26.1 y 26.2
 └── SHADER_SOLUTIONS_LOG.md                # bitácora de 17 intentos para resolver el bug de shaders
 ```
@@ -95,7 +91,7 @@ La lista viva de waypoints del mundo actual se mantiene en memoria en `WaypointR
 
 El renderizado 3D de Minecraft (`gbuffers`) es interceptado por los shaderpacks (Iris/Oculus) para aplicar iluminación y sombras. Cualquier geometría "see-through" dibujada ahí queda sujeta al mapa de sombras del shader, lo que en la práctica **oscurecía los marcadores a negro puro cuando quedaban detrás de un bloque con shaders activos**. Resolver esto llevó a dos arquitecturas distintas según la versión de Minecraft — documentadas en detalle, intento por intento, en [`SHADER_SOLUTIONS_LOG.md`](SHADER_SOLUTIONS_LOG.md).
 
-### 5.1 Arquitectura "billboard 3D" (usada en 26.1 y en `src/` legado)
+### 5.1 Arquitectura "billboard 3D" (usada en 26.1)
 
 `WaypointRenderer.render(LevelRenderContext)`, enganchado a `LevelRenderEvents.END_MAIN`:
 
@@ -272,14 +268,8 @@ Es la carpeta de ejecución del cliente de desarrollo (`./gradlew runClient`), c
 
 | Carpeta | Minecraft | Fabric API | Incluida en `settings.gradle` |
 |---|---|---|---|
-| `versions/1.21.1` | 1.21.1 | — | No (histórica) |
-| `versions/1.21.3` | 1.21.3 | — | No (histórica) |
-| `versions/1.21.8` | 1.21.8 | — | No (histórica) |
-| `versions/1.21.11` | 1.21.11 | — | No (histórica) |
 | `versions/26.1` | 26.1.2 | 0.155.2+26.1.2 | **Sí** |
 | `versions/26.2` | 26.2 | 0.156.0+26.2 | **Sí** |
-
-Las carpetas históricas (`1.21.x`) contienen snapshots de código de portados anteriores; si se quiere volver a construir contra ellas hay que añadirlas a `settings.gradle` (`include 'versions:1.21.1'`, etc.) y probablemente resolver diferencias de API respecto a la rama `26.1` actual.
 
 ---
 

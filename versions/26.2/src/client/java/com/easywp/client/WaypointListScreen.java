@@ -78,7 +78,7 @@ public class WaypointListScreen extends Screen {
     public WaypointListScreen(Screen parentScreen) {
         super(I18nHelper.getComponent("menu.title"));
         this.parentScreen = parentScreen;
-        
+
         Minecraft mc = Minecraft.getInstance();
         if (mc.level != null) {
             this.selectedDimension = mc.level.dimension().identifier().toString();
@@ -93,7 +93,7 @@ public class WaypointListScreen extends Screen {
             if (wp == null) continue;
 
             String wpDim = wp.getDimension() != null ? wp.getDimension() : "minecraft:overworld";
-            
+
             if (wpDim.equals(dimension)) {
                 result.add(new WaypointEntry(wp, wp.getPos(), false));
             } else if (wp.isShared()) {
@@ -143,7 +143,7 @@ public class WaypointListScreen extends Screen {
                 break;
             }
         }
-        this.cachedShowTP = this.minecraft != null && this.minecraft.player != null && 
+        this.cachedShowTP = this.minecraft != null && this.minecraft.player != null &&
                             this.minecraft.player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
     }
 
@@ -225,9 +225,9 @@ public class WaypointListScreen extends Screen {
 
             var shareBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 if (this.minecraft.player != null && this.minecraft.player.connection != null) {
-                    String dimName = selectedDimension.equals("minecraft:overworld") ? "Overworld" : 
+                    String dimName = selectedDimension.equals("minecraft:overworld") ? "Overworld" :
                                      (selectedDimension.equals("minecraft:the_nether") ? "Nether" : "The End");
-                    String msg = String.format("%s -> [%d, %d, %d] at %s", 
+                    String msg = String.format("%s -> [%d, %d, %d] at %s",
                         wp.getName().toUpperCase(), pos.getX(), pos.getY(), pos.getZ(), dimName);
                     this.minecraft.player.connection.sendChat(msg);
                     this.onClose();
@@ -370,7 +370,7 @@ public class WaypointListScreen extends Screen {
         int minY = centerY - bgH / 2;
 
         RenderPipeline pipeline = RenderPipelines.GUI_TEXTURED;
-        
+
         // Modal background card (ARGB 0xD010141E)
         graphics.fill(minX, minY, minX + bgW, minY + bgH, 0xD010141E);
         // Header title background bar (ARGB 0xE0181E30)
@@ -385,7 +385,7 @@ public class WaypointListScreen extends Screen {
         List<WaypointEntry> waypoints = this.cachedFilteredWaypoints;
         int totalWaypoints = waypoints.size();
 
-        String dimensionName = selectedDimension.equals("minecraft:overworld") ? "OVERWORLD" : 
+        String dimensionName = selectedDimension.equals("minecraft:overworld") ? "OVERWORLD" :
                               (selectedDimension.equals("minecraft:the_nether") ? "NETHER" : "THE END");
         String headerDimText = dimensionName + " (" + totalWaypoints + ")";
         int dimensionColor = 0xFFFFFFFF;
@@ -474,15 +474,15 @@ public class WaypointListScreen extends Screen {
                 int scrollbarX = centerX + 134;
                 int scrollbarY = centerY - 52;
                 int scrollbarHeight = 108;
-                
+
                 graphics.fill(scrollbarX, scrollbarY, scrollbarX + 2, scrollbarY + scrollbarHeight, 0xFF444444);
-                
+
                 float visibleRatio = (float) ITEMS_PER_PAGE / totalWaypoints;
                 int thumbHeight = Math.max(12, (int) (scrollbarHeight * visibleRatio));
-                
+
                 float scrollRatio = (float) scrollIndex / (totalWaypoints - ITEMS_PER_PAGE);
                 int thumbY = scrollbarY + (int) ((scrollbarHeight - thumbHeight) * scrollRatio);
-                
+
                 graphics.fill(scrollbarX, thumbY, scrollbarX + 2, thumbY + thumbHeight, 0xFFFFFFFF);
             }
         }

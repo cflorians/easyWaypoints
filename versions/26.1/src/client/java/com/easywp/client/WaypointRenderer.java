@@ -1,5 +1,6 @@
 package com.easywp.client;
 
+import com.easywp.EasyWp;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -370,7 +371,7 @@ public class WaypointRenderer {
                 gson.toJson(dataList, writer);
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            EasyWp.LOGGER.error("Failed to save waypoints", e);
         }
     }
 
@@ -394,7 +395,7 @@ public class WaypointRenderer {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            EasyWp.LOGGER.error("Failed to load waypoints", e);
         }
     }
 

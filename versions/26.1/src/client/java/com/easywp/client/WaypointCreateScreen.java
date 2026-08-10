@@ -58,15 +58,11 @@ public class WaypointCreateScreen extends Screen {
         super(I18nHelper.getComponent("create.title.new"));
         this.originalPos = pos != null ? pos : BlockPos.ZERO;
         this.editingWaypoint = null;
-        
-        try {
-            Random rand = new Random();
-            int r = rand.nextInt(COLOR_GRID.length);
-            int c = rand.nextInt(COLOR_GRID[r].length);
-            this.selectedColor = COLOR_GRID[r][c];
-        } catch (Throwable t) {
-            this.selectedColor = 0xFF00FF00;
-        }
+
+        Random rand = new Random();
+        int r = rand.nextInt(COLOR_GRID.length);
+        int c = rand.nextInt(COLOR_GRID[r].length);
+        this.selectedColor = COLOR_GRID[r][c];
     }
 
     public WaypointCreateScreen(Waypoint waypointToEdit) {
@@ -167,12 +163,12 @@ public class WaypointCreateScreen extends Screen {
         int minY = centerY - bgH / 2;
 
         RenderPipeline pipeline = RenderPipelines.GUI_TEXTURED;
-        
+
         // Modal background card (ARGB 0xD010141E)
         graphics.fill(minX, minY, minX + bgW, minY + bgH, 0xD010141E);
         // Header title background bar (ARGB 0xE0181E30)
         graphics.fill(minX, minY, minX + bgW, minY + 20, 0xE0181E30);
-        
+
         // Modal border lines
         graphics.fill(minX, minY, minX + bgW, minY + 1, 0xFF3D4966);
         graphics.fill(minX, minY + bgH - 1, minX + bgW, minY + bgH, 0xFF3D4966);
