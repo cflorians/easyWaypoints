@@ -10,14 +10,13 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.rendertype.RenderType;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.state.level.CameraEntityRenderState;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
-import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 import java.io.File;
 import java.io.FileReader;
@@ -33,12 +32,7 @@ public class WaypointRenderer {
     public static final List<Waypoint> waypoints = new ArrayList<>();
     private static boolean initialized = false;
 
-    public static final Identifier MARKER_TEXTURE = Identifier.fromNamespaceAndPath("easywp", "textures/waypoint_marker.png");
-
-    // RenderTypes for see-through text and shaderpack beacon beam compatibility
-    public static final RenderType WAYPOINT_SEE_THROUGH = RenderTypes.textSeeThrough(MARKER_TEXTURE);
-    public static final RenderType WAYPOINT_VISIBLE     = RenderTypes.text(MARKER_TEXTURE);
-    public static final RenderType WAYPOINT_SHADER_COMPAT = RenderTypes.beaconBeam(MARKER_TEXTURE, true);
+    private static final int LABEL_BACKDROP = 0x40000000;
 
     // Scaling constants for angular distance sizing
     private static final float WAYPOINT_VISUAL_ANGLE        = 0.055f;
@@ -47,8 +41,42 @@ public class WaypointRenderer {
     private static final float WAYPOINT_GROWTH_START_DIST   = 2.0f;
     private static final float MARKER_ASPECT_FACTOR         = 5.0f / 14.0f; // Pre-calculated (5/7) / 2
 
+    // Distance the billboard is actually drawn at, short enough to stay out of any fog ramp
+    private static final double MARKER_PROJECTION_DIST = 4.0;
+
     private static String lastWorldId = "";
     private static final Object lock = new Object();
+
+    /** Per-frame view bob translation, converted from camera space to world axes. */
+    private static final Vector3f bobOffset = new Vector3f();
+
+    /**
+     * Mirrors the translation half of {@code GameRenderer.bobView}.
+     *
+     * <p>Vanilla folds the bob into the projection matrix and Iris moves it to the model view,
+     * but either way it ends up as {@code position = bobTranslation + bobRotation * cameraPos},
+     * so the translation is added once, in camera space, regardless of how far the geometry is.
+     * Only the translation matters here: the two rotations the bob also applies pivot around the
+     * eye and therefore move near and far geometry by the same angle.
+     */
+    private static void computeBobOffset(Minecraft client, CameraRenderState cameraState) {
+        CameraEntityRenderState eye = cameraState.entityRenderState;
+        if (!eye.isPlayer || !client.options.bobView().get()) {
+            bobOffset.set(0.0f, 0.0f, 0.0f);
+            return;
+        }
+
+        float walkDistance = eye.backwardsInterpolatedWalkDistance;
+        float bob = eye.bob;
+        bobOffset.set(
+                Mth.sin(walkDistance * (float) Math.PI) * bob * 0.5f,
+                -Math.abs(Mth.cos(walkDistance * (float) Math.PI) * bob),
+                0.0f
+        );
+        // Camera orientation maps camera local axes (X right, Y up, Z backwards) onto world axes,
+        // which is the space the render offsets below are expressed in.
+        bobOffset.rotate(cameraState.orientation);
+    }
 
     private static class WaypointHolder {
         Waypoint waypoint;
@@ -103,6 +131,8 @@ public class WaypointRenderer {
             }
         }
 
+        computeBobOffset(client, cameraState);
+
         activeWaypoints.clear();
         int poolIndex = 0;
 
@@ -150,16 +180,33 @@ public class WaypointRenderer {
             double dirY = dy / realDistance;
             double dirZ = dz / realDistance;
 
-            double renderX = dirX * clampDist;
-            double renderY = dirY * clampDist;
-            double renderZ = dirZ * clampDist;
-
             double growthDist = Math.max(0.0, clampDist - WAYPOINT_GROWTH_START_DIST);
             float markerSize = (float) Mth.clamp(
                     WAYPOINT_MIN_SIZE + WAYPOINT_VISUAL_ANGLE * (float) growthDist,
                     WAYPOINT_MIN_SIZE,
                     WAYPOINT_MAX_SIZE
             );
+
+            // Slide the billboard down its own view ray to a fixed short distance and shrink it
+            // by the same factor. A perspective projection divides by z, so scaling every camera
+            // space coordinate by one factor leaves the on-screen result untouched - but the
+            // geometry now sits a few blocks away instead of at the fog wall, and per-vertex fog
+            // (vanilla's, and the one a shaderpack applies inside its gbuffers program) is a
+            // function of that distance. Also keeps the coordinates small, which helps precision.
+            double projectionDist = Math.min(clampDist, MARKER_PROJECTION_DIST);
+            double shrink = projectionDist / clampDist;
+
+            // ...with one caveat: the view bob adds a fixed camera space offset to the whole
+            // scene, and that offset is NOT scaled by the shrink, so it survives as parallax.
+            // Harmless at 144 blocks, a visible sway at 4. Feeding back (shrink - 1) times the
+            // bob puts the billboard exactly where the unshrunk one would have landed.
+            double bobFix = shrink - 1.0;
+
+            double renderX = dirX * projectionDist + bobOffset.x * bobFix;
+            double renderY = dirY * projectionDist + bobOffset.y * bobFix;
+            double renderZ = dirZ * projectionDist + bobOffset.z * bobFix;
+
+            markerSize *= (float) shrink;
 
             WaypointHolder holder;
             if (poolIndex < holderPool.size()) {
@@ -178,6 +225,7 @@ public class WaypointRenderer {
         activeWaypoints.sort((a, b) -> Double.compare(b.realDistance, a.realDistance));
 
         boolean isShaderActive = ShaderDetector.isShaderPackActive();
+        RenderType markerType = WaypointRenderTypes.marker(isShaderActive);
 
         for (WaypointHolder holder : activeWaypoints) {
             Waypoint wp = holder.waypoint;
@@ -200,17 +248,10 @@ public class WaypointRenderer {
             poseStack.mulPose(Axis.YP.rotationDegrees(-cameraState.yRot));
             poseStack.mulPose(Axis.XP.rotationDegrees(cameraState.xRot));
 
-            // Standard see-through render pass
-            VertexConsumer bufferSeeThrough = context.bufferSource().getBuffer(WAYPOINT_SEE_THROUGH);
-            drawMarker(poseStack, bufferSeeThrough, r, g, b, 255, markerSize, false);
-            context.bufferSource().endBatch(WAYPOINT_SEE_THROUGH);
-
-            // Shaderpack fallback render pass
-            if (isShaderActive) {
-                VertexConsumer bufferShader = context.bufferSource().getBuffer(WAYPOINT_SHADER_COMPAT);
-                drawMarker(poseStack, bufferShader, r, g, b, 255, markerSize, true);
-                context.bufferSource().endBatch(WAYPOINT_SHADER_COMPAT);
-            }
+            // Single marker pass: overlapping passes blend into each other and wash the colour out
+            VertexConsumer markerBuffer = context.bufferSource().getBuffer(markerType);
+            drawMarker(poseStack, markerBuffer, r, g, b, 255, markerSize);
+            context.bufferSource().endBatch(markerType);
 
             // Text label
             poseStack.pushPose();
@@ -224,7 +265,7 @@ public class WaypointRenderer {
                     nameText, xOffset, 0.0f,
                     0x00FFFFFF, false,
                     poseStack.last().pose(), context.bufferSource(),
-                    Font.DisplayMode.SEE_THROUGH, 0x40000000, 0xF000F0
+                    Font.DisplayMode.SEE_THROUGH, LABEL_BACKDROP, 0xF000F0
             );
 
             // Foreground text pass
@@ -246,54 +287,40 @@ public class WaypointRenderer {
         context.bufferSource().endBatch();
     }
 
-    private static void drawMarker(PoseStack poseStack, VertexConsumer buffer, int r, int g, int b, int a, float size, boolean hasOverlayAndNormal) {
-        Matrix4f poseMatrix = poseStack.last().pose();
+    /**
+     * Emits the billboard quad.
+     *
+     * <p>The normal is written even though neither vanilla pipeline declares one: while a
+     * shaderpack is loaded Iris widens the beacon beam's BLOCK format to its own TERRAIN
+     * format, which does carry a normal, and the buffer refuses to close a vertex that
+     * leaves it unset. On the vanilla pass the extra element is simply dropped.
+     */
+    private static void drawMarker(PoseStack poseStack, VertexConsumer buffer, int r, int g, int b, int a, float size) {
+        PoseStack.Pose pose = poseStack.last();
+        Matrix4f poseMatrix = pose.pose();
         float halfWidth = size * MARKER_ASPECT_FACTOR;
         int lightmap = 240;
 
-        if (hasOverlayAndNormal) {
-            buffer.addVertex(poseMatrix, -halfWidth, size, 0.0f)
-                    .setColor(r, g, b, a)
-                    .setUv(0.0f, 0.0f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY)
-                    .setUv2(lightmap, lightmap)
-                    .setNormal(0.0f, 0.0f, 1.0f);
-            buffer.addVertex(poseMatrix, halfWidth, size, 0.0f)
-                    .setColor(r, g, b, a)
-                    .setUv(1.0f, 0.0f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY)
-                    .setUv2(lightmap, lightmap)
-                    .setNormal(0.0f, 0.0f, 1.0f);
-            buffer.addVertex(poseMatrix, halfWidth, 0.0f, 0.0f)
-                    .setColor(r, g, b, a)
-                    .setUv(1.0f, 1.0f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY)
-                    .setUv2(lightmap, lightmap)
-                    .setNormal(0.0f, 0.0f, 1.0f);
-            buffer.addVertex(poseMatrix, -halfWidth, 0.0f, 0.0f)
-                    .setColor(r, g, b, a)
-                    .setUv(0.0f, 1.0f)
-                    .setOverlay(OverlayTexture.NO_OVERLAY)
-                    .setUv2(lightmap, lightmap)
-                    .setNormal(0.0f, 0.0f, 1.0f);
-        } else {
-            buffer.addVertex(poseMatrix, -halfWidth, size, 0.0f)
-                    .setColor(r, g, b, a)
-                    .setUv(0.0f, 0.0f)
-                    .setUv2(lightmap, lightmap);
-            buffer.addVertex(poseMatrix, halfWidth, size, 0.0f)
-                    .setColor(r, g, b, a)
-                    .setUv(1.0f, 0.0f)
-                    .setUv2(lightmap, lightmap);
-            buffer.addVertex(poseMatrix, halfWidth, 0.0f, 0.0f)
-                    .setColor(r, g, b, a)
-                    .setUv(1.0f, 1.0f)
-                    .setUv2(lightmap, lightmap);
-            buffer.addVertex(poseMatrix, -halfWidth, 0.0f, 0.0f)
-                    .setColor(r, g, b, a)
-                    .setUv(0.0f, 1.0f)
-                    .setUv2(lightmap, lightmap);
-        }
+        buffer.addVertex(poseMatrix, -halfWidth, size, 0.0f)
+                .setColor(r, g, b, a)
+                .setUv(0.0f, 0.0f)
+                .setUv2(lightmap, lightmap)
+                .setNormal(pose, 0.0f, 0.0f, 1.0f);
+        buffer.addVertex(poseMatrix, halfWidth, size, 0.0f)
+                .setColor(r, g, b, a)
+                .setUv(1.0f, 0.0f)
+                .setUv2(lightmap, lightmap)
+                .setNormal(pose, 0.0f, 0.0f, 1.0f);
+        buffer.addVertex(poseMatrix, halfWidth, 0.0f, 0.0f)
+                .setColor(r, g, b, a)
+                .setUv(1.0f, 1.0f)
+                .setUv2(lightmap, lightmap)
+                .setNormal(pose, 0.0f, 0.0f, 1.0f);
+        buffer.addVertex(poseMatrix, -halfWidth, 0.0f, 0.0f)
+                .setColor(r, g, b, a)
+                .setUv(0.0f, 1.0f)
+                .setUv2(lightmap, lightmap)
+                .setNormal(pose, 0.0f, 0.0f, 1.0f);
     }
 
     public static String getWorldId() {

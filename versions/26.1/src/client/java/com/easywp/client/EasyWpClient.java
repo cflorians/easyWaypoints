@@ -7,6 +7,7 @@ public class EasyWpClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		ModKeyBindings.register();
+		WaypointRenderTypes.init();
 		WaypointRenderer.init();
 
 		LevelRenderEvents.END_MAIN.register(context -> {
