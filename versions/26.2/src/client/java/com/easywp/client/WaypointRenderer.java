@@ -206,6 +206,8 @@ public class WaypointRenderer {
 
         computeBobOffset(client, cameraState);
 
+        float sizeScale = (float) (ModConfig.get().waypointSize.sizePercent / 100.0);
+
         activeWaypoints.clear();
         int poolIndex = 0;
 
@@ -258,7 +260,7 @@ public class WaypointRenderer {
                     WAYPOINT_MIN_SIZE + WAYPOINT_VISUAL_ANGLE * (float) growthDist,
                     WAYPOINT_MIN_SIZE,
                     WAYPOINT_MAX_SIZE
-            );
+            ) * sizeScale;
 
             WaypointHolder holder;
             if (poolIndex < holderPool.size()) {
@@ -298,7 +300,7 @@ public class WaypointRenderer {
             float markerSize = holder.markerSize;
 
             String wpName  = wp.getName() != null ? wp.getName() : "Waypoint";
-            String nameText = wpName.toUpperCase() + " (" + (int) realDistance + "m)";
+            String nameText = wpName + " (" + (int) realDistance + "m)";
 
             int wpColor = wp.getColor();
             int r = (wpColor >> 16) & 0xFF;
@@ -518,6 +520,8 @@ public class WaypointRenderer {
         boolean shared;
         Boolean visible;
         Boolean focused;
+        Boolean death;
+        Long createdAt;
 
         public WaypointData(Waypoint wp) {
             this.name = wp.getName();
@@ -529,6 +533,8 @@ public class WaypointRenderer {
             this.shared = wp.isShared();
             this.visible = wp.isVisible();
             this.focused = wp.isFocused();
+            this.death = wp.isDeath();
+            this.createdAt = wp.getCreatedAtMillis();
         }
 
         public Waypoint toWaypoint() {
@@ -539,7 +545,9 @@ public class WaypointRenderer {
                 dimension,
                 shared,
                 visible == null ? true : visible,
-                focused == null ? false : focused
+                focused == null ? false : focused,
+                death == null ? false : death,
+                createdAt == null ? 0L : createdAt
             );
         }
     }

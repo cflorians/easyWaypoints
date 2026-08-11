@@ -1,6 +1,7 @@
 package com.easywp.client;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 
 public class EasyWpClient implements ClientModInitializer {
@@ -13,5 +14,7 @@ public class EasyWpClient implements ClientModInitializer {
 		LevelRenderEvents.END_MAIN.register(context -> {
 			WaypointRenderer.render(context);
 		});
+
+		ClientTickEvents.END_CLIENT_TICK.register(DeathWaypointManager::tick);
 	}
 }

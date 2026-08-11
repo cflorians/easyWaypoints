@@ -82,7 +82,7 @@ public class WaypointCreateScreen extends Screen {
         if (this.editingWaypoint != null) {
             this.nameField.setValue(this.editingWaypoint.getName());
         } else {
-            this.nameField.setValue("Waypoint #" + (WaypointRenderer.waypoints.size() + 1));
+            this.nameField.setValue("WAYPOINT #" + (WaypointRenderer.waypoints.size() + 1));
         }
         this.addRenderableWidget(this.nameField);
 
@@ -239,7 +239,7 @@ public class WaypointCreateScreen extends Screen {
     private void saveWaypoint() {
         String name = this.nameField.getValue();
         if (name.isEmpty()) {
-            name = this.editingWaypoint != null ? this.editingWaypoint.getName() : "Waypoint #" + (WaypointRenderer.waypoints.size() + 1);
+            name = this.editingWaypoint != null ? this.editingWaypoint.getName() : "WAYPOINT #" + (WaypointRenderer.waypoints.size() + 1);
         }
 
         double x = originalPos.getX();
@@ -268,6 +268,10 @@ public class WaypointCreateScreen extends Screen {
             this.editingWaypoint.setColor(this.selectedColor);
             this.editingWaypoint.setDimension(dimension);
             this.editingWaypoint.setShared(this.dimShared);
+            // A manual edit turns a temporary death waypoint into a regular, permanent one
+            // so it stops being auto-deleted on arrival (avoids the classic "renamed
+            // deathpoint still gets deleted" bug seen in other waypoint mods).
+            this.editingWaypoint.setDeath(false);
 
             if (this.minecraft.player != null) {
                 this.minecraft.gui.hud.setOverlayMessage(I18nHelper.getComponent(

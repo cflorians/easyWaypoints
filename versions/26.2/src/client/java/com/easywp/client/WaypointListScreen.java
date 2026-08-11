@@ -50,6 +50,13 @@ public class WaypointListScreen extends Screen {
     private static final Identifier ICON_DIM_OFF = Identifier.fromNamespaceAndPath("easywp", "textures/gui/sharedimentionoff.png");
     private static final Identifier ICON_DELETE = Identifier.fromNamespaceAndPath("easywp", "textures/gui/delete.png");
 
+    /**
+     * Name column runs from the marker swatch (centerX - 118) up to just short of the TP icon
+     * (centerX - 12), regardless of whether TP is actually shown for this player, so the layout
+     * doesn't shift with permissions. Leaves a small gap so the text never touches the icon.
+     */
+    private static final int NAME_MAX_WIDTH = 102;
+
     private static class WaypointEntry {
         final Waypoint waypoint;
         final BlockPos displayPos;
@@ -57,22 +64,37 @@ public class WaypointListScreen extends Screen {
         final Component nameComponent;
         final Component coordsComponent;
 
-        WaypointEntry(Waypoint waypoint, BlockPos displayPos, boolean converted) {
+        WaypointEntry(net.minecraft.client.gui.Font font, Waypoint waypoint, BlockPos displayPos, boolean converted) {
             this.waypoint = waypoint;
             this.displayPos = displayPos;
             this.converted = converted;
 
-            String name = waypoint.getName().toUpperCase();
+            String name = waypoint.getName();
             if (converted) {
                 String prefix = waypoint.getDimension().equals("minecraft:overworld") ? "[OW] " : "[N] ";
                 name = prefix + name;
             }
-            if (name.length() > 14) {
-                name = name.substring(0, 11) + "...";
+            if (waypoint.isDeath()) {
+                name = "☠ " + name;
             }
+            name = truncateToWidth(font, name, NAME_MAX_WIDTH);
             this.nameComponent = Component.literal(name);
             this.coordsComponent = Component.literal(String.format("%d, %d, %d", displayPos.getX(), displayPos.getY(), displayPos.getZ()));
         }
+    }
+
+    private static String truncateToWidth(net.minecraft.client.gui.Font font, String text, int maxWidth) {
+        if (font.width(text) <= maxWidth) return text;
+
+        String ellipsis = "...";
+        int ellipsisWidth = font.width(ellipsis);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            String candidate = sb.toString() + text.charAt(i);
+            if (font.width(candidate) + ellipsisWidth > maxWidth) break;
+            sb.append(text.charAt(i));
+        }
+        return sb + ellipsis;
     }
 
     public WaypointListScreen(Screen parentScreen) {
@@ -95,7 +117,7 @@ public class WaypointListScreen extends Screen {
             String wpDim = wp.getDimension() != null ? wp.getDimension() : "minecraft:overworld";
 
             if (wpDim.equals(dimension)) {
-                result.add(new WaypointEntry(wp, wp.getPos(), false));
+                result.add(new WaypointEntry(this.font, wp, wp.getPos(), false));
             } else if (wp.isShared()) {
                 if (wpDim.equals("minecraft:overworld") && dimension.equals("minecraft:the_nether")) {
                     BlockPos netherPos = new BlockPos(
@@ -103,14 +125,14 @@ public class WaypointListScreen extends Screen {
                         wp.getPos().getY(),
                         (int) Math.round(wp.getPos().getZ() / 8.0)
                     );
-                    result.add(new WaypointEntry(wp, netherPos, true));
+                    result.add(new WaypointEntry(this.font, wp, netherPos, true));
                 } else if (wpDim.equals("minecraft:the_nether") && dimension.equals("minecraft:overworld")) {
                     BlockPos overworldPos = new BlockPos(
                         (int) Math.round(wp.getPos().getX() * 8.0),
                         wp.getPos().getY(),
                         (int) Math.round(wp.getPos().getZ() * 8.0)
                     );
-                    result.add(new WaypointEntry(wp, overworldPos, true));
+                    result.add(new WaypointEntry(this.font, wp, overworldPos, true));
                 }
             }
         }
@@ -153,8 +175,8 @@ public class WaypointListScreen extends Screen {
         int centerY = this.height / 2;
 
         if (this.searchField == null) {
-            this.searchField = new EditBox(this.font, centerX - 130, centerY - 82, 260, 16, Component.literal("Buscar..."));
-            this.searchField.setHint(Component.literal("Buscar waypoint..."));
+            this.searchField = new EditBox(this.font, centerX - 130, centerY - 82, 260, 16, I18nHelper.getComponent("menu.search"));
+            this.searchField.setHint(I18nHelper.getComponent("menu.search_hint"));
             this.searchField.setResponder(text -> {
                 this.scrollIndex = 0;
                 refreshItemWidgets();
@@ -165,6 +187,13 @@ public class WaypointListScreen extends Screen {
         }
 
         this.addRenderableWidget(this.searchField);
+
+        this.addRenderableWidget(
+            ModernButton.modernBuilder(I18nHelper.getComponent("config.open_button"), btn -> {
+                this.minecraft.setScreenAndShow(new ModConfigScreen(this));
+            }).pos(8, this.height - 28).size(70, 20).build()
+        );
+
         refreshItemWidgets();
     }
 

@@ -11,6 +11,8 @@ public class Waypoint {
     private boolean visible = true;
     private boolean focused = false;
     private boolean forceVisible = false;
+    private boolean death = false;
+    private long createdAtMillis = 0L;
 
     public Waypoint(String name, BlockPos pos) {
         this(name, pos, 0xFF00FF00);
@@ -29,6 +31,10 @@ public class Waypoint {
     }
 
     public Waypoint(String name, BlockPos pos, int color, String dimension, boolean shared, boolean visible, boolean focused) {
+        this(name, pos, color, dimension, shared, visible, focused, false, 0L);
+    }
+
+    public Waypoint(String name, BlockPos pos, int color, String dimension, boolean shared, boolean visible, boolean focused, boolean death, long createdAtMillis) {
         this.name = name;
         this.pos = pos;
         this.color = color;
@@ -37,6 +43,8 @@ public class Waypoint {
         this.visible = visible;
         this.focused = focused;
         this.forceVisible = false;
+        this.death = death;
+        this.createdAtMillis = createdAtMillis;
     }
 
     public String getName() {
@@ -101,5 +109,21 @@ public class Waypoint {
 
     public void setForceVisible(boolean forceVisible) {
         this.forceVisible = forceVisible;
+    }
+
+    public boolean isDeath() {
+        return death;
+    }
+
+    public void setDeath(boolean death) {
+        this.death = death;
+    }
+
+    public long getCreatedAtMillis() {
+        return createdAtMillis;
+    }
+
+    public void setCreatedAtMillis(long createdAtMillis) {
+        this.createdAtMillis = createdAtMillis;
     }
 }

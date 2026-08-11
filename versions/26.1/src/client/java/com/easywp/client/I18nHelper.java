@@ -36,6 +36,10 @@ public class I18nHelper {
                 return es ? "Confirmar Borrado" : "Confirm Deletion";
             case "menu.confirm_delete_text":
                 return es ? "¿Estás seguro de borrar \"%s\"?" : "Are you sure you want to delete \"%s\"?";
+            case "menu.search":
+                return es ? "Buscar..." : "Search...";
+            case "menu.search_hint":
+                return es ? "Buscar waypoint..." : "Search waypoint...";
 
             case "create.title.new":
                 return es ? "Crear Waypoint" : "Create Waypoint";
@@ -65,9 +69,29 @@ public class I18nHelper {
             case "hud.hidden":
                 return es ? "§7Waypoints ocultos" : "§7Waypoints hidden";
             case "hud.mode.world":
-                return es ? "§fModo Waypoints: Marcadores Clásicos" : "§fWaypoints Mode: Classic Markers";
+                return es ? "§fWaypoints activados" : "§fWaypoints enabled";
             case "hud.mode.disabled":
-                return es ? "§7Modo Waypoints: Desactivado" : "§7Waypoints Mode: Disabled";
+                return es ? "§7Waypoints desactivados" : "§7Waypoints disabled";
+
+            case "death.name":
+                return es ? "☠ Muerte %s" : "☠ Death %s";
+            case "death.created":
+                return es ? "§cWaypoint de muerte creado" : "§cDeath waypoint created";
+            case "death.reached":
+                return es ? "§aWaypoint de muerte alcanzado" : "§aDeath waypoint reached";
+
+            case "config.title":
+                return es ? "Configuración" : "Settings";
+            case "config.open_button":
+                return es ? "Ajustes" : "Settings";
+            case "config.size_row":
+                return es ? "Tamaño: %.0f%%" : "Size: %.0f%%";
+            case "config.section.death_waypoint":
+                return es ? "Waypoint de muerte" : "Death Waypoint";
+            case "config.radius_row":
+                return es ? "Radio: %.0f bloques" : "Radius: %.0f blocks";
+            case "config.grace_row":
+                return es ? "Tiempo: %.1f s" : "Time: %.1f s";
 
             default:
                 return key;
