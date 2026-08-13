@@ -1,37 +1,41 @@
 package com.easywp.client;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
-import net.minecraft.client.gui.components.StringWidget;
-import net.minecraft.client.gui.layouts.HeaderAndFooterLayout;
-import net.minecraft.client.gui.layouts.LayoutElement;
-import net.minecraft.client.gui.layouts.LayoutSettings;
-import net.minecraft.client.gui.layouts.LinearLayout;
+import net.minecraft.client.gui.components.OptionsList;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.options.OptionsSubScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 
 import java.util.function.DoubleConsumer;
 
 /**
- * Mod settings screen, built entirely from vanilla widgets (sliders, cycle
- * button, plain buttons) laid out with vanilla's own header/footer layout so
- * it matches the look of Minecraft's own options screens, instead of the
- * mod's custom dark-blue modal style used by the waypoint list/create screens.
- * Each setting has its own reset-to-default button next to it. Keybindings
- * are not edited here - the mod's keys are already registered under their
- * own vanilla category and are rebound from Minecraft's own Controls screen.
+ * Mod settings screen, built on vanilla's own {@link OptionsSubScreen} +
+ * {@link OptionsList} - the exact same scrollable widget Minecraft's own
+ * Video Settings/Controls/etc. screens use - so it both looks and scrolls
+ * like a native options screen instead of the mod's custom dark-blue modal
+ * style used by the waypoint list/create screens. One setting per row
+ * (control + its own "Reset" button), grouped under section headers.
+ * Keybindings are not edited here - the mod's keys are already registered
+ * under their own vanilla category and are rebound from Minecraft's own
+ * Controls screen.
  */
-public class ModConfigScreen extends Screen {
-    private final WaypointListScreen parentScreen;
-    private final HeaderAndFooterLayout layout = new HeaderAndFooterLayout(this);
-
-    private static final int ROW_WIDTH = 250;
+public class ModConfigScreen extends OptionsSubScreen {
+    private static final int CONTROL_WIDTH = 150;
+    private static final int RESET_WIDTH = 90;
     private static final int ROW_HEIGHT = 20;
-    private static final int CONTROL_WIDTH = 194;
-    private static final int RESET_WIDTH = 50;
-    private static final int ROW_SPACING = 6;
+
+    // OptionsList.getRowWidth() is hardcoded to 310 by vanilla and the scrollbar is placed at
+    // getRowRight() + margin, where getRowRight() derives from the width passed to the list's own
+    // constructor. Passing the full screen width (as OptionsSubScreen's default addContents() does)
+    // pins the scrollbar near the true right edge of the window, far from our much narrower rows.
+    // Passing a width just past the row width instead keeps the list (and its scrollbar) centered
+    // right next to the actual row content.
+    private static final int LIST_WIDTH = 330;
 
     // Matches vanilla's own per-keybind reset button (see KeyBindsList) so the label reads
     // exactly the way Minecraft's own Controls screen does, in whatever language it's set to.
@@ -40,64 +44,112 @@ public class ModConfigScreen extends Screen {
     private static final double SIZE_PERCENT_FLOOR = 10.0;
     private static final double SIZE_PERCENT_CEIL = 300.0;
 
+    private static final double OPACITY_FLOOR = 0.0;
+    private static final double OPACITY_CEIL = 100.0;
+
     private static final double RADIUS_FLOOR = 1.0;
     private static final double RADIUS_CEIL = 50.0;
 
     private static final double GRACE_FLOOR = 0.5;
     private static final double GRACE_CEIL = 30.0;
 
-    public ModConfigScreen(WaypointListScreen parentScreen) {
-        super(I18nHelper.getComponent("config.title"));
-        this.parentScreen = parentScreen;
+    public ModConfigScreen(Screen parentScreen) {
+        super(parentScreen, Minecraft.getInstance().options, I18nHelper.getComponent("config.title"));
     }
 
     @Override
-    protected void init() {
-        LinearLayout header = this.layout.addToHeader(LinearLayout.vertical().spacing(8));
-        header.addChild(new StringWidget(this.getTitle(), this.font), LayoutSettings::alignHorizontallyCenter);
+    protected void addContents() {
+        this.list = this.layout.addToContents(new OptionsList(this.minecraft, LIST_WIDTH, this));
+        this.addOptions();
+    }
 
+    @Override
+    protected void addOptions() {
         ModConfig cfg = ModConfig.get();
-        LinearLayout content = this.layout.addToContents(LinearLayout.vertical().spacing(8));
 
-        content.addChild(row(
+        this.list.addHeader(I18nHelper.getComponent("config.section.appearance"));
+        this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, SIZE_PERCENT_FLOOR, SIZE_PERCENT_CEIL, 1.0,
                         cfg.waypointSize.sizePercent, "config.size_row", this::applySizePercent),
-                this::resetSizePercent
-        ));
+                resetButton(this::resetSizePercent)
+        );
+        this.list.addSmall(
+                new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, OPACITY_FLOOR, OPACITY_CEIL, 1.0,
+                        cfg.waypointSize.opacityPercent, "config.opacity_row", this::applyOpacityPercent),
+                resetButton(this::resetOpacityPercent)
+        );
+        this.list.addSmall(
+                CycleButton.onOffBuilder(cfg.labelDisplay.showDistance)
+                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.show_distance"),
+                                (button, value) -> {
+                                    ModConfig.get().labelDisplay.showDistance = value;
+                                    ModConfig.save();
+                                }),
+                resetButton(this::resetShowDistance)
+        );
+        this.list.addSmall(
+                CycleButton.onOffBuilder(cfg.labelDisplay.uppercase)
+                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.uppercase_labels"),
+                                (button, value) -> {
+                                    ModConfig.get().labelDisplay.uppercase = value;
+                                    ModConfig.save();
+                                }),
+                resetButton(this::resetUppercaseLabels)
+        );
 
-        content.addChild(row(
+        this.list.addHeader(I18nHelper.getComponent("config.section.death_waypoint"));
+        this.list.addSmall(
                 CycleButton.onOffBuilder(cfg.deathWaypoints.enabled)
-                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.section.death_waypoint"),
+                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.death_enabled_toggle"),
                                 (button, value) -> {
                                     ModConfig.get().deathWaypoints.enabled = value;
                                     ModConfig.save();
                                 }),
-                this::resetDeathEnabled
-        ));
-
-        content.addChild(row(
+                resetButton(this::resetDeathEnabled)
+        );
+        this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, RADIUS_FLOOR, RADIUS_CEIL, 1.0,
                         cfg.deathWaypoints.radius, "config.radius_row", this::applyRadius),
-                this::resetRadius
-        ));
-
-        content.addChild(row(
+                resetButton(this::resetRadius)
+        );
+        this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, GRACE_FLOOR, GRACE_CEIL, 0.5,
                         cfg.deathWaypoints.graceSeconds, "config.grace_row", this::applyGrace),
-                this::resetGrace
-        ));
+                resetButton(this::resetGrace)
+        );
 
-        this.layout.addToFooter(Button.builder(I18nHelper.getComponent("menu.back"), btn -> {
-            this.minecraft.setScreen(this.parentScreen);
-        }).width(ROW_WIDTH).build());
-
-        this.layout.visitWidgets(this::addRenderableWidget);
-        this.repositionElements();
+        this.list.addHeader(I18nHelper.getComponent("config.section.behavior"));
+        this.list.addSmall(
+                CycleButton.onOffBuilder(cfg.confirmations.confirmBeforeDelete)
+                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.confirm_delete_toggle"),
+                                (button, value) -> {
+                                    ModConfig.get().confirmations.confirmBeforeDelete = value;
+                                    ModConfig.save();
+                                }),
+                resetButton(this::resetConfirmBeforeDelete)
+        );
+        this.list.addSmall(
+                CycleButton.onOffBuilder(cfg.visibility.rememberOnExit)
+                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.remember_visibility"),
+                                (button, value) -> {
+                                    ModConfig.get().visibility.rememberOnExit = value;
+                                    ModConfig.save();
+                                }),
+                resetButton(this::resetRememberVisibility)
+        );
     }
 
     @Override
-    protected void repositionElements() {
-        this.layout.arrangeElements();
+    protected void addFooter() {
+        this.layout.addToFooter(Button.builder(I18nHelper.getComponent("menu.back"), btn -> this.onClose())
+                .width(CONTROL_WIDTH + RESET_WIDTH)
+                .build());
+    }
+
+    @Override
+    public void removed() {
+        // Deliberately does not call super.removed(): OptionsSubScreen's default re-saves
+        // vanilla's own options.txt on close, which this screen has no reason to trigger.
     }
 
     @Override
@@ -105,19 +157,21 @@ public class ModConfigScreen extends Screen {
         return false;
     }
 
-    /** Pairs a control widget with a small reset-to-default button to its right. */
-    private LinearLayout row(LayoutElement control, Runnable onReset) {
-        LinearLayout rowLayout = LinearLayout.horizontal().spacing(ROW_SPACING);
-        rowLayout.addChild(control);
-        rowLayout.addChild(Button.builder(RESET_LABEL, btn -> onReset.run())
+    private AbstractWidget resetButton(Runnable onReset) {
+        return Button.builder(RESET_LABEL, btn -> onReset.run())
                 .width(RESET_WIDTH)
-                .build());
-        return rowLayout;
+                .build();
     }
 
     private void applySizePercent(double v) {
         ModConfig cfg = ModConfig.get();
         cfg.waypointSize.sizePercent = clamp(v, SIZE_PERCENT_FLOOR, SIZE_PERCENT_CEIL);
+        ModConfig.save();
+    }
+
+    private void applyOpacityPercent(double v) {
+        ModConfig cfg = ModConfig.get();
+        cfg.waypointSize.opacityPercent = clamp(v, OPACITY_FLOOR, OPACITY_CEIL);
         ModConfig.save();
     }
 
@@ -135,6 +189,24 @@ public class ModConfigScreen extends Screen {
 
     private void resetSizePercent() {
         ModConfig.get().waypointSize.sizePercent = new ModConfig.WaypointSize().sizePercent;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetOpacityPercent() {
+        ModConfig.get().waypointSize.opacityPercent = new ModConfig.WaypointSize().opacityPercent;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetShowDistance() {
+        ModConfig.get().labelDisplay.showDistance = new ModConfig.LabelDisplay().showDistance;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetUppercaseLabels() {
+        ModConfig.get().labelDisplay.uppercase = new ModConfig.LabelDisplay().uppercase;
         ModConfig.save();
         reopen();
     }
@@ -157,9 +229,21 @@ public class ModConfigScreen extends Screen {
         reopen();
     }
 
+    private void resetConfirmBeforeDelete() {
+        ModConfig.get().confirmations.confirmBeforeDelete = new ModConfig.Confirmations().confirmBeforeDelete;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetRememberVisibility() {
+        ModConfig.get().visibility.rememberOnExit = new ModConfig.Visibility().rememberOnExit;
+        ModConfig.save();
+        reopen();
+    }
+
     /** Rebuilds the screen from scratch so every widget reflects the freshly-reset config value. */
     private void reopen() {
-        this.minecraft.setScreen(new ModConfigScreen(this.parentScreen));
+        this.minecraft.setScreen(new ModConfigScreen(this.lastScreen));
     }
 
     private static double clamp(double value, double min, double max) {

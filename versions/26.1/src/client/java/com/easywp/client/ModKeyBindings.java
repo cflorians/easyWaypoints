@@ -14,6 +14,7 @@ public class ModKeyBindings {
     public static KeyMapping listWaypointsKey;
     public static KeyMapping.Category EASYWP_CATEGORY;
     public static WaypointDisplayMode displayMode = WaypointDisplayMode.WORLD_MARKERS;
+    private static boolean appliedRememberedVisibility = false;
 
     public static void register() {
         EASYWP_CATEGORY = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("easywp", "easywp_controls"));
@@ -40,8 +41,23 @@ public class ModKeyBindings {
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            // Deferred to the first tick (rather than the static field initializer above) because
+            // ModConfig.get() needs Minecraft.getInstance().gameDirectory, which isn't guaranteed
+            // to be ready yet during ClientModInitializer.onInitializeClient().
+            if (!appliedRememberedVisibility) {
+                appliedRememberedVisibility = true;
+                ModConfig.Visibility visibilityCfg = ModConfig.get().visibility;
+                if (visibilityCfg.rememberOnExit) {
+                    displayMode = visibilityCfg.lastVisible ? WaypointDisplayMode.WORLD_MARKERS : WaypointDisplayMode.DISABLED;
+                }
+            }
+
             while (toggleWaypointsKey.consumeClick()) {
                 displayMode = displayMode.next();
+                if (ModConfig.get().visibility.rememberOnExit) {
+                    ModConfig.get().visibility.lastVisible = (displayMode == WaypointDisplayMode.WORLD_MARKERS);
+                    ModConfig.save();
+                }
                 if (client.player != null) {
                     client.gui.setOverlayMessage(
                         I18nHelper.getComponent(displayMode.getTranslationKey()),

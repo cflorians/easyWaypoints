@@ -82,12 +82,26 @@ public class I18nHelper {
 
             case "config.title":
                 return es ? "Configuración" : "Settings";
-            case "config.open_button":
-                return es ? "Ajustes" : "Settings";
             case "config.size_row":
                 return es ? "Tamaño: %.0f%%" : "Size: %.0f%%";
+            case "config.opacity_row":
+                return es ? "Opacidad: %.0f%%" : "Opacity: %.0f%%";
+            case "config.show_distance":
+                return es ? "Mostrar distancia" : "Show Distance";
+            case "config.uppercase_labels":
+                return es ? "Texto en mayúsculas" : "Uppercase Text";
+            case "config.confirm_delete_toggle":
+                return es ? "Confirmar antes de borrar" : "Confirm Before Delete";
+            case "config.remember_visibility":
+                return es ? "Recordar visibilidad" : "Remember Visibility";
+            case "config.section.appearance":
+                return es ? "§7Apariencia" : "§7Appearance";
             case "config.section.death_waypoint":
-                return es ? "Waypoint de muerte" : "Death Waypoint";
+                return es ? "§7Waypoint de muerte" : "§7Death Waypoint";
+            case "config.section.behavior":
+                return es ? "§7Comportamiento" : "§7Behavior";
+            case "config.death_enabled_toggle":
+                return es ? "Activar" : "Enabled";
             case "config.radius_row":
                 return es ? "Radio: %.0f bloques" : "Radius: %.0f blocks";
             case "config.grace_row":

@@ -49,6 +49,7 @@ public class WaypointListScreen extends Screen {
     private static final Identifier ICON_DIM_ON = Identifier.fromNamespaceAndPath("easywp", "textures/gui/sharedimentionon.png");
     private static final Identifier ICON_DIM_OFF = Identifier.fromNamespaceAndPath("easywp", "textures/gui/sharedimentionoff.png");
     private static final Identifier ICON_DELETE = Identifier.fromNamespaceAndPath("easywp", "textures/gui/delete.png");
+    private static final Identifier ICON_CONFIG = Identifier.fromNamespaceAndPath("easywp", "textures/gui/configicon.png");
 
     /**
      * Name column runs from the marker swatch (centerX - 118) up to just short of the TP icon
@@ -189,9 +190,9 @@ public class WaypointListScreen extends Screen {
         this.addRenderableWidget(this.searchField);
 
         this.addRenderableWidget(
-            ModernButton.modernBuilder(I18nHelper.getComponent("config.open_button"), btn -> {
+            ModernButton.modernBuilder(Component.literal(""), btn -> {
                 this.minecraft.setScreenAndShow(new ModConfigScreen(this));
-            }).pos(8, this.height - 28).size(70, 20).build()
+            }).pos(8, this.height - 28).size(20, 20).build()
         );
 
         refreshItemWidgets();
@@ -226,17 +227,23 @@ public class WaypointListScreen extends Screen {
             int buttonX = centerX + 108;
 
             var delBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
-                this.minecraft.setScreenAndShow(new ConfirmScreen(
-                    confirmed -> {
-                        if (confirmed) {
-                            WaypointRenderer.waypoints.remove(wp);
-                            WaypointRenderer.saveToFile();
-                        }
-                        this.minecraft.setScreenAndShow(this);
-                    },
-                    I18nHelper.getComponent("menu.confirm_delete_title"),
-                    I18nHelper.getComponent("menu.confirm_delete_text", wp.getName())
-                ));
+                if (ModConfig.get().confirmations.confirmBeforeDelete) {
+                    this.minecraft.setScreenAndShow(new ConfirmScreen(
+                        confirmed -> {
+                            if (confirmed) {
+                                WaypointRenderer.waypoints.remove(wp);
+                                WaypointRenderer.saveToFile();
+                            }
+                            this.minecraft.setScreenAndShow(this);
+                        },
+                        I18nHelper.getComponent("menu.confirm_delete_title"),
+                        I18nHelper.getComponent("menu.confirm_delete_text", wp.getName())
+                    ));
+                } else {
+                    WaypointRenderer.waypoints.remove(wp);
+                    WaypointRenderer.saveToFile();
+                    refreshItemWidgets();
+                }
             }).pos(buttonX, itemY).size(18, 18).build();
             this.addRenderableWidget(delBtn);
             dynamicWidgets.add(delBtn);
@@ -428,6 +435,8 @@ public class WaypointListScreen extends Screen {
         graphics.centeredText(this.font, Component.literal(headerDimText), headerCenterX, centerY - 103, dimensionColor);
 
         super.extractRenderState(graphics, mouseX, mouseY, a);
+
+        graphics.blit(pipeline, ICON_CONFIG, 9, this.height - 27, 0.0f, 0.0f, 18, 18, 18, 18);
 
         int startIndex = scrollIndex;
         int endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalWaypoints);

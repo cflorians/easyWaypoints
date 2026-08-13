@@ -17,6 +17,9 @@ import java.io.FileWriter;
 public class ModConfig {
     public DeathWaypoints deathWaypoints = new DeathWaypoints();
     public WaypointSize waypointSize = new WaypointSize();
+    public LabelDisplay labelDisplay = new LabelDisplay();
+    public Confirmations confirmations = new Confirmations();
+    public Visibility visibility = new Visibility();
 
     public static class DeathWaypoints {
         public boolean enabled = true;
@@ -29,6 +32,27 @@ public class ModConfig {
     public static class WaypointSize {
         /** Percentage multiplier applied to the renderer's default min/max marker size. 100 = default size. */
         public double sizePercent = 100.0;
+        /** Marker icon opacity, 0-100. 100 = fully opaque (default). Does not affect label text. */
+        public double opacityPercent = 100.0;
+    }
+
+    public static class LabelDisplay {
+        /** Renders in-world/HUD waypoint marker labels in all caps when true. */
+        public boolean uppercase = false;
+        /** Appends the "(Xm)" distance suffix to marker labels when true. */
+        public boolean showDistance = true;
+    }
+
+    public static class Confirmations {
+        /** Shows the "Are you sure?" dialog before deleting a waypoint when true. */
+        public boolean confirmBeforeDelete = true;
+    }
+
+    public static class Visibility {
+        /** Persists and restores the world-marker show/hide state across game restarts when true. */
+        public boolean rememberOnExit = false;
+        /** Last known visibility state; only meaningful when rememberOnExit is true. */
+        public boolean lastVisible = true;
     }
 
     private static ModConfig instance;
@@ -55,6 +79,15 @@ public class ModConfig {
                     }
                     if (loaded.waypointSize == null) {
                         loaded.waypointSize = new WaypointSize();
+                    }
+                    if (loaded.labelDisplay == null) {
+                        loaded.labelDisplay = new LabelDisplay();
+                    }
+                    if (loaded.confirmations == null) {
+                        loaded.confirmations = new Confirmations();
+                    }
+                    if (loaded.visibility == null) {
+                        loaded.visibility = new Visibility();
                     }
                     return loaded;
                 }

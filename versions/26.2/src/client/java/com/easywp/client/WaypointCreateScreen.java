@@ -292,6 +292,10 @@ public class WaypointCreateScreen extends Screen {
 
         if (ModKeyBindings.displayMode == WaypointDisplayMode.DISABLED) {
             ModKeyBindings.displayMode = WaypointDisplayMode.WORLD_MARKERS;
+            if (ModConfig.get().visibility.rememberOnExit) {
+                ModConfig.get().visibility.lastVisible = true;
+                ModConfig.save();
+            }
         }
     }
 }

@@ -27,6 +27,7 @@ import java.io.FileWriter;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Handles 3D world rendering and JSON storage for waypoints.
@@ -207,6 +208,9 @@ public class WaypointRenderer {
         computeBobOffset(client, cameraState);
 
         float sizeScale = (float) (ModConfig.get().waypointSize.sizePercent / 100.0);
+        boolean uppercaseLabels = ModConfig.get().labelDisplay.uppercase;
+        boolean showDistance = ModConfig.get().labelDisplay.showDistance;
+        int markerAlpha = (int) Math.round(255 * Mth.clamp(ModConfig.get().waypointSize.opacityPercent / 100.0, 0.0, 1.0));
 
         activeWaypoints.clear();
         int poolIndex = 0;
@@ -300,7 +304,10 @@ public class WaypointRenderer {
             float markerSize = holder.markerSize;
 
             String wpName  = wp.getName() != null ? wp.getName() : "Waypoint";
-            String nameText = wpName + " (" + (int) realDistance + "m)";
+            String nameText = showDistance ? (wpName + " (" + (int) realDistance + "m)") : wpName;
+            if (uppercaseLabels) {
+                nameText = nameText.toUpperCase(Locale.ROOT);
+            }
 
             int wpColor = wp.getColor();
             int r = (wpColor >> 16) & 0xFF;
@@ -317,7 +324,7 @@ public class WaypointRenderer {
 
             collector.submitCustomGeometry(
                     poseStack, markerType,
-                    (pose, buffer) -> drawMarker(pose, buffer, r, g, b, 255, markerSize)
+                    (pose, buffer) -> drawMarker(pose, buffer, r, g, b, markerAlpha, markerSize)
             );
             poseStack.popPose();
 
