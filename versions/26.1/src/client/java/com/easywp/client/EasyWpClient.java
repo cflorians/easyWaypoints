@@ -11,9 +11,7 @@ public class EasyWpClient implements ClientModInitializer {
 		WaypointRenderTypes.init();
 		WaypointRenderer.init();
 
-		LevelRenderEvents.END_MAIN.register(context -> {
-			WaypointRenderer.render(context);
-		});
+		LevelRenderEvents.END_MAIN.register(WaypointRenderer::render);
 
 		ClientTickEvents.END_CLIENT_TICK.register(DeathWaypointManager::tick);
 	}

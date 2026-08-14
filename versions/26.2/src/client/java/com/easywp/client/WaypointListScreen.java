@@ -52,6 +52,10 @@ public class WaypointListScreen extends Screen {
     private static final Identifier ICON_DELETE = Identifier.fromNamespaceAndPath("easywp", "textures/gui/delete.png");
     private static final Identifier ICON_CONFIG = Identifier.fromNamespaceAndPath("easywp", "textures/gui/configicon.png");
 
+    private static final int MODAL_BG_COLOR = 0xD010141E;
+    private static final int MODAL_HEADER_COLOR = 0xE0181E30;
+    private static final int MODAL_BORDER_COLOR = 0xFF3D4966;
+
     /**
      * Name column runs from the marker swatch (centerX - 118) up to just short of the TP icon
      * (centerX - 12), regardless of whether TP is actually shown for this player, so the layout
@@ -408,16 +412,13 @@ public class WaypointListScreen extends Screen {
 
         RenderPipeline pipeline = RenderPipelines.GUI_TEXTURED;
 
-        // Modal background card (ARGB 0xD010141E)
-        graphics.fill(minX, minY, minX + bgW, minY + bgH, 0xD010141E);
-        // Header title background bar (ARGB 0xE0181E30)
-        graphics.fill(minX, minY, minX + bgW, minY + 22, 0xE0181E30);
-        // Card border lines (ARGB 0xFF3D4966)
-        graphics.fill(minX, minY, minX + bgW, minY + 1, 0xFF3D4966);
-        graphics.fill(minX, minY + bgH - 1, minX + bgW, minY + bgH, 0xFF3D4966);
-        graphics.fill(minX, minY, minX + 1, minY + bgH, 0xFF3D4966);
-        graphics.fill(minX + bgW - 1, minY, minX + bgW, minY + bgH, 0xFF3D4966);
-        graphics.fill(minX, minY + 22, minX + bgW, minY + 23, 0xFF3D4966);
+        graphics.fill(minX, minY, minX + bgW, minY + bgH, MODAL_BG_COLOR);
+        graphics.fill(minX, minY, minX + bgW, minY + 22, MODAL_HEADER_COLOR);
+        graphics.fill(minX, minY, minX + bgW, minY + 1, MODAL_BORDER_COLOR);
+        graphics.fill(minX, minY + bgH - 1, minX + bgW, minY + bgH, MODAL_BORDER_COLOR);
+        graphics.fill(minX, minY, minX + 1, minY + bgH, MODAL_BORDER_COLOR);
+        graphics.fill(minX + bgW - 1, minY, minX + bgW, minY + bgH, MODAL_BORDER_COLOR);
+        graphics.fill(minX, minY + 22, minX + bgW, minY + 23, MODAL_BORDER_COLOR);
 
         List<WaypointEntry> waypoints = this.cachedFilteredWaypoints;
         int totalWaypoints = waypoints.size();

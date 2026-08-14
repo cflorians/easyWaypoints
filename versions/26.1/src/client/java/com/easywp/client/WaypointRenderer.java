@@ -234,6 +234,7 @@ public class WaypointRenderer {
 
         boolean isShaderActive = ShaderDetector.isShaderPackActive();
         RenderType markerType = WaypointRenderTypes.marker(isShaderActive);
+        RenderType backdropType = WaypointRenderTypes.labelBackdrop();
 
         for (WaypointHolder holder : activeWaypoints) {
             Waypoint wp = holder.waypoint;
@@ -264,24 +265,28 @@ public class WaypointRenderer {
             drawMarker(poseStack, markerBuffer, r, g, b, markerAlpha, markerSize);
             context.bufferSource().endBatch(markerType);
 
-            // Text label
-            poseStack.pushPose();
-            poseStack.translate(0.0f, markerSize * 1.50f, 0.0f);
+            // Label backdrop: our own depth-writing quad (see WaypointRenderTypes) instead of
+            // Font's built-in background box, so clouds and water drawn later in the frame can
+            // depth-test against it instead of always painting over the label. Sized to match
+            // the box Font would have produced for the glyph pass below.
             float textScale = 0.035f * markerSize / 0.7f;
-            poseStack.scale(-textScale, -textScale, textScale);
-            float xOffset = -font.width(nameText) / 2.0f + 1.0f;
+            float textWidth = font.width(nameText);
+            float anchorY = markerSize * 1.50f;
+            float bgXMin = -(textWidth * 0.5f + 1.0f) * textScale;
+            float bgXMax = textWidth * 0.5f * textScale;
+            float bgYMin = anchorY - 9.0f * textScale;
+            float bgYMax = anchorY + textScale;
 
-            // Background shadow pass
-            font.drawInBatch(
-                    nameText, xOffset, 0.0f,
-                    0x00FFFFFF, false,
-                    poseStack.last().pose(), context.bufferSource(),
-                    Font.DisplayMode.SEE_THROUGH, LABEL_BACKDROP, 0xF000F0
-            );
+            VertexConsumer backdropBuffer = context.bufferSource().getBuffer(backdropType);
+            drawBackdrop(poseStack, backdropBuffer, bgXMin, bgYMin, bgXMax, bgYMax, LABEL_BACKDROP);
+            context.bufferSource().endBatch(backdropType);
 
-            // Foreground text pass
+            // Text label glyphs, billboarded on top of the backdrop above
             poseStack.pushPose();
-            poseStack.translate(0.0f, 0.0f, -0.03f);
+            poseStack.translate(0.0f, anchorY, 0.0f);
+            poseStack.scale(-textScale, -textScale, textScale);
+            float xOffset = -textWidth / 2.0f + 1.0f;
+
             font.drawInBatch(
                     nameText, xOffset, 0.0f,
                     0xFFFFFFFF, false,
@@ -291,7 +296,6 @@ public class WaypointRenderer {
             poseStack.popPose();
 
             context.bufferSource().endBatch();
-            poseStack.popPose();
             poseStack.popPose();
         }
 
@@ -330,6 +334,37 @@ public class WaypointRenderer {
         buffer.addVertex(poseMatrix, -halfWidth, 0.0f, 0.0f)
                 .setColor(r, g, b, a)
                 .setUv(0.0f, 1.0f)
+                .setUv2(lightmap, lightmap)
+                .setNormal(pose, 0.0f, 0.0f, 1.0f);
+    }
+
+    /**
+     * Emits the label's backing box. Same vertex layout and winding as the marker quad, minus
+     * the texture coordinates its render type has no sampler to read.
+     */
+    private static void drawBackdrop(PoseStack poseStack, VertexConsumer buffer, float xMin, float yMin, float xMax, float yMax, int argb) {
+        PoseStack.Pose pose = poseStack.last();
+        Matrix4f poseMatrix = pose.pose();
+        int a = (argb >>> 24) & 0xFF;
+        int r = (argb >> 16)  & 0xFF;
+        int g = (argb >> 8)   & 0xFF;
+        int b = argb          & 0xFF;
+        int lightmap = 240;
+
+        buffer.addVertex(poseMatrix, xMin, yMax, 0.0f)
+                .setColor(r, g, b, a)
+                .setUv2(lightmap, lightmap)
+                .setNormal(pose, 0.0f, 0.0f, 1.0f);
+        buffer.addVertex(poseMatrix, xMax, yMax, 0.0f)
+                .setColor(r, g, b, a)
+                .setUv2(lightmap, lightmap)
+                .setNormal(pose, 0.0f, 0.0f, 1.0f);
+        buffer.addVertex(poseMatrix, xMax, yMin, 0.0f)
+                .setColor(r, g, b, a)
+                .setUv2(lightmap, lightmap)
+                .setNormal(pose, 0.0f, 0.0f, 1.0f);
+        buffer.addVertex(poseMatrix, xMin, yMin, 0.0f)
+                .setColor(r, g, b, a)
                 .setUv2(lightmap, lightmap)
                 .setNormal(pose, 0.0f, 0.0f, 1.0f);
     }

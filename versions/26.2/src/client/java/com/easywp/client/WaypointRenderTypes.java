@@ -6,6 +6,7 @@ import com.mojang.blaze3d.pipeline.DepthStencilState;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.CompareOp;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.rendertype.OutputTarget;
 import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
@@ -18,9 +19,11 @@ import java.lang.reflect.Method;
  *
  * <h2>Why any of this exists</h2>
  *
- * Without a shaderpack every pass here could just use vanilla's see-through render types: they
- * declare no depth state, so nothing is ever occluded, and vanilla's shaders draw them at full
- * brightness. That is exactly what the {@code VANILLA_*} fields do.
+ * Without a shaderpack every pass here rides a private copy of vanilla's see-through text
+ * shaders: like the vanilla pipelines they declare no depth test, so nothing is ever occluded,
+ * and vanilla's shaders draw them at full brightness. That is what the {@code VANILLA_*} fields
+ * do - see {@link #MARKER_PIPELINE} for why they are a private copy rather than the vanilla
+ * {@code RenderTypes.textSeeThrough} directly.
  *
  * <p>With a shaderpack loaded Iris replaces the core shader of vanilla's see-through text
  * pipeline with one of its own programs ({@code gbuffers_entities_translucent}), and that
@@ -39,8 +42,47 @@ public final class WaypointRenderTypes {
     private static final String IRIS_PROGRAM_CLASS  = "net.irisshaders.iris.api.v0.IrisProgram";
     private static final String IRIS_BEACON_PROGRAM = "BEACON_BEAM";
 
+    /**
+     * Same shaders as vanilla's {@code textSeeThrough}, but with depth write enabled (test still
+     * always-pass). Minecraft renders clouds and translucent terrain (water) into their own
+     * render targets, composited back over the main target afterward using depth. A pipeline
+     * that never writes depth leaves nothing there for that composite to test against, so clouds
+     * and water painted later in the frame simply draw over the marker/label regardless of how
+     * close they actually are. Writing a real depth value (at the marker's own, deliberately
+     * near, projected distance) fixes that without reintroducing occlusion by solid terrain,
+     * since the test itself still always passes. Shared by the marker and the vanilla-mode
+     * backdrop below; only the bound texture differs.
+     *
+     * <p>The RenderSetups below all route to {@link OutputTarget#WEATHER_TARGET} instead of the
+     * default main target for the same reason vanilla's own {@code LIGHTNING} render type does:
+     * water renders into its own translucent target, which starts each frame as a straight copy
+     * of the main target's depth buffer. Writing our near depth into main - the default target -
+     * would get copied into that translucent depth buffer too, so water tries to depth-test
+     * itself against a wall that is, as far as it's concerned, only 4 blocks away, and loses -
+     * water simply fails to draw wherever a marker or label sits, revealing whatever solid
+     * terrain is behind it. The weather target is never copied into translucent, but still
+     * takes part in the same cross-target, depth-sorted composite that lets the marker win
+     * against clouds - so drawing there keeps the clouds fix intact without corrupting water.
+     */
+    private static final RenderPipeline MARKER_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.TEXT_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath("easywp", "pipeline/waypoint_marker"))
+                    .withVertexShader("core/text")
+                    .withFragmentShader("core/text")
+                    .withShaderDefine("IS_SEE_THROUGH")
+                    .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, true))
+                    .build()
+    );
+
     /** Marker pass used when no shaderpack is rendering. */
-    private static final RenderType VANILLA_MARKER = RenderTypes.textSeeThrough(MARKER_TEXTURE);
+    private static final RenderType VANILLA_MARKER = RenderType.create(
+            "easywp_waypoint_marker",
+            RenderSetup.builder(MARKER_PIPELINE)
+                    .withTexture("Sampler0", MARKER_TEXTURE)
+                    .useLightmap()
+                    .setOutputTarget(OutputTarget.WEATHER_TARGET)
+                    .createRenderSetup()
+    );
 
     /** Vanilla beacon beam, kept as the depth-tested fallback if Iris rejects our pipeline. */
     private static final RenderType FALLBACK_MARKER = RenderTypes.beaconBeam(MARKER_TEXTURE, true);
@@ -49,7 +91,7 @@ public final class WaypointRenderTypes {
             RenderPipeline.builder(RenderPipelines.BEACON_BEAM_SNIPPET)
                     .withLocation(Identifier.fromNamespaceAndPath("easywp", "pipeline/waypoint_beacon"))
                     .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
-                    .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
+                    .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, true))
                     .build()
     );
 
@@ -57,12 +99,21 @@ public final class WaypointRenderTypes {
             "easywp_waypoint_beacon",
             RenderSetup.builder(BEACON_PIPELINE)
                     .withTexture("Sampler0", MARKER_TEXTURE)
+                    .setOutputTarget(OutputTarget.WEATHER_TARGET)
                     .sortOnUpload()
                     .createRenderSetup()
     );
 
-    /** Label backdrop passes used when no shaderpack is rendering. */
-    private static final RenderType VANILLA_BACKDROP = RenderTypes.textSeeThrough(BACKDROP_TEXTURE);
+    /** Label backdrop pass used when no shaderpack is rendering. Rides {@link #MARKER_PIPELINE}
+     *  too - same depth-write and output-target reasoning, just a different bound texture. */
+    private static final RenderType VANILLA_BACKDROP = RenderType.create(
+            "easywp_waypoint_label_backdrop",
+            RenderSetup.builder(MARKER_PIPELINE)
+                    .withTexture("Sampler0", BACKDROP_TEXTURE)
+                    .useLightmap()
+                    .setOutputTarget(OutputTarget.WEATHER_TARGET)
+                    .createRenderSetup()
+    );
 
     /**
      * The label's backdrop, drawn as our own geometry instead of letting Font emit it.

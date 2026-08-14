@@ -42,8 +42,9 @@ Un intento anterior de portar el mod a versiones previas de Minecraft (`1.21.1`,
 ```text
 easywp-template/
 ├── build.gradle, settings.gradle, gradle.properties   # raíz multi-módulo
-├── common/                                # (:common) código y recursos 100% compartidos
-│   └── src/main/java/com/easywp/EasyWp.java           # entry point del lado servidor/común
+├── common/                                # (:common) recursos compartidos + un único archivo de código
+│   ├── src/main/java/com/easywp/EasyWp.java            # entry point del lado servidor/común
+│   └── src/main/resources/...                          # lang, iconos, texturas y mixin config compartidos
 ├── versions/
 │   ├── 26.1/                              # (:versions:26.1) rama estable actual
 │   │   ├── gradle.properties              # minecraft_version=26.1.2, fabric_api=0.155.2+26.1.2
@@ -66,6 +67,16 @@ easywp-template/
 
 - `com.easywp.EasyWp` (módulo `common`) — `ModInitializer` estándar, solo registra el logger (`EasyWp.LOGGER`). El mod es puramente client-side; el lado servidor no hace nada.
 - `com.easywp.client.EasyWpClient` (módulo cliente por versión) — `ClientModInitializer`, engancha keybindings y el renderer al ciclo de vida del cliente.
+
+### Por qué el código de cliente está duplicado y no vive en `common/`
+
+No es solo una decisión de estilo: `common/build.gradle` declara únicamente `fabric-loader` y `slf4j-api` como dependencias — **no tiene ninguna dependencia de Minecraft**. Y `common` es su propio subproyecto Gradle real (con el plugin `java` aplicado), así que Gradle ejecuta `:common:compileJava` de forma independiente, sin Minecraft en su classpath.
+
+Cada versión mezcla el código fuente de `common/` dentro de su **propio** sourceSet `main` (`java.srcDirs += project(":common").file("src/main/java")`), así que ese código sí compila una vez insertado en 26.1 o 26.2 — pero el `:common:compileJava` independiente fallaría igual si algún archivo ahí importara `net.minecraft.*` (aunque sea una clase disponible en cliente y servidor, como `BlockPos`).
+
+Arreglarlo "de verdad" costaría más de lo que vale: fijar una versión de Minecraft en `common/build.gradle` solo para que compile solo sería frágil (no validaría de verdad la otra versión), y quitarle el plugin `java` a `common` es una reestructuración más grande que la duplicación que ahorraría. Por eso **6 archivos de cliente son hoy byte-idénticos entre 26.1 y 26.2** (`Waypoint.java`, `ModConfig.java`, `I18nHelper.java`, `ModernButton.java`, `WaypointDisplayMode.java`, `WaypointPing.java`) y siguen así a propósito: se editan en una versión, se verifican con `diff`, y se copian a la otra — no se mueven a `common/`.
+
+**Los recursos (no compilados) sí se comparten de verdad.** El merge ya está cableado en ambos `build.gradle` (`resources.srcDirs += project(":common").file("src/main/resources")`), y como los recursos no pasan por ningún compilador, el problema de arriba no aplica. Hoy viven ahí, compartidos entre las dos versiones: los JSON de idioma, el ícono del mod, `textures/waypoint_marker.png`, los 14 iconos de `textures/gui/`, y `easywp.mixins.json`. `fabric.mod.json` sigue siendo por versión, porque su bloque `depends` legítimamente difiere.
 
 ---
 
@@ -103,7 +114,8 @@ El renderizado 3D de Minecraft (`gbuffers`) es interceptado por los shaderpacks 
 3. **Clamp de distancia de render**: la posición de dibujo se recorta (`clampDist`) a `max(32, renderDistance*16 - 16)` bloques desde la cámara, mantiene la dirección real pero evita artefactos de precisión float a distancias enormes.
 4. **Orden de pintado**: los waypoints se ordenan de más lejano a más cercano para una superposición correcta.
 5. **Un único render pass por marcador**, cuyo `RenderType` se elige según el entorno (`WaypointRenderTypes.marker(isShaderActive)`, ver §5.3 bis): pases superpuestos se probaron y se descartaron porque lavan el color del marcador.
-6. **Texto**: nombre + distancia en metros (`NOMBRE (123m)`), dibujado con `Font.DisplayMode.SEE_THROUGH` en dos sub-pasadas (fondo semitransparente + texto blanco), billboardeado hacia la cámara con `Axis.YP`/`Axis.XP`.
+6. **Fondo de la etiqueta**: geometría dibujada a mano (`drawBackdrop`) en lugar del fondo que `Font` genera internamente — necesario para que el fondo pueda escribir profundidad (ver §5.3 bis).
+7. **Texto**: nombre + distancia en metros (`NOMBRE (123m)`), dibujado con `Font.DisplayMode.SEE_THROUGH`, billboardeado hacia la cámara con `Axis.YP`/`Axis.XP`, sobre el fondo ya dibujado en el paso anterior.
 
 Este enfoque es simple y funciona bien en 26.1, pero **no implementa oclusión geométrica real basada en raycast** (a diferencia de los intentos 12–16 documentados en el log, que sí lo hacían con una máquina de estados por cara de bloque). Es, en la práctica, la versión estabilizada y simplificada que terminó en producción para esta rama.
 
@@ -116,7 +128,8 @@ La arquitectura de waypoints es **la misma que en 26.1** (§5.1): mismo filtrado
 - El marcador y el fondo de la etiqueta se entregan como callbacks (`submitCustomGeometry`) en vez de escribirse directamente en un `VertexConsumer`.
 - El texto se entrega con `submitText` sobre un `FormattedCharSequence`.
 - La etiqueta tiene su propia transformación de billboard, separada de la del marcador.
-- El fondo de la etiqueta es geometría dibujada a mano (`drawBackdrop`) en lugar de una segunda pasada de `Font`.
+
+(El fondo de la etiqueta dibujado a mano con `drawBackdrop` ya no es una diferencia entre versiones: 26.1 también lo hace ahora, ver §5.1 y §5.3 bis.)
 
 La inmunidad a los shaderpacks **no** viene de renderizar en el HUD, sino de `WaypointRenderTypes` (§5.3 bis): el marcador se dibuja a través de un `RenderPipeline` privado basado en el snippet del rayo de beacon, que los packs mantienen emisivo y sin niebla. Ambas versiones renderizan en espacio 3D del mundo a través de `LevelRenderer`; no existe renderizado en espacio de HUD en ningún punto del mod.
 
@@ -132,10 +145,16 @@ Utilidad basada en **reflection** (sin dependencia de compilación con Iris/Opti
 
 ### 5.3 bis Selección de pase — `WaypointRenderTypes`
 
-`WaypointRenderTypes.marker(shaderPackActive)` elige el `RenderType` del marcador según el entorno:
+`WaypointRenderTypes.marker(shaderPackActive)` elige el `RenderType` del marcador según el entorno; `labelBackdrop(...)` hace lo propio para el fondo de la etiqueta (en 26.1 no depende de `shaderPackActive`, ver más abajo):
 
-- **Sin shaderpack**: `RenderTypes.textSeeThrough(...)`, que no declara uniform de niebla ni estado de profundidad, así que el marcador conserva su color exacto y nunca queda ocluido.
-- **Con shaderpack**: se dibuja a través de un `RenderPipeline` **privado**, construido sobre `RenderPipelines.BEACON_BEAM_SNIPPET`, con el estado de profundidad relajado a "siempre pasa, nunca escribe". Este pipeline se registra ante Iris **por reflection** (`IrisApi.assignPipeline(pipeline, IrisProgram.BEACON_BEAM)`) dentro de `WaypointRenderTypes.init()`, que debe ejecutarse antes del primer frame porque Iris resuelve el formato de vértice en el momento de la asignación. El rayo de beacon es la única geometría del mundo que los shaderpacks mantienen emisiva y sin niebla, de ahí la elección. Si la reflection falla por cualquier motivo, cae de vuelta silenciosamente al `RenderType` de beacon beam vanilla.
+- **Sin shaderpack**: un `RenderPipeline` **privado**, construido con los mismos shaders que `textSeeThrough`/`textBackgroundSeeThrough` de vanilla (así que Iris y el resto del motor lo tratan igual que a vanilla cuando no hay un pack cargado), pero con el estado de profundidad propio — ver más abajo.
+- **Con shaderpack**: el marcador se dibuja a través de otro `RenderPipeline` **privado**, construido sobre `RenderPipelines.BEACON_BEAM_SNIPPET`. Este pipeline se registra ante Iris **por reflection** (`IrisApi.assignPipeline(pipeline, IrisProgram.BEACON_BEAM)`) dentro de `WaypointRenderTypes.init()`, que debe ejecutarse antes del primer frame porque Iris resuelve el formato de vértice en el momento de la asignación. El rayo de beacon es la única geometría del mundo que los shaderpacks mantienen emisiva y sin niebla, de ahí la elección. Si la reflection falla por cualquier motivo, cae de vuelta silenciosamente al `RenderType` de beacon beam vanilla.
+
+**Estado de profundidad: la prueba siempre pasa, pero ahora sí se escribe.** Todos los pipelines privados de `WaypointRenderTypes` usan `DepthStencilState(CompareOp.ALWAYS_PASS, /*write=*/true)`: el marcador y la etiqueta se siguen viendo a través de bloques sólidos (la prueba siempre pasa), pero ahora dejan un valor de profundidad real en su propia posición proyectada (cercana a la cámara, ~4 bloques). Antes de este cambio se usaba `write=false` (o directamente ningún estado de profundidad, como en los `RenderType` de vanilla que se usaban originalmente) — funcionaba para el caso que motivó el diseño (nunca ocluido por terreno sólido), pero tenía un efecto secundario no documentado: **las nubes y el agua (terreno translúcido) se dibujaban por encima del waypoint**, dándole la apariencia de estar "detrás" de ellas.
+
+*Causa raíz*: Minecraft (ambas versiones, arquitectura de render idéntica en este aspecto) renderiza las nubes y el terreno translúcido en sus **propios render targets**, separados del target principal donde dibuja el marcador, y los combina de vuelta sobre la imagen final comparando profundidad. Un `RenderType` que nunca escribe profundidad no deja nada en el target principal contra lo cual esa combinación pueda comparar, así que las nubes/agua dibujadas más tarde en el frame simplemente se pintan encima del marcador sin importar qué tan cerca esté en realidad. Escribir una profundidad real (aunque la prueba propia siga sin usarla) le da a esa combinación algo real contra qué comparar, sin reintroducir la oclusión por terreno sólido que el modo "see-through" existe para evitar.
+
+En 26.1 esto exigió además dejar de usar el fondo de etiqueta que `Font` genera internamente (que usa los `RenderType` de vanilla, sin control sobre su estado de profundidad) y dibujarlo a mano con `drawBackdrop`, igual que ya hacía 26.2 por otro motivo (compatibilidad de formato de vértice con Iris, ver el bloque de comentarios en `WaypointRenderTypes.java` de 26.2). Las letras en sí siguen usando el `RenderType` de texto de vanilla (sin control posible sobre su profundidad sin un mixin, que este mod no usa), pero al ocupar los mismos píxeles que el fondo ya protegido, quedan protegidas transitivamente.
 
 ---
 
@@ -253,12 +272,9 @@ Para añadir un idioma adicional habría que ampliar esta clase (no basta con ag
 
 ## 10. Mixins
 
-El mod declara dos configuraciones de mixin (ambas **actualmente vacías**, listas para usarse si en el futuro se necesita interceptar clases vanilla):
+El mod declara y registra una única configuración de mixin, **actualmente vacía**, lista para usarse si en el futuro se necesita interceptar clases vanilla: `easywp.mixins.json` (paquete `com.easywp.mixin`, entorno común/servidor), compartida vía `common/src/main/resources/`, con `compatibilityLevel: JAVA_25` y `requireAnnotations: true`.
 
-- `easywp.mixins.json` (paquete `com.easywp.mixin`) — entorno común/servidor.
-- `easywp.client.mixins.json` (paquete `com.easywp.client.mixin`) — solo cliente.
-
-Ambas fuerzan `compatibilityLevel: JAVA_25` y `requireAnnotations: true`.
+Existe además un paquete vacío `com.easywp.client.mixin` en el código de cliente de cada versión — el plan original parece haber sido tener también una config de mixins solo-cliente, pero **`easywp.client.mixins.json` nunca se creó** y no está referenciada en ningún `fabric.mod.json`. Si se necesitan mixins de cliente en el futuro, ese archivo todavía hay que escribirlo y añadirlo al array `mixins` de ambos `fabric.mod.json`.
 
 ---
 

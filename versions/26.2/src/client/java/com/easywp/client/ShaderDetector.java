@@ -14,7 +14,6 @@ public final class ShaderDetector {
     private static Boolean irisAvailable = null;
     private static Method irisGetInstance = null;
     private static Method irisIsShaderPackInUse = null;
-    private static Method irisIsRenderingShadowPass = null;
 
     private static Boolean optiFineAvailable = null;
     private static Method optiFineIsShaders = null;
@@ -32,23 +31,6 @@ public final class ShaderDetector {
         lastCheckTimeMs = now;
         cachedResult = checkIrisOrOculus() || checkOptiFine();
         return cachedResult;
-    }
-
-    /**
-     * Checks if Iris/Oculus is currently rendering the shadow pass.
-     * Prevents rendering 3D waypoint billboards into the shadow map.
-     */
-    public static boolean isRenderingShadowPass() {
-        if (!isShaderPackActive()) return false;
-        if (irisAvailable != null && irisAvailable && irisIsRenderingShadowPass != null) {
-            try {
-                Object instance = irisGetInstance.invoke(null);
-                return (Boolean) irisIsRenderingShadowPass.invoke(instance);
-            } catch (Exception e) {
-                return false;
-            }
-        }
-        return false;
     }
 
     private static boolean checkIrisOrOculus() {
@@ -71,13 +53,8 @@ public final class ShaderDetector {
     private static boolean tryLoadIrisApi(String className) {
         try {
             Class<?> apiClass = Class.forName(className);
-            irisGetInstance           = apiClass.getMethod("getInstance");
-            irisIsShaderPackInUse     = apiClass.getMethod("isShaderPackInUse");
-            try {
-                irisIsRenderingShadowPass = apiClass.getMethod("isRenderingShadowPass");
-            } catch (NoSuchMethodException e) {
-                irisIsRenderingShadowPass = null;
-            }
+            irisGetInstance        = apiClass.getMethod("getInstance");
+            irisIsShaderPackInUse  = apiClass.getMethod("isShaderPackInUse");
             return true;
         } catch (ClassNotFoundException | NoSuchMethodException e) {
             return false;

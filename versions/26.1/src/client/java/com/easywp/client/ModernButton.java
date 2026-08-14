@@ -73,7 +73,6 @@ public class ModernButton extends Button {
             textColor = 0xFFD0D0D0;
         }
 
-        // Draw border frame and interior fill efficiently
         graphics.fill(this.getX(), this.getY(), this.getX() + this.width, this.getY() + this.height, borderColor);
         graphics.fill(this.getX() + 1, this.getY() + 1, this.getX() + this.width - 1, this.getY() + this.height - 1, bgColor);
 
