@@ -1,6 +1,6 @@
 # easyWp — Documentación Técnica
 
-Mod de waypoints (puntos de referencia) para **Minecraft Fabric**, ligero y no intrusivo. Permite crear, listar, editar, ocultar/mostrar, enfocar, compartir entre dimensiones y teletransportarse (en creativo/OP) a marcadores persistentes por mundo/servidor.
+Mod de waypoints (puntos de referencia) para **Minecraft Fabric**, ligero y no intrusivo. Permite crear, listar, editar, ocultar/mostrar, enfocar, compartir entre dimensiones, marcar con un raycast al bloque apuntado ("ping") y teletransportarse (en creativo/OP) a marcadores persistentes por mundo/servidor.
 
 - **Mod ID:** `easywp`
 - **Autor:** Carlos Florian
@@ -15,11 +15,12 @@ Mod de waypoints (puntos de referencia) para **Minecraft Fabric**, ligero y no i
 | Característica | Descripción |
 |---|---|
 | **Oclusión "pixel-perfect"** | Los marcadores se dibujan también a través de bloques (see-through) sin perder precisión de posición. |
-| **Compatibilidad con shaders** | Un segundo *render pass* evita que Iris/Oculus/OptiFine oscurezcan u oculten los marcadores. |
+| **Compatibilidad con shaders** | Un `RenderType` alternativo (pipeline privado registrado en Iris) evita que Iris/Oculus/OptiFine oscurezcan u oculten los marcadores. |
 | **Persistencia JSON por mundo** | Cada mundo (singleplayer) o servidor (multiplayer) guarda su propio archivo de waypoints. |
 | **Compartir entre dimensiones** | Un waypoint "compartido" se recalcula automáticamente con la razón 1:8 entre Overworld y Nether. |
 | **Enfoque (focus) exclusivo** | Al enfocar un waypoint, el resto se ocultan automáticamente (salvo los marcados como "siempre visibles"). |
-| **Atajos de teclado configurables** | Alternar visibilidad, crear y listar waypoints con una tecla. |
+| **Ping al bloque apuntado** | Un raycast de un solo disparo por pulsación abre el menú de creación con las coordenadas del bloque mirado, no las del jugador. |
+| **Atajos de teclado configurables** | Alternar visibilidad, crear, listar y marcar waypoints con una tecla. |
 | **Interfaz propia (sin librerías externas)** | Pantallas de creación/edición y listado con estética propia (`ModernButton`), sin dependencias de mods de UI. |
 | **i18n** | Español e inglés, con detección automática del idioma del cliente. |
 
@@ -29,8 +30,8 @@ Mod de waypoints (puntos de referencia) para **Minecraft Fabric**, ligero y no i
 
 El repositorio usa una estructura **multi-módulo** Gradle con dos ramas de Minecraft activas: `26.1` y `26.2`. No hay código legado ni carpetas de versiones históricas — `settings.gradle` declara exactamente `include 'common', 'versions:26.1', 'versions:26.2'`, y eso es todo lo que existe en el árbol de archivos.
 
-- **26.1** usa la arquitectura de renderizado "billboard 3D" clásica (sección 5.1).
-- **26.2** usa la arquitectura de "proyección mundo→HUD" (sección 5.2), necesaria por el rediseño del pipeline de render (`SubmitNodeCollector`) de esa versión.
+- **26.1** usa la arquitectura de renderizado "billboard 3D" clásica (sección 5.1), enganchada a `LevelRenderEvents.END_MAIN`.
+- **26.2** usa la misma arquitectura "billboard 3D" (sección 5.2), pero enganchada a `LevelRenderEvents.COLLECT_SUBMITS`, necesario por el rediseño del pipeline de render (`SubmitNodeCollector`) de esa versión. No es una arquitectura de renderizado distinta, solo una vía de envío de geometría distinta.
 
 Un intento anterior de portar el mod a versiones previas de Minecraft (`1.21.1`, `1.21.3`, `1.21.8`, `1.21.11`) fue descartado; si se retoma en el futuro, ver el historial de git para la última referencia de esas carpetas.
 
@@ -82,6 +83,8 @@ easywp-template/
 | `visible` | `boolean` | Visibilidad manual (toggle "ojo") |
 | `focused` | `boolean` | Si está en modo enfoque exclusivo |
 | `forceVisible` | `boolean` | Permite que un waypoint siga visible aunque haya otro enfocado |
+| `death` | `boolean` | Marca un waypoint de muerte automático (creado por `DeathWaypointManager`); un waypoint editado a mano pierde esta marca |
+| `createdAtMillis` | `long` | Instante de creación en milisegundos |
 
 La lista viva de waypoints del mundo actual se mantiene en memoria en `WaypointRenderer.waypoints` (una `List<Waypoint>` estática), que las pantallas de UI y el renderer leen/escriben directamente.
 
@@ -99,24 +102,25 @@ El renderizado 3D de Minecraft (`gbuffers`) es interceptado por los shaderpacks 
 2. **Escalado angular por distancia**: el tamaño del marcador crece linealmente con la distancia real (`WAYPOINT_VISUAL_ANGLE = 0.055f`) entre `WAYPOINT_MIN_SIZE` (0.25) y `WAYPOINT_MAX_SIZE` (500), simulando un tamaño angular aparente constante (como un "beacon").
 3. **Clamp de distancia de render**: la posición de dibujo se recorta (`clampDist`) a `max(32, renderDistance*16 - 16)` bloques desde la cámara, mantiene la dirección real pero evita artefactos de precisión float a distancias enormes.
 4. **Orden de pintado**: los waypoints se ordenan de más lejano a más cercano para una superposición correcta.
-5. **Doble render pass por marcador**:
-   - `RenderTypes.textSeeThrough(...)` — pase estándar, visible a través de bloques sin shaders.
-   - `RenderTypes.beaconBeam(...)` — solo si `ShaderDetector.isShaderPackActive()` es `true`; este *render type* es el mismo que usa el rayo de los beacons vanilla, que los shaderpacks sí respetan/iluminan de forma emisiva, evitando el oscurecimiento.
+5. **Un único render pass por marcador**, cuyo `RenderType` se elige según el entorno (`WaypointRenderTypes.marker(isShaderActive)`, ver §5.3 bis): pases superpuestos se probaron y se descartaron porque lavan el color del marcador.
 6. **Texto**: nombre + distancia en metros (`NOMBRE (123m)`), dibujado con `Font.DisplayMode.SEE_THROUGH` en dos sub-pasadas (fondo semitransparente + texto blanco), billboardeado hacia la cámara con `Axis.YP`/`Axis.XP`.
 
 Este enfoque es simple y funciona bien en 26.1, pero **no implementa oclusión geométrica real basada en raycast** (a diferencia de los intentos 12–16 documentados en el log, que sí lo hacían con una máquina de estados por cara de bloque). Es, en la práctica, la versión estabilizada y simplificada que terminó en producción para esta rama.
 
-### 5.2 Arquitectura "proyección mundo→HUD" (usada en 26.2)
+### 5.2 Arquitectura "billboard 3D vía submits" (usada en 26.2)
 
-Minecraft 26.2 reescribió el pipeline de render (`SubmitNodeCollector`, ver `PORTING.md` §3), lo que —sumado al problema de oscurecimiento de shaders— llevó a descartar por completo el dibujo dentro de `LevelRenderer`. La solución final (**Intento 17** del log) mueve todo el renderizado a la capa de **HUD 2D**, inmune a cualquier post-proceso de shaderpacks:
+Minecraft 26.2 reescribió el pipeline de render (`SubmitNodeCollector`, ver `PORTING.md` §3): la geometría ya no se dibuja de inmediato dentro de `LevelRenderer`, sino que se **encola** para que el motor la ordene y la emita. Por eso el hook es `LevelRenderEvents.COLLECT_SUBMITS` en lugar de `END_MAIN`.
 
-- **Hook 3D de solo lectura** (`LevelRenderEvents.END_MAIN` → `WaypointRenderer::captureFrameState`): captura y clona `cameraPos`, la matriz de vista (`viewRotationMatrix`) y la matriz de proyección de ese frame.
-- **Hook 2D** (`HudElementRegistry.addLast(...)` → `WaypointRenderer::renderHud`): por cada waypoint visible, calcula el vector cámara→waypoint, lo multiplica por las matrices de vista/proyección capturadas, hace la división de perspectiva (NDC) y lo mapea a coordenadas de píxel de pantalla.
-  - Si el waypoint queda detrás del plano de cámara (`w ≤ 0.00001`) se oculta.
-  - El estilo visual (ícono con color + etiqueta con fondo semitransparente encima) se mantiene idéntico al de 26.1 para que la experiencia de usuario no cambie entre versiones.
-- Resultado validado en juego: 0% de bamboleo, 0% de parpadeo, comportamiento **idéntico con y sin shaders activos** (visible directo, visible a través de bloques).
+La arquitectura de waypoints es **la misma que en 26.1** (§5.1): mismo filtrado por dimensión, mismo escalado angular, mismo clamp de distancia, mismo orden back-to-front. Las diferencias son de emisión, no de concepto:
 
-> Ver `EasyWpClient.java` de `versions/26.2` para el registro de ambos hooks, y `WaypointRenderer.java` de la misma carpeta para la implementación completa de la proyección.
+- El marcador y el fondo de la etiqueta se entregan como callbacks (`submitCustomGeometry`) en vez de escribirse directamente en un `VertexConsumer`.
+- El texto se entrega con `submitText` sobre un `FormattedCharSequence`.
+- La etiqueta tiene su propia transformación de billboard, separada de la del marcador.
+- El fondo de la etiqueta es geometría dibujada a mano (`drawBackdrop`) en lugar de una segunda pasada de `Font`.
+
+La inmunidad a los shaderpacks **no** viene de renderizar en el HUD, sino de `WaypointRenderTypes` (§5.3 bis): el marcador se dibuja a través de un `RenderPipeline` privado basado en el snippet del rayo de beacon, que los packs mantienen emisivo y sin niebla. Ambas versiones renderizan en espacio 3D del mundo a través de `LevelRenderer`; no existe renderizado en espacio de HUD en ningún punto del mod.
+
+> Ver `EasyWpClient.java` de `versions/26.2` para el registro del hook, y `WaypointRenderer.java` de la misma carpeta para la implementación completa.
 
 ### 5.3 Detección de shaders — `ShaderDetector`
 
@@ -125,6 +129,13 @@ Utilidad basada en **reflection** (sin dependencia de compilación con Iris/Opti
 - Intenta cargar `net.irisshaders.iris.api.v0.IrisApi` (Iris moderno) y, si falla, `net.coderbot.iris.api.v0.IrisApi` (Oculus/Iris legado), invocando `getInstance().isShaderPackInUse()`.
 - Si no hay Iris/Oculus, intenta `net.optifine.Config.isShaders()`.
 - Si ninguna clase existe (no hay mod de shaders instalado), devuelve `false` sin lanzar excepciones.
+
+### 5.3 bis Selección de pase — `WaypointRenderTypes`
+
+`WaypointRenderTypes.marker(shaderPackActive)` elige el `RenderType` del marcador según el entorno:
+
+- **Sin shaderpack**: `RenderTypes.textSeeThrough(...)`, que no declara uniform de niebla ni estado de profundidad, así que el marcador conserva su color exacto y nunca queda ocluido.
+- **Con shaderpack**: se dibuja a través de un `RenderPipeline` **privado**, construido sobre `RenderPipelines.BEACON_BEAM_SNIPPET`, con el estado de profundidad relajado a "siempre pasa, nunca escribe". Este pipeline se registra ante Iris **por reflection** (`IrisApi.assignPipeline(pipeline, IrisProgram.BEACON_BEAM)`) dentro de `WaypointRenderTypes.init()`, que debe ejecutarse antes del primer frame porque Iris resuelve el formato de vértice en el momento de la asignación. El rayo de beacon es la única geometría del mundo que los shaderpacks mantienen emisiva y sin niebla, de ahí la elección. Si la reflection falla por cualquier motivo, cae de vuelta silenciosamente al `RenderType` de beacon beam vanilla.
 
 ---
 
@@ -144,7 +155,9 @@ Utilidad basada en **reflection** (sin dependencia de compilación con Iris/Opti
 | Servidor multiplayer | `mp_<ip_saneada>` |
 | LAN | `mp_lan` |
 
-Los caracteres inválidos para nombre de archivo (`\/:*?"<>| `) se reemplazan por `_`. La carga es "perezosa": `checkAndLoadWorldWaypoints()` se llama en cada frame de render y solo recarga el archivo si el `worldId` cambió desde el último frame (p. ej. al entrar a un mundo nuevo).
+Los caracteres inválidos para nombre de archivo (`\/:*?"<>| `) se reemplazan por `_` mediante un `Pattern` compilado una sola vez (no en cada llamada, ya que `getWorldId()` se invoca en cada frame). La carga es "perezosa": `checkAndLoadWorldWaypoints()` se llama en cada frame de render y solo recarga el archivo si el `worldId` cambió desde el último frame (p. ej. al entrar a un mundo nuevo).
+
+Además existe un **segundo archivo**, independiente del mundo: `config/easywp/config.json`, gestionado por `ModConfig` (tamaño/opacidad del marcador, mayúsculas y distancia en la etiqueta, comportamiento de waypoints de muerte, confirmaciones, recordar visibilidad, y ajustes del ping). Se agrupa por función en clases anidadas para que nuevas opciones no reestructuren el archivo, y cada grupo se comprueba a `null` al cargar para ser retrocompatible con archivos de versiones anteriores del mod.
 
 ### 6.2 Formato del archivo
 
@@ -195,6 +208,17 @@ Toda la UI está construida a mano sobre la API vanilla de `Screen`/`GuiGraphics
   - **Borrar** (con `ConfirmScreen` de confirmación)
 - Los waypoints atenúan su color/nombre cuando están ocultos o cuando hay otro enfocado y no son ni el enfocado ni "siempre visible".
 
+### 7.3 `ModConfigScreen` — ajustes del mod
+
+A diferencia de las dos pantallas anteriores, no está construida sobre `ModernButton` sino sobre `OptionsSubScreen` + `OptionsList` de vanilla — el mismo widget desplegable que usan las pantallas nativas de Vídeo/Controles de Minecraft — para que se vea y se desplace como una pantalla de opciones nativa. Una fila por ajuste (control + su propio botón "Reset"), agrupadas bajo encabezados de sección:
+
+- **Apariencia**: tamaño y opacidad del marcador (sliders), mostrar distancia, texto en mayúsculas.
+- **Waypoint de muerte**: activar/desactivar, radio y tiempo de gracia antes del borrado automático.
+- **Ping**: alcance del raycast (16–512 bloques, 128 por defecto), un toggle para que el alcance **siga la distancia de renderizado** en vez del valor manual (bloqueando el slider mientras está activo), y si el rayo se detiene en fluidos.
+- **Comportamiento**: confirmar antes de borrar, recordar visibilidad entre reinicios.
+
+Cada control escribe directamente en `ModConfig` y llama a `ModConfig.save()` al cambiar; el botón de reset restaura el valor por defecto de esa clase anidada y reabre la pantalla (`reopen()`) para que todos los widgets reflejen el valor recién reseteado.
+
 ---
 
 ## 8. Controles (keybindings)
@@ -206,8 +230,11 @@ Registrados en `ModKeyBindings.register()`, categoría `key.category.easywp.easy
 | Alternar visibilidad | **K** | Cicla `WaypointDisplayMode`: `WORLD_MARKERS` → `DISABLED` → ... Muestra mensaje overlay del modo activo. |
 | Crear waypoint | **N** | Abre `WaypointCreateScreen` con las coordenadas actuales del jugador precargadas. |
 | Abrir lista | **J** | Abre `WaypointListScreen`. |
+| Ping de waypoint | **V** | Lanza un raycast desde la cámara (`WaypointPing`) y abre `WaypointCreateScreen` con las coordenadas del bloque apuntado. Usa `ClipContext.Block.VISUAL`, así que atraviesa hierba, antorchas y cristal. Si el rayo no golpea nada, usa el punto final del rayo. Alcance (128 por defecto) y tratamiento de fluidos configurables en `ModConfigScreen`. |
 
 Todas se procesan en `ClientTickEvents.END_CLIENT_TICK` mediante `consumeClick()` (patrón estándar de Fabric para bindings que no son de movimiento).
+
+El raycast del ping se ejecuta **una sola vez por pulsación**, nunca por frame. El alcance útil real está limitado por el render distance del cliente: más allá de los chunks cargados el rayo solo puede fallar, ya que el cliente lee aire en chunks descargados y nunca los genera.
 
 ---
 
@@ -254,7 +281,7 @@ Genera (para la estructura multi-módulo declarada en `settings.gradle`):
 - `versions/26.1/build/libs/easywp-<mod_version>+26.1.x.jar`
 - `versions/26.2/build/libs/easywp-<mod_version>+26.2.jar`
 
-La versión del mod es única y global, definida en `gradle.properties` (`mod_version=1.2.1`) y se le concatena el sufijo de Minecraft (`minecraft_version_suffix` de cada subproyecto) al nombre del artefacto.
+La versión del mod es única y global, definida en `gradle.properties` (`mod_version=1.2.4`) y se le concatena el sufijo de Minecraft (`minecraft_version_suffix` de cada subproyecto) al nombre del artefacto.
 
 Cada subproyecto de versión usa `loom.splitEnvironmentSourceSets()` y añade `common` como fuente compartida (`sourceSets.main.java.srcDirs += project(":common")...`), además de `implementation project(":common")` como dependencia — es decir, el código de `common/` se compila e incluye directamente en cada JAR de versión, no se publica como artefacto separado.
 
@@ -276,7 +303,7 @@ Es la carpeta de ejecución del cliente de desarrollo (`./gradlew runClient`), c
 ## 13. Referencia cruzada de documentos
 
 - [`PORTING.md`](PORTING.md) — guía de migración de API 26.1 → 26.2 (arquitectura multi-módulo, tabla de versiones de tooling, cambios de API de `Minecraft.setScreen`, `Gui.setOverlayMessage`, y el nuevo `SubmitNodeCollector`).
-- [`SHADER_SOLUTIONS_LOG.md`](SHADER_SOLUTIONS_LOG.md) — bitácora completa (17 intentos) del proceso de diagnóstico y resolución del bug de marcadores/texto en negro bajo shaderpacks, incluyendo hipótesis descartadas, causas raíz confirmadas y la arquitectura final de proyección HUD.
+- [`SHADER_SOLUTIONS_LOG.md`](SHADER_SOLUTIONS_LOG.md) — bitácora completa (17 intentos) del proceso de diagnóstico y resolución del bug de marcadores/texto en negro bajo shaderpacks, incluyendo hipótesis descartadas y la causa raíz confirmada. Nota: la arquitectura final documentada en el log en términos de "proyección HUD" no es la que terminó en producción — la implementación real y la solución al oscurecimiento por shaders son las descritas en las secciones 5.2 y 5.3 bis de este documento (`WaypointRenderTypes` + pipeline de beacon privado), no un render HUD 2D.
 
 ---
 

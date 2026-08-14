@@ -3,6 +3,8 @@ package com.easywp.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
+import java.util.Locale;
+
 public class I18nHelper {
     public static String getLanguageCode() {
         try {
@@ -16,7 +18,7 @@ public class I18nHelper {
 
     public static boolean isSpanish() {
         String code = getLanguageCode();
-        return code != null && code.toLowerCase().startsWith("es_");
+        return code != null && code.toLowerCase(Locale.ROOT).startsWith("es_");
     }
 
     public static String translate(String key) {
@@ -106,6 +108,14 @@ public class I18nHelper {
                 return es ? "Radio: %.0f bloques" : "Radius: %.0f blocks";
             case "config.grace_row":
                 return es ? "Tiempo: %.1f s" : "Time: %.1f s";
+            case "config.section.ping":
+                return es ? "§7Ping" : "§7Ping";
+            case "config.ping_distance":
+                return es ? "Alcance: %.0f bloques" : "Range: %.0f blocks";
+            case "config.ping_fluids":
+                return es ? "Marcar fluidos" : "Target Fluids";
+            case "config.ping_follow_render_distance":
+                return es ? "Seguir distancia de renderizado" : "Follow Render Distance";
 
             default:
                 return key;

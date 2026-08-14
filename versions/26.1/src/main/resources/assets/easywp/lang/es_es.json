@@ -2,5 +2,6 @@
   "key.category.easywp.easywp_controls": "Easy Waypoints",
   "key.easywp.toggle": "Alternar Visibilidad de Waypoints",
   "key.easywp.create": "Crear Nuevo Waypoint",
-  "key.easywp.list": "Abrir Lista de Waypoints"
+  "key.easywp.list": "Abrir Lista de Waypoints",
+  "key.easywp.ping": "Marcar Waypoint en la Mira"
 }

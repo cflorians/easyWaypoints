@@ -2,5 +2,6 @@
   "key.category.easywp.easywp_controls": "Easy Waypoints",
   "key.easywp.toggle": "Toggle Waypoints Visibility",
   "key.easywp.create": "Create New Waypoint",
-  "key.easywp.list": "Open Waypoints List"
+  "key.easywp.list": "Open Waypoints List",
+  "key.easywp.ping": "Ping Waypoint at Crosshair"
 }

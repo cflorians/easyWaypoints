@@ -53,6 +53,9 @@ public class ModConfigScreen extends OptionsSubScreen {
     private static final double GRACE_FLOOR = 0.5;
     private static final double GRACE_CEIL = 30.0;
 
+    private static final double PING_DIST_FLOOR = 16.0;
+    private static final double PING_DIST_CEIL = 512.0;
+
     public ModConfigScreen(Screen parentScreen) {
         super(parentScreen, Minecraft.getInstance().options, I18nHelper.getComponent("config.title"));
     }
@@ -116,6 +119,37 @@ public class ModConfigScreen extends OptionsSubScreen {
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, GRACE_FLOOR, GRACE_CEIL, 0.5,
                         cfg.deathWaypoints.graceSeconds, "config.grace_row", this::applyGrace),
                 resetButton(this::resetGrace)
+        );
+
+        this.list.addHeader(I18nHelper.getComponent("config.section.ping"));
+        this.list.addSmall(
+                CycleButton.onOffBuilder(cfg.ping.followRenderDistance)
+                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.ping_follow_render_distance"),
+                                (button, value) -> {
+                                    ModConfig.get().ping.followRenderDistance = value;
+                                    ModConfig.save();
+                                    // The distance slider's locked/unlocked state is set once at
+                                    // construction time in addOptions(), so it needs the screen
+                                    // rebuilt to pick up the new value - same as every reset button.
+                                    reopen();
+                                }),
+                resetButton(this::resetPingFollowRenderDistance)
+        );
+        ConfigSlider pingDistanceSlider = new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, PING_DIST_FLOOR, PING_DIST_CEIL, 1.0,
+                cfg.ping.maxDistance, "config.ping_distance", this::applyPingDistance);
+        pingDistanceSlider.active = !cfg.ping.followRenderDistance;
+        this.list.addSmall(
+                pingDistanceSlider,
+                resetButton(this::resetPingDistance)
+        );
+        this.list.addSmall(
+                CycleButton.onOffBuilder(cfg.ping.hitFluids)
+                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.ping_fluids"),
+                                (button, value) -> {
+                                    ModConfig.get().ping.hitFluids = value;
+                                    ModConfig.save();
+                                }),
+                resetButton(this::resetPingFluids)
         );
 
         this.list.addHeader(I18nHelper.getComponent("config.section.behavior"));
@@ -187,6 +221,12 @@ public class ModConfigScreen extends OptionsSubScreen {
         ModConfig.save();
     }
 
+    private void applyPingDistance(double v) {
+        ModConfig cfg = ModConfig.get();
+        cfg.ping.maxDistance = clamp(v, PING_DIST_FLOOR, PING_DIST_CEIL);
+        ModConfig.save();
+    }
+
     private void resetSizePercent() {
         ModConfig.get().waypointSize.sizePercent = new ModConfig.WaypointSize().sizePercent;
         ModConfig.save();
@@ -225,6 +265,24 @@ public class ModConfigScreen extends OptionsSubScreen {
 
     private void resetGrace() {
         ModConfig.get().deathWaypoints.graceSeconds = new ModConfig.DeathWaypoints().graceSeconds;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetPingFollowRenderDistance() {
+        ModConfig.get().ping.followRenderDistance = new ModConfig.Ping().followRenderDistance;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetPingDistance() {
+        ModConfig.get().ping.maxDistance = new ModConfig.Ping().maxDistance;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetPingFluids() {
+        ModConfig.get().ping.hitFluids = new ModConfig.Ping().hitFluids;
         ModConfig.save();
         reopen();
     }

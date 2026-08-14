@@ -26,6 +26,7 @@ import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * Handles 3D world rendering and JSON storage for waypoints.
@@ -139,6 +140,7 @@ public class WaypointRenderer {
         boolean uppercaseLabels = ModConfig.get().labelDisplay.uppercase;
         boolean showDistance = ModConfig.get().labelDisplay.showDistance;
         int markerAlpha = (int) Math.round(255 * Mth.clamp(ModConfig.get().waypointSize.opacityPercent / 100.0, 0.0, 1.0));
+        double maxRenderDist = Math.max(32.0, client.options.getEffectiveRenderDistance() * 16.0 - 16.0);
 
         activeWaypoints.clear();
         int poolIndex = 0;
@@ -180,7 +182,6 @@ public class WaypointRenderer {
             double realDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (realDistance < 0.001) continue;
 
-            double maxRenderDist = Math.max(32.0, client.options.getEffectiveRenderDistance() * 16.0 - 16.0);
             double clampDist = Math.min(realDistance, maxRenderDist);
 
             double dirX = dx / realDistance;
@@ -333,6 +334,11 @@ public class WaypointRenderer {
                 .setNormal(pose, 0.0f, 0.0f, 1.0f);
     }
 
+    /** Characters that are unsafe in a file name, stripped when deriving the world id. Hoisted to a
+     *  constant because getWorldId() runs once per frame and String.replaceAll recompiles the
+     *  pattern on every call. */
+    private static final Pattern UNSAFE_FILENAME_CHARS = Pattern.compile("[\\\\/:*?\"<>| ]");
+
     public static String getWorldId() {
         Minecraft client = Minecraft.getInstance();
         if (client.level == null) {
@@ -340,12 +346,12 @@ public class WaypointRenderer {
         }
         if (client.getSingleplayerServer() != null) {
             if (client.getSingleplayerServer().getWorldData() != null) {
-                return "sp_" + client.getSingleplayerServer().getWorldData().getLevelName().replaceAll("[\\\\/:*?\"<>| ]", "_");
+                return "sp_" + UNSAFE_FILENAME_CHARS.matcher(client.getSingleplayerServer().getWorldData().getLevelName()).replaceAll("_");
             }
             return "sp_world";
         }
         if (client.getCurrentServer() != null) {
-            return "mp_" + client.getCurrentServer().ip.replace(':', '_').replaceAll("[\\\\/:*?\"<>| ]", "_");
+            return "mp_" + UNSAFE_FILENAME_CHARS.matcher(client.getCurrentServer().ip.replace(':', '_')).replaceAll("_");
         }
         return "mp_lan";
     }

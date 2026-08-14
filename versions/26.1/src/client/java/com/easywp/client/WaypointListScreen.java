@@ -16,6 +16,7 @@ import net.minecraft.server.permissions.Permissions;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Locale;
 
 /**
  * Centered modal screen for browsing, filtering, and managing waypoints.
@@ -143,13 +144,13 @@ public class WaypointListScreen extends Screen {
     private List<WaypointEntry> getFilteredWaypoints() {
         List<WaypointEntry> base = getWaypointsForDimension(selectedDimension);
         if (searchField == null) return base;
-        String query = searchField.getValue().trim().toLowerCase();
+        String query = searchField.getValue().trim().toLowerCase(Locale.ROOT);
         if (query.isEmpty()) return base;
 
         List<WaypointEntry> filtered = new ArrayList<>();
         for (WaypointEntry entry : base) {
             if (entry != null && entry.waypoint != null && entry.waypoint.getName() != null) {
-                if (entry.waypoint.getName().toLowerCase().contains(query)) {
+                if (entry.waypoint.getName().toLowerCase(Locale.ROOT).contains(query)) {
                     filtered.add(entry);
                 }
             }
@@ -264,7 +265,7 @@ public class WaypointListScreen extends Screen {
                     String dimName = selectedDimension.equals("minecraft:overworld") ? "Overworld" :
                                      (selectedDimension.equals("minecraft:the_nether") ? "Nether" : "The End");
                     String msg = String.format("%s -> [%d, %d, %d] at %s",
-                        wp.getName().toUpperCase(), pos.getX(), pos.getY(), pos.getZ(), dimName);
+                        wp.getName().toUpperCase(Locale.ROOT), pos.getX(), pos.getY(), pos.getZ(), dimName);
                     this.minecraft.player.connection.sendChat(msg);
                     this.onClose();
                 }

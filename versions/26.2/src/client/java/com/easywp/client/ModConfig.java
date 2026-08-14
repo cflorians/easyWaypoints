@@ -20,6 +20,7 @@ public class ModConfig {
     public LabelDisplay labelDisplay = new LabelDisplay();
     public Confirmations confirmations = new Confirmations();
     public Visibility visibility = new Visibility();
+    public Ping ping = new Ping();
 
     public static class DeathWaypoints {
         public boolean enabled = true;
@@ -55,6 +56,15 @@ public class ModConfig {
         public boolean lastVisible = true;
     }
 
+    public static class Ping {
+        /** How far the ping ray reaches, in blocks. Read once per key press, never per frame. */
+        public double maxDistance = 128.0;
+        /** Lets fluid surfaces stop the ping ray when true; the ray passes through them when false. */
+        public boolean hitFluids = false;
+        /** Uses the client's render distance setting as the ping range when true, ignoring maxDistance. */
+        public boolean followRenderDistance = false;
+    }
+
     private static ModConfig instance;
 
     public static ModConfig get() {
@@ -88,6 +98,9 @@ public class ModConfig {
                     }
                     if (loaded.visibility == null) {
                         loaded.visibility = new Visibility();
+                    }
+                    if (loaded.ping == null) {
+                        loaded.ping = new Ping();
                     }
                     return loaded;
                 }

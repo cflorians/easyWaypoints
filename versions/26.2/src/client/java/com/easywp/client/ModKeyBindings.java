@@ -12,6 +12,7 @@ public class ModKeyBindings {
     public static KeyMapping toggleWaypointsKey;
     public static KeyMapping createWaypointKey;
     public static KeyMapping listWaypointsKey;
+    public static KeyMapping pingWaypointKey;
     public static KeyMapping.Category EASYWP_CATEGORY;
     public static WaypointDisplayMode displayMode = WaypointDisplayMode.WORLD_MARKERS;
     private static boolean appliedRememberedVisibility = false;
@@ -37,6 +38,13 @@ public class ModKeyBindings {
                 "key.easywp.list",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_J,
+                EASYWP_CATEGORY
+        ));
+
+        pingWaypointKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.easywp.ping",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_V,
                 EASYWP_CATEGORY
         ));
 
@@ -76,6 +84,12 @@ public class ModKeyBindings {
             while (listWaypointsKey.consumeClick()) {
                 if (client.player != null && client.level != null) {
                     client.setScreenAndShow(new WaypointListScreen(null));
+                }
+            }
+
+            while (pingWaypointKey.consumeClick()) {
+                if (client.player != null && client.level != null) {
+                    client.setScreenAndShow(new WaypointCreateScreen(WaypointPing.target(client)));
                 }
             }
         });
