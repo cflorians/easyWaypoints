@@ -40,7 +40,7 @@ Un intento anterior de portar el mod a versiones previas de Minecraft (`1.21.1`,
 ## 3. Arquitectura del repositorio
 
 ```text
-easywp-template/
+easyWaypoints/
 ├── build.gradle, settings.gradle, gradle.properties   # raíz multi-módulo
 ├── common/                                # (:common) recursos compartidos + un único archivo de código
 │   ├── src/main/java/com/easywp/EasyWp.java            # entry point del lado servidor/común
