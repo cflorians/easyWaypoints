@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -60,7 +61,14 @@ public final class WaypointPing {
 
         // A miss still carries a position: BlockGetter.clip falls back to
         // BlockHitResult.miss(end, ..., BlockPos.containing(end)), which is already the
-        // "mark the end of the ray" behaviour we want, so there is no miss branch here.
-        return hit.getBlockPos();
+        // "mark the end of the ray" behaviour we want, so it's returned as-is.
+        if (hit.getType() != HitResult.Type.BLOCK) {
+            return hit.getBlockPos();
+        }
+
+        // A real hit lands on the empty space just in front of the struck face - e.g. one block
+        // up off the floor you're looking at, or one block below the ceiling - rather than inside
+        // the solid block itself, mirroring how vanilla positions a placed block against a face.
+        return hit.getBlockPos().relative(hit.getDirection());
     }
 }

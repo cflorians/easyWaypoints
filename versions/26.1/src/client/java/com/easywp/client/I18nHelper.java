@@ -44,7 +44,7 @@ public class I18nHelper {
                 return es ? "Buscar waypoint..." : "Search waypoint...";
 
             case "create.title.new":
-                return es ? "Crear Waypoint" : "Create Waypoint";
+                return es ? "Nuevo Waypoint" : "New Waypoint";
             case "create.title.edit":
                 return es ? "Editar Waypoint" : "Edit Waypoint";
             case "create.name_label":
@@ -76,7 +76,7 @@ public class I18nHelper {
                 return es ? "§7Waypoints desactivados" : "§7Waypoints disabled";
 
             case "death.name":
-                return es ? "☠ Muerte %s" : "☠ Death %s";
+                return es ? "Muerte %s" : "Death %s";
             case "death.created":
                 return es ? "§cWaypoint de muerte creado" : "§cDeath waypoint created";
             case "death.reached":
@@ -104,6 +104,8 @@ public class I18nHelper {
                 return es ? "§7Comportamiento" : "§7Behavior";
             case "config.death_enabled_toggle":
                 return es ? "Activar" : "Enabled";
+            case "config.max_death_row":
+                return es ? "Máx. waypoints de muerte: %.0f" : "Max death waypoints: %.0f";
             case "config.radius_row":
                 return es ? "Radio: %.0f bloques" : "Radius: %.0f blocks";
             case "config.grace_row":

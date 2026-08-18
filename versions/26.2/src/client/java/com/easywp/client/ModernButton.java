@@ -60,17 +60,17 @@ public class ModernButton extends Button {
         int textColor;
 
         if (!this.active) {
-            bgColor = 0x3010141E;
-            borderColor = 0x50252D40;
-            textColor = 0xFF666666;
+            bgColor = UiPalette.BTN_BG_OFF;
+            borderColor = UiPalette.BTN_BORDER_OFF;
+            textColor = UiPalette.BTN_TEXT_OFF;
         } else if (isHovered) {
-            bgColor = 0xE025324A;
-            borderColor = 0xFF5E75A8;
-            textColor = 0xFFFFFFFF;
+            bgColor = UiPalette.BTN_BG_HOVER;
+            borderColor = UiPalette.BTN_BORDER_HOVER;
+            textColor = UiPalette.BTN_TEXT_HOVER;
         } else {
-            bgColor = 0xB0141A26;
-            borderColor = 0xFF3B4866;
-            textColor = 0xFFD0D0D0;
+            bgColor = UiPalette.BTN_BG;
+            borderColor = UiPalette.BTN_BORDER;
+            textColor = UiPalette.BTN_TEXT;
         }
 
         graphics.fill(this.getX(), this.getY(), this.getX() + this.width, this.getY() + this.height, borderColor);

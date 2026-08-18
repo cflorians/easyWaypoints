@@ -5,29 +5,33 @@ import net.minecraft.core.BlockPos;
 
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Detects the player's death by watching health across client ticks (no mixin
  * needed - the death location doesn't change until the respawn packet arrives,
  * so it's still valid to sample at the tick health first reaches 0) and manages
- * the lifecycle of the single temporary death waypoint: created on death,
- * replacing any previous one, and auto-deleted once the player has stood next
- * to it for {@code graceSeconds} straight.
+ * the lifecycle of death waypoints: created on death (evicting the oldest once
+ * {@code maxCount} is exceeded), and auto-deleted once the player has stood next
+ * to one for {@code graceSeconds} straight.
  */
 public class DeathWaypointManager {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
-    private static final int DEATH_COLOR = 0xFFFF5555;
+    private static final int DEATH_COLOR = 0xFF000000;
 
     private static boolean wasAlive = true;
 
-    /** Which death waypoint the player is currently standing next to, and since when. */
-    private static Waypoint dwellWaypoint = null;
-    private static long dwellStartMillis = 0L;
+    /** Per-waypoint dwell start time, since more than one death waypoint can be in range at once when maxCount > 1. */
+    private static final Map<Waypoint, Long> dwellStart = new HashMap<>();
 
     public static void tick(Minecraft client) {
         if (client.player == null || client.level == null) {
             wasAlive = true;
-            dwellWaypoint = null;
+            dwellStart.clear();
             return;
         }
 
@@ -40,7 +44,7 @@ public class DeathWaypointManager {
 
         if (!cfg.enabled) {
             wasAlive = aliveNow;
-            dwellWaypoint = null;
+            dwellStart.clear();
             return;
         }
 
@@ -54,13 +58,27 @@ public class DeathWaypointManager {
         if (aliveNow) {
             checkArrival(client, cfg);
         } else {
-            dwellWaypoint = null;
+            dwellStart.clear();
         }
     }
 
     private static void createDeathWaypoint(Minecraft client) {
-        WaypointRenderer.waypoints.removeIf(Waypoint::isDeath);
-        dwellWaypoint = null;
+        dwellStart.clear();
+
+        // Keep at most (maxCount - 1) existing deaths so the new one fits within the configured cap;
+        // the oldest are evicted first. maxCount defaults to 1, reproducing the old "only the latest
+        // death survives" behavior.
+        int maxCount = Math.max(1, ModConfig.get().deathWaypoints.maxCount);
+        List<Waypoint> deaths = new ArrayList<>();
+        for (Waypoint wp : WaypointRenderer.waypoints) {
+            if (wp != null && wp.isDeath()) {
+                deaths.add(wp);
+            }
+        }
+        deaths.sort(Comparator.comparingLong(Waypoint::getCreatedAtMillis));
+        while (deaths.size() >= maxCount) {
+            WaypointRenderer.waypoints.remove(deaths.remove(0));
+        }
 
         BlockPos pos = client.player.blockPosition();
         String dimension = client.level.dimension().identifier().toString();
@@ -74,48 +92,54 @@ public class DeathWaypointManager {
     }
 
     private static void checkArrival(Minecraft client, ModConfig.DeathWaypoints cfg) {
-        Waypoint deathWp = null;
+        List<Waypoint> deaths = new ArrayList<>();
         for (Waypoint wp : WaypointRenderer.waypoints) {
             if (wp != null && wp.isDeath()) {
-                deathWp = wp;
-                break;
+                deaths.add(wp);
             }
         }
 
-        if (deathWp == null) {
-            dwellWaypoint = null;
+        // Drop dwell timers for deaths that no longer exist (deleted manually, or evicted by a new death).
+        dwellStart.keySet().retainAll(deaths);
+
+        if (deaths.isEmpty()) {
             return;
         }
 
-        String wpDim = deathWp.getDimension() != null ? deathWp.getDimension() : "minecraft:overworld";
         String currentDimension = client.level.dimension().identifier().toString();
         BlockPos playerPos = client.player.blockPosition();
-
-        double dx = playerPos.getX() - deathWp.getPos().getX();
-        double dy = playerPos.getY() - deathWp.getPos().getY();
-        double dz = playerPos.getZ() - deathWp.getPos().getZ();
-        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-        boolean inRange = wpDim.equals(currentDimension) && distance <= cfg.radius;
         long now = System.currentTimeMillis();
 
-        if (!inRange) {
-            dwellWaypoint = null;
-            return;
-        }
+        // Each death waypoint dwells independently, so with maxCount > 1 the player can walk
+        // through several at once and each is deleted on its own schedule.
+        for (Waypoint deathWp : deaths) {
+            String wpDim = deathWp.getDimension() != null ? deathWp.getDimension() : "minecraft:overworld";
 
-        if (dwellWaypoint != deathWp) {
-            // Just entered the radius - start the dwell timer instead of deleting immediately.
-            dwellWaypoint = deathWp;
-            dwellStartMillis = now;
-            return;
-        }
+            double dx = playerPos.getX() - deathWp.getPos().getX();
+            double dy = playerPos.getY() - deathWp.getPos().getY();
+            double dz = playerPos.getZ() - deathWp.getPos().getZ();
+            double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-        if ((now - dwellStartMillis) >= (long) (cfg.graceSeconds * 1000.0)) {
-            WaypointRenderer.waypoints.remove(deathWp);
-            WaypointRenderer.saveToFile();
-            client.gui.setOverlayMessage(I18nHelper.getComponent("death.reached"), true);
-            dwellWaypoint = null;
+            boolean inRange = wpDim.equals(currentDimension) && distance <= cfg.radius;
+
+            if (!inRange) {
+                dwellStart.remove(deathWp);
+                continue;
+            }
+
+            Long start = dwellStart.get(deathWp);
+            if (start == null) {
+                // Just entered the radius - start the dwell timer instead of deleting immediately.
+                dwellStart.put(deathWp, now);
+                continue;
+            }
+
+            if ((now - start) >= (long) (cfg.graceSeconds * 1000.0)) {
+                WaypointRenderer.waypoints.remove(deathWp);
+                WaypointRenderer.saveToFile();
+                client.gui.setOverlayMessage(I18nHelper.getComponent("death.reached"), true);
+                dwellStart.remove(deathWp);
+            }
         }
     }
 }

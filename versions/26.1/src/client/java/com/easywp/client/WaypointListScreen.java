@@ -24,7 +24,7 @@ import java.util.Locale;
 public class WaypointListScreen extends Screen {
     private final Screen parentScreen;
     private int scrollIndex = 0;
-    private static final int ITEMS_PER_PAGE = 5;
+    private static final int ITEMS_PER_PAGE = 6;
     private String selectedDimension = "minecraft:overworld";
     private EditBox searchField;
     private final List<GuiEventListener> dynamicWidgets = new ArrayList<>();
@@ -40,28 +40,14 @@ public class WaypointListScreen extends Screen {
         "minecraft:the_end"
     );
 
-    private static final Identifier ICON_FOCUS_ON = Identifier.fromNamespaceAndPath("easywp", "textures/gui/focuson.png");
-    private static final Identifier ICON_FOCUS_OFF = Identifier.fromNamespaceAndPath("easywp", "textures/gui/focusoff.png");
-    private static final Identifier ICON_SHOW = Identifier.fromNamespaceAndPath("easywp", "textures/gui/show.png");
-    private static final Identifier ICON_HIDE = Identifier.fromNamespaceAndPath("easywp", "textures/gui/hide.png");
-    private static final Identifier ICON_TP = Identifier.fromNamespaceAndPath("easywp", "textures/gui/tp.png");
-    private static final Identifier ICON_EDIT = Identifier.fromNamespaceAndPath("easywp", "textures/gui/edit.png");
-    private static final Identifier ICON_SHARE = Identifier.fromNamespaceAndPath("easywp", "textures/gui/sharebutton.png");
-    private static final Identifier ICON_DIM_ON = Identifier.fromNamespaceAndPath("easywp", "textures/gui/sharedimentionon.png");
-    private static final Identifier ICON_DIM_OFF = Identifier.fromNamespaceAndPath("easywp", "textures/gui/sharedimentionoff.png");
-    private static final Identifier ICON_DELETE = Identifier.fromNamespaceAndPath("easywp", "textures/gui/delete.png");
-    private static final Identifier ICON_CONFIG = Identifier.fromNamespaceAndPath("easywp", "textures/gui/configicon.png");
-
-    private static final int MODAL_BG_COLOR = 0xD010141E;
-    private static final int MODAL_HEADER_COLOR = 0xE0181E30;
-    private static final int MODAL_BORDER_COLOR = 0xFF3D4966;
-
     /**
-     * Name column runs from the marker swatch (centerX - 118) up to just short of the TP icon
-     * (centerX - 12), regardless of whether TP is actually shown for this player, so the layout
-     * doesn't shift with permissions. Leaves a small gap so the text never touches the icon.
+     * Name column runs from just past the marker swatch (centerX - 117) up to just short of the
+     * TP icon (centerX + 20), regardless of whether TP is actually shown for this player, so the
+     * layout doesn't shift with permissions. Leaves a small gap so the text never touches the icon.
+     * The focus toggle used to occupy this slot; merging it into the swatch on the left freed 20px,
+     * and shifting the action-button row right (to equalize the left/right modal margins) freed 12 more.
      */
-    private static final int NAME_MAX_WIDTH = 102;
+    private static final int NAME_MAX_WIDTH = 133;
 
     private static class WaypointEntry {
         final Waypoint waypoint;
@@ -79,9 +65,6 @@ public class WaypointListScreen extends Screen {
             if (converted) {
                 String prefix = waypoint.getDimension().equals("minecraft:overworld") ? "[OW] " : "[N] ";
                 name = prefix + name;
-            }
-            if (waypoint.isDeath()) {
-                name = "☠ " + name;
             }
             name = truncateToWidth(font, name, NAME_MAX_WIDTH);
             this.nameComponent = Component.literal(name);
@@ -181,14 +164,14 @@ public class WaypointListScreen extends Screen {
         int centerY = this.height / 2;
 
         if (this.searchField == null) {
-            this.searchField = new EditBox(this.font, centerX - 130, centerY - 82, 260, 16, I18nHelper.getComponent("menu.search"));
+            this.searchField = new EditBox(this.font, centerX - 130, centerY - 90, 260, 16, I18nHelper.getComponent("menu.search"));
             this.searchField.setHint(I18nHelper.getComponent("menu.search_hint"));
             this.searchField.setResponder(text -> {
                 this.scrollIndex = 0;
                 refreshItemWidgets();
             });
         } else {
-            this.searchField.setPosition(centerX - 130, centerY - 82);
+            this.searchField.setPosition(centerX - 130, centerY - 90);
             this.searchField.setWidth(260);
         }
 
@@ -227,9 +210,9 @@ public class WaypointListScreen extends Screen {
             Waypoint wp = entry.waypoint;
             BlockPos pos = entry.displayPos;
             int offsetIndex = i - startIndex;
-            int itemY = centerY - 52 + offsetIndex * 22;
+            int itemY = centerY - 60 + offsetIndex * 22;
 
-            int buttonX = centerX + 108;
+            int buttonX = centerX + 120;
 
             var delBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 if (ModConfig.get().confirmations.confirmBeforeDelete) {
@@ -301,8 +284,22 @@ public class WaypointListScreen extends Screen {
             }).pos(buttonX, itemY).size(18, 18).build();
             this.addRenderableWidget(visBtn);
             dynamicWidgets.add(visBtn);
-            buttonX -= 20;
 
+            if (showTP) {
+                buttonX -= 20;
+                var tpBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
+                    if (this.minecraft.player != null && this.minecraft.player.connection != null) {
+                        String targetDim = wp.isShared() ? selectedDimension : (wp.getDimension() != null ? wp.getDimension() : selectedDimension);
+                        String tpCommand = String.format("execute in %s run tp @s %d %d %d", targetDim, pos.getX(), pos.getY(), pos.getZ());
+                        this.minecraft.player.connection.sendCommand(tpCommand);
+                        this.onClose();
+                    }
+                }).pos(buttonX, itemY).size(18, 18).build();
+                this.addRenderableWidget(tpBtn);
+                dynamicWidgets.add(tpBtn);
+            }
+
+            // Focus toggle now lives on the marker swatch itself, at the left of the name.
             var focusBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 if (wp.isFocused()) {
                     wp.setFocused(false);
@@ -319,23 +316,9 @@ public class WaypointListScreen extends Screen {
                 }
                 WaypointRenderer.saveToFile();
                 refreshItemWidgets();
-            }).pos(buttonX, itemY).size(18, 18).build();
+            }).pos(centerX - 138, itemY).size(18, 18).build();
             this.addRenderableWidget(focusBtn);
             dynamicWidgets.add(focusBtn);
-
-            if (showTP) {
-                buttonX -= 20;
-                var tpBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
-                    if (this.minecraft.player != null && this.minecraft.player.connection != null) {
-                        String targetDim = wp.isShared() ? selectedDimension : (wp.getDimension() != null ? wp.getDimension() : selectedDimension);
-                        String tpCommand = String.format("execute in %s run tp @s %d %d %d", targetDim, pos.getX(), pos.getY(), pos.getZ());
-                        this.minecraft.player.connection.sendCommand(tpCommand);
-                        this.onClose();
-                    }
-                }).pos(buttonX, itemY).size(18, 18).build();
-                this.addRenderableWidget(tpBtn);
-                dynamicWidgets.add(tpBtn);
-            }
         }
 
         var prevDimBtn = ModernButton.modernBuilder(Component.literal("<"), btn -> {
@@ -344,7 +327,7 @@ public class WaypointListScreen extends Screen {
             selectedDimension = DIMENSIONS.get(prevIndex);
             scrollIndex = 0;
             refreshItemWidgets();
-        }).pos(centerX - 130, centerY + 74).size(20, 20).build();
+        }).pos(centerX - 130, centerY + 86).size(20, 20).build();
         this.addRenderableWidget(prevDimBtn);
         dynamicWidgets.add(prevDimBtn);
 
@@ -352,7 +335,7 @@ public class WaypointListScreen extends Screen {
             if (this.minecraft.player != null) {
                 this.minecraft.setScreen(new WaypointCreateScreen(this.minecraft.player.blockPosition()));
             }
-        }).pos(centerX - 105, centerY + 74).size(102, 20).build();
+        }).pos(centerX - 105, centerY + 86).size(102, 20).build();
         this.addRenderableWidget(newBtn);
         dynamicWidgets.add(newBtn);
 
@@ -362,7 +345,7 @@ public class WaypointListScreen extends Screen {
             } else {
                 this.onClose();
             }
-        }).pos(centerX + 2, centerY + 74).size(103, 20).build();
+        }).pos(centerX + 2, centerY + 86).size(103, 20).build();
         this.addRenderableWidget(backBtn);
         dynamicWidgets.add(backBtn);
 
@@ -372,7 +355,7 @@ public class WaypointListScreen extends Screen {
             selectedDimension = DIMENSIONS.get(nextIndex);
             scrollIndex = 0;
             refreshItemWidgets();
-        }).pos(centerX + 110, centerY + 74).size(20, 20).build();
+        }).pos(centerX + 110, centerY + 86).size(20, 20).build();
         this.addRenderableWidget(nextDimBtn);
         dynamicWidgets.add(nextDimBtn);
     }
@@ -406,19 +389,17 @@ public class WaypointListScreen extends Screen {
         int headerCenterX = centerX;
 
         int bgW = 290;
-        int bgH = 220;
+        int bgH = 226;
         int minX = centerX - bgW / 2;
         int minY = centerY - bgH / 2;
 
         RenderPipeline pipeline = RenderPipelines.GUI_TEXTURED;
 
-        graphics.fill(minX, minY, minX + bgW, minY + bgH, MODAL_BG_COLOR);
-        graphics.fill(minX, minY, minX + bgW, minY + 22, MODAL_HEADER_COLOR);
-        graphics.fill(minX, minY, minX + bgW, minY + 1, MODAL_BORDER_COLOR);
-        graphics.fill(minX, minY + bgH - 1, minX + bgW, minY + bgH, MODAL_BORDER_COLOR);
-        graphics.fill(minX, minY, minX + 1, minY + bgH, MODAL_BORDER_COLOR);
-        graphics.fill(minX + bgW - 1, minY, minX + bgW, minY + bgH, MODAL_BORDER_COLOR);
-        graphics.fill(minX, minY + 22, minX + bgW, minY + 23, MODAL_BORDER_COLOR);
+        graphics.fill(minX, minY, minX + bgW, minY + bgH, UiPalette.MODAL_BG);
+        graphics.fill(minX, minY, minX + bgW, minY + 1, UiPalette.MODAL_BORDER);
+        graphics.fill(minX, minY + bgH - 1, minX + bgW, minY + bgH, UiPalette.MODAL_BORDER);
+        graphics.fill(minX, minY, minX + 1, minY + bgH, UiPalette.MODAL_BORDER);
+        graphics.fill(minX + bgW - 1, minY, minX + bgW, minY + bgH, UiPalette.MODAL_BORDER);
 
         List<WaypointEntry> waypoints = this.cachedFilteredWaypoints;
         int totalWaypoints = waypoints.size();
@@ -426,19 +407,19 @@ public class WaypointListScreen extends Screen {
         String dimensionName = selectedDimension.equals("minecraft:overworld") ? "OVERWORLD" :
                               (selectedDimension.equals("minecraft:the_nether") ? "NETHER" : "THE END");
         String headerDimText = dimensionName + " (" + totalWaypoints + ")";
-        int dimensionColor = 0xFFFFFFFF;
+        int dimensionColor = UiPalette.TEXT_PRIMARY;
         if (selectedDimension.equals("minecraft:overworld")) {
-            dimensionColor = 0xFF4EAE32;
+            dimensionColor = UiPalette.DIM_OVERWORLD;
         } else if (selectedDimension.equals("minecraft:the_nether")) {
-            dimensionColor = 0xFFE05252;
+            dimensionColor = UiPalette.DIM_NETHER;
         } else {
-            dimensionColor = 0xFFB85CFF;
+            dimensionColor = UiPalette.DIM_END;
         }
-        graphics.centeredText(this.font, Component.literal(headerDimText), headerCenterX, centerY - 103, dimensionColor);
+        graphics.centeredText(this.font, Component.literal(headerDimText), headerCenterX, centerY - 106, dimensionColor);
 
         super.extractRenderState(graphics, mouseX, mouseY, a);
 
-        graphics.blit(pipeline, ICON_CONFIG, 9, this.height - 27, 0.0f, 0.0f, 18, 18, 18, 18);
+        graphics.blit(pipeline, Icons.CONFIG, 9, this.height - 27, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_IDLE);
 
         int startIndex = scrollIndex;
         int endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalWaypoints);
@@ -447,15 +428,15 @@ public class WaypointListScreen extends Screen {
         boolean showTP = this.cachedShowTP;
 
         if (totalWaypoints == 0) {
-            graphics.centeredText(this.font, I18nHelper.getComponent("menu.no_waypoints"), headerCenterX, centerY - 10, 0xFF888888);
+            graphics.centeredText(this.font, I18nHelper.getComponent("menu.no_waypoints"), headerCenterX, centerY + 5, UiPalette.TEXT_SECONDARY);
         } else {
-            int arrowColor = 0xFF3B4866;
+            int arrowColor = UiPalette.SCROLL_ARROW;
             if (scrollIndex > 0) {
-                drawUpTriangle(graphics, headerCenterX, centerY - 60, arrowColor);
+                drawUpTriangle(graphics, headerCenterX, centerY - 68, arrowColor);
             }
 
             if (startIndex + ITEMS_PER_PAGE < totalWaypoints) {
-                drawDownTriangle(graphics, headerCenterX, centerY + 58, arrowColor);
+                drawDownTriangle(graphics, headerCenterX, centerY + 72, arrowColor);
             }
 
             for (int i = startIndex; i < endIndex; i++) {
@@ -463,59 +444,51 @@ public class WaypointListScreen extends Screen {
                 if (entry == null || entry.waypoint == null) continue;
                 Waypoint wp = entry.waypoint;
                 int offsetIndex = i - startIndex;
-                int itemY = centerY - 52 + offsetIndex * 22;
+                int itemY = centerY - 60 + offsetIndex * 22;
 
                 boolean isDimmed = !wp.isVisible() || (hasAnyFocused && !wp.isFocused() && !wp.isForceVisible());
+                boolean focused = wp.isFocused();
 
-                int markerColor = wp.getColor();
-                if (isDimmed) {
-                    int r = (markerColor >> 16) & 0xFF;
-                    int g = (markerColor >> 8) & 0xFF;
-                    int b = markerColor & 0xFF;
-                    markerColor = (0x60 << 24) | ((r / 2) << 16) | ((g / 2) << 8) | (b / 2);
-                }
-                graphics.fill(centerX - 130, itemY + 5, centerX - 122, itemY + 13, markerColor);
+                // Marker swatch doubles as the focus toggle: always filled with the waypoint's own
+                // color, black border normally, gold border while focused.
+                int swatchFill = isDimmed ? dim(wp.getColor()) : wp.getColor();
+                int swatchOutlineBase = focused ? UiPalette.FOCUS_OUTLINE_ON : UiPalette.MARKER_OUTLINE;
+                int swatchOutline = isDimmed ? dim(swatchOutlineBase) : swatchOutlineBase;
+                Icons.drawMarkerIcon(graphics, pipeline, centerX - 138, itemY, swatchFill, swatchOutline, wp.isDeath());
 
-                int nameColor = isDimmed ? 0xFF555555 : (entry.converted ? 0xFFFFFFAA : 0xFFFFFFFF);
-                graphics.text(this.font, entry.nameComponent, centerX - 118, itemY + 1, nameColor);
+                int nameColor = isDimmed ? UiPalette.TEXT_DIM : (entry.converted ? UiPalette.TEXT_CONVERTED : UiPalette.TEXT_PRIMARY);
+                graphics.text(this.font, entry.nameComponent, centerX - 117, itemY + 1, nameColor);
 
-                int coordsColor = isDimmed ? 0xFF353535 : 0xFF888888;
-                graphics.text(this.font, entry.coordsComponent, centerX - 118, itemY + 10, coordsColor);
-
-                if (wp.isShared() && !entry.converted) {
-                    int dotColor = isDimmed ? 0xFF225522 : 0xFF55FF55;
-                    graphics.text(this.font, Component.literal("•"), centerX - 121, itemY - 1, dotColor);
-                }
+                int coordsColor = isDimmed ? UiPalette.TEXT_DIM_SOFT : UiPalette.TEXT_SECONDARY;
+                graphics.text(this.font, entry.coordsComponent, centerX - 117, itemY + 10, coordsColor);
 
                 if (showTP) {
-                    graphics.blit(pipeline, ICON_TP, centerX - 12, itemY, 0.0f, 0.0f, 18, 18, 18, 18);
+                    graphics.blit(pipeline, Icons.TP, centerX + 20, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_ACCENT);
                 }
-
-                Identifier focusIcon = wp.isFocused() ? ICON_FOCUS_ON : ICON_FOCUS_OFF;
-                graphics.blit(pipeline, focusIcon, centerX + 8, itemY, 0.0f, 0.0f, 18, 18, 18, 18);
 
                 boolean isVisible = wp.isVisible();
                 if (hasAnyFocused) {
                     isVisible = wp.isFocused() || wp.isForceVisible();
                 }
-                Identifier visIcon = isVisible ? ICON_SHOW : ICON_HIDE;
-                graphics.blit(pipeline, visIcon, centerX + 28, itemY, 0.0f, 0.0f, 18, 18, 18, 18);
+                Identifier visIcon = isVisible ? Icons.SHOW : Icons.HIDE;
+                int visColor = isVisible ? UiPalette.ICON_ACTIVE : UiPalette.ICON_DISABLED;
+                graphics.blit(pipeline, visIcon, centerX + 40, itemY, 0.0f, 0.0f, 18, 18, 18, 18, visColor);
 
-                graphics.blit(pipeline, ICON_EDIT, centerX + 48, itemY, 0.0f, 0.0f, 18, 18, 18, 18);
-                graphics.blit(pipeline, ICON_SHARE, centerX + 68, itemY, 0.0f, 0.0f, 18, 18, 18, 18);
+                graphics.blit(pipeline, Icons.EDIT, centerX + 60, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_IDLE);
+                graphics.blit(pipeline, Icons.SHARE, centerX + 80, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_IDLE);
 
-                Identifier dimIcon = wp.isShared() ? ICON_DIM_ON : ICON_DIM_OFF;
-                graphics.blit(pipeline, dimIcon, centerX + 88, itemY, 0.0f, 0.0f, 18, 18, 18, 18);
+                Icons.drawPortalIcon(graphics, pipeline, centerX + 100, itemY,
+                        wp.isShared(), !selectedDimension.equals("minecraft:the_end"));
 
-                graphics.blit(pipeline, ICON_DELETE, centerX + 108, itemY, 0.0f, 0.0f, 18, 18, 18, 18);
+                graphics.blit(pipeline, Icons.DELETE, centerX + 120, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_DESTRUCTIVE);
             }
 
             if (totalWaypoints > ITEMS_PER_PAGE) {
-                int scrollbarX = centerX + 134;
-                int scrollbarY = centerY - 52;
-                int scrollbarHeight = 108;
+                int scrollbarX = centerX + 140;
+                int scrollbarY = centerY - 60;
+                int scrollbarHeight = 128;
 
-                graphics.fill(scrollbarX, scrollbarY, scrollbarX + 2, scrollbarY + scrollbarHeight, 0xFF444444);
+                graphics.fill(scrollbarX, scrollbarY, scrollbarX + 2, scrollbarY + scrollbarHeight, UiPalette.SCROLL_TRACK);
 
                 float visibleRatio = (float) ITEMS_PER_PAGE / totalWaypoints;
                 int thumbHeight = Math.max(12, (int) (scrollbarHeight * visibleRatio));
@@ -523,7 +496,7 @@ public class WaypointListScreen extends Screen {
                 float scrollRatio = (float) scrollIndex / (totalWaypoints - ITEMS_PER_PAGE);
                 int thumbY = scrollbarY + (int) ((scrollbarHeight - thumbHeight) * scrollRatio);
 
-                graphics.fill(scrollbarX, thumbY, scrollbarX + 2, thumbY + thumbHeight, 0xFFFFFFFF);
+                graphics.fill(scrollbarX, thumbY, scrollbarX + 2, thumbY + thumbHeight, UiPalette.SCROLL_THUMB);
             }
         }
     }
@@ -535,6 +508,14 @@ public class WaypointListScreen extends Screen {
             return true;
         }
         return super.keyPressed(event);
+    }
+
+    /** Darkens an ARGB color for rows hidden or filtered out by an active focus. */
+    private static int dim(int argb) {
+        int r = (argb >> 16) & 0xFF;
+        int g = (argb >> 8) & 0xFF;
+        int b = argb & 0xFF;
+        return (0x60 << 24) | ((r / 2) << 16) | ((g / 2) << 8) | (b / 2);
     }
 
     private void drawUpTriangle(GuiGraphicsExtractor graphics, int centerX, int startY, int color) {

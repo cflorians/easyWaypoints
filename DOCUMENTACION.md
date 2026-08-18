@@ -297,7 +297,7 @@ Genera (para la estructura multi-módulo declarada en `settings.gradle`):
 - `versions/26.1/build/libs/easywp-<mod_version>+26.1.x.jar`
 - `versions/26.2/build/libs/easywp-<mod_version>+26.2.jar`
 
-La versión del mod es única y global, definida en `gradle.properties` (`mod_version=1.2.4`) y se le concatena el sufijo de Minecraft (`minecraft_version_suffix` de cada subproyecto) al nombre del artefacto.
+La versión del mod es única y global, definida en `gradle.properties` (`mod_version=1.3.0`) y se le concatena el sufijo de Minecraft (`minecraft_version_suffix` de cada subproyecto) al nombre del artefacto.
 
 Cada subproyecto de versión usa `loom.splitEnvironmentSourceSets()` y añade `common` como fuente compartida (`sourceSets.main.java.srcDirs += project(":common")...`), además de `implementation project(":common")` como dependencia — es decir, el código de `common/` se compila e incluye directamente en cada JAR de versión, no se publica como artefacto separado.
 

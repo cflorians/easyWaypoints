@@ -28,6 +28,9 @@ public class ModConfig {
         /** Seconds the player must stand within {@code radius} of the death waypoint, without
          *  leaving, before it is deleted. Resets if the player steps back out of range. */
         public double graceSeconds = 1.0;
+        /** How many death waypoints can exist at once before the oldest is deleted to make room
+         *  for a new one. 1 (default) reproduces the original behavior: only the latest death is kept. */
+        public int maxCount = 1;
     }
 
     public static class WaypointSize {

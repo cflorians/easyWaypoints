@@ -47,6 +47,9 @@ public class ModConfigScreen extends OptionsSubScreen {
     private static final double OPACITY_FLOOR = 0.0;
     private static final double OPACITY_CEIL = 100.0;
 
+    private static final double MAX_DEATH_FLOOR = 1.0;
+    private static final double MAX_DEATH_CEIL = 10.0;
+
     private static final double RADIUS_FLOOR = 1.0;
     private static final double RADIUS_CEIL = 50.0;
 
@@ -109,6 +112,11 @@ public class ModConfigScreen extends OptionsSubScreen {
                                     ModConfig.save();
                                 }),
                 resetButton(this::resetDeathEnabled)
+        );
+        this.list.addSmall(
+                new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, MAX_DEATH_FLOOR, MAX_DEATH_CEIL, 1.0,
+                        cfg.deathWaypoints.maxCount, "config.max_death_row", this::applyMaxDeathCount),
+                resetButton(this::resetMaxDeathCount)
         );
         this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, RADIUS_FLOOR, RADIUS_CEIL, 1.0,
@@ -209,6 +217,12 @@ public class ModConfigScreen extends OptionsSubScreen {
         ModConfig.save();
     }
 
+    private void applyMaxDeathCount(double v) {
+        ModConfig cfg = ModConfig.get();
+        cfg.deathWaypoints.maxCount = (int) Math.round(clamp(v, MAX_DEATH_FLOOR, MAX_DEATH_CEIL));
+        ModConfig.save();
+    }
+
     private void applyRadius(double v) {
         ModConfig cfg = ModConfig.get();
         cfg.deathWaypoints.radius = clamp(v, RADIUS_FLOOR, RADIUS_CEIL);
@@ -253,6 +267,12 @@ public class ModConfigScreen extends OptionsSubScreen {
 
     private void resetDeathEnabled() {
         ModConfig.get().deathWaypoints.enabled = new ModConfig.DeathWaypoints().enabled;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetMaxDeathCount() {
+        ModConfig.get().deathWaypoints.maxCount = new ModConfig.DeathWaypoints().maxCount;
         ModConfig.save();
         reopen();
     }
