@@ -42,6 +42,12 @@ public class I18nHelper {
                 return es ? "Buscar..." : "Search...";
             case "menu.search_hint":
                 return es ? "Buscar waypoint..." : "Search waypoint...";
+            case "sort.created":
+                return es ? "Creación" : "Created";
+            case "sort.name":
+                return es ? "Nombre" : "Name";
+            case "sort.distance":
+                return es ? "Distancia" : "Distance";
 
             case "create.title.new":
                 return es ? "Nuevo Waypoint" : "New Waypoint";

@@ -1,6 +1,7 @@
 package com.easywp.client;
 
 import com.easywp.EasyWp;
+import com.easywp.JsonStore;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -22,9 +23,8 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.lang.reflect.Type;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -39,6 +39,7 @@ public class WaypointRenderer {
 
     /** Label backdrop, ARGB. Same value Font uses for the box in the 26.1 renderer. */
     private static final int LABEL_BACKDROP = 0x40000000;
+
     private static final int FULL_BRIGHT    = 0xF000F0;
 
     /** Submit order for the label text, so it is drawn after our backdrop quad. */
@@ -62,21 +63,45 @@ public class WaypointRenderer {
     private static final double MARKER_PROJECTION_DIST = 4.0;
 
     /**
-     * Distance the label is drawn at. Kept level with the marker on purpose.
-     *
-     * <p>Pulling it in to a quarter of a block did put it in front of nearby geometry, but it
-     * also shrank the glyph quads by another factor of sixteen, and Iris derives the tangents
-     * and mid-texture coordinates its programs light with from those quad deltas. That is the
-     * most likely reason the letters came back grey. The backdrop now shares the glyphs'
-     * pipeline instead, so the two halves are occluded together rather than separately.
+     * Half the player's collision box width (the box is 0.6 blocks wide), so the closest a solid
+     * block face can ever get to the eye - standing flush against a wall - is this far away.
      */
-    private static final double LABEL_PROJECTION_DIST = MARKER_PROJECTION_DIST;
+    private static final double PLAYER_WALL_CLEARANCE = 0.3;
+
+    /**
+     * Distance the label is drawn at, closer than {@link #PLAYER_WALL_CLEARANCE} on purpose: under
+     * a shaderpack {@code POLYGON_OFFSET} depth-tests like terrain (see {@code labelMode} below),
+     * and a billboard projected nearer than any block the player's own hitbox can physically touch
+     * can never lose that test - the label stops disappearing at any distance, not just past some
+     * chosen threshold.
+     *
+     * <p>The cost is the same one this value has always carried: pulling the billboard in shrinks
+     * the glyph quads by the same factor perspective divides back out on screen, and Iris derives
+     * the tangents and mid-texture coordinates its programs light with from those quad deltas. A
+     * quarter of a block (4.0, a 16x pull-in) was tried once and the letters came back grey; this
+     * is a smaller pull-in than that, but the margin is not large - watch for the same symptom.
+     */
+    private static final double LABEL_PROJECTION_DIST = PLAYER_WALL_CLEARANCE - 0.05;
+
+    // Behind-the-camera cull: skips a waypoint's marker-size math and draw calls when it is far
+    // enough out of view that it cannot be on screen, without measuring its actual projected
+    // position. Distance-gated so a marker the player is standing right next to - where the
+    // direction to it can point anywhere - is never culled by the angle check alone. The dot
+    // threshold is deliberately generous (root: cos(120deg)) to clear even the widest vanilla FOV
+    // plus dynamic-FOV effects with margin, since a false cull is a visible bug and a missed cull
+    // just costs the perf win.
+    private static final double CULL_MIN_DISTANCE = 8.0;
+    private static final float CULL_DOT_THRESHOLD = -0.5f;
 
     private static String lastWorldId = "";
+    private static Object lastCheckedLevel = null;
     private static final Object lock = new Object();
 
     /** Per-frame view bob translation, converted from camera space to world axes. */
     private static final Vector3f bobOffset = new Vector3f();
+
+    /** Per-frame camera forward direction in world space, used only for the behind-camera cull. */
+    private static final Vector3f cameraForward = new Vector3f();
 
     /**
      * Mirrors the translation half of {@code GameRenderer.bobView}.
@@ -207,6 +232,7 @@ public class WaypointRenderer {
         }
 
         computeBobOffset(client, cameraState);
+        cameraForward.set(0.0f, 0.0f, -1.0f).rotate(cameraState.orientation);
 
         float sizeScale = (float) (ModConfig.get().waypointSize.sizePercent / 100.0);
         boolean uppercaseLabels = ModConfig.get().labelDisplay.uppercase;
@@ -260,6 +286,11 @@ public class WaypointRenderer {
             double dirY = dy / realDistance;
             double dirZ = dz / realDistance;
 
+            if (realDistance > CULL_MIN_DISTANCE) {
+                float viewDot = (float) (dirX * cameraForward.x + dirY * cameraForward.y + dirZ * cameraForward.z);
+                if (viewDot < CULL_DOT_THRESHOLD) continue;
+            }
+
             double growthDist = Math.max(0.0, clampDist - WAYPOINT_GROWTH_START_DIST);
             float baseSize = (float) Mth.clamp(
                     WAYPOINT_MIN_SIZE + WAYPOINT_VISUAL_ANGLE * (float) growthDist,
@@ -304,10 +335,22 @@ public class WaypointRenderer {
             double realDistance = holder.realDistance;
             float markerSize = holder.markerSize;
 
-            String wpName  = wp.getName() != null ? wp.getName() : "Waypoint";
-            String nameText = showDistance ? (wpName + " (" + (int) realDistance + "m)") : wpName;
-            if (uppercaseLabels) {
-                nameText = nameText.toUpperCase(Locale.ROOT);
+            String wpName = wp.getName() != null ? wp.getName() : "Waypoint";
+            int distanceMeters = showDistance ? (int) realDistance : 0;
+            String nameText;
+            float textWidth;
+            if (wp.labelCacheMatches(wpName, uppercaseLabels, showDistance, distanceMeters)) {
+                nameText = wp.getCachedLabelText();
+                textWidth = wp.getCachedLabelWidth();
+            } else {
+                // Uppercased before the suffix is appended, not after: the trailing "m" is a unit
+                // symbol and stays lowercase whatever the label styling says.
+                nameText = uppercaseLabels ? wpName.toUpperCase(Locale.ROOT) : wpName;
+                if (showDistance) {
+                    nameText = nameText + " (" + distanceMeters + "m)";
+                }
+                textWidth = font.width(nameText);
+                wp.setCachedLabel(wpName, uppercaseLabels, showDistance, distanceMeters, nameText, textWidth);
             }
 
             int wpColor = wp.getColor();
@@ -333,7 +376,6 @@ public class WaypointRenderer {
             // halves end up nearer than anything that could depth reject the text.
             float labelSize = holder.labelSize;
             float textScale = 0.035f * labelSize / 0.7f;
-            float textWidth = font.width(nameText);
             float anchorY = labelSize * 1.50f;
 
             poseStack.pushPose();
@@ -360,11 +402,11 @@ public class WaypointRenderer {
             poseStack.pushPose();
             poseStack.translate(0.0f, anchorY, 0.0f);
             poseStack.scale(-textScale, -textScale, textScale);
-            float xOffset = -textWidth / 2.0f + 1.0f;
 
             // Text, submitted one order later. Within a single order the texts phase runs before
             // translucentCustomGeometry, so at the default order the backdrop above would be
             // painted over the letters. Orders are drained in ascending key order.
+            float xOffset = -textWidth / 2.0f + 1.0f;
             collector.order(LABEL_TEXT_ORDER).submitText(
                     poseStack, xOffset, 0.0f,
                     FormattedCharSequence.forward(nameText, Style.EMPTY),
@@ -469,6 +511,14 @@ public class WaypointRenderer {
         Minecraft client = Minecraft.getInstance();
         if (client.level == null) return;
 
+        // client.level is a new instance on every dimension change as well as on (re)join, and
+        // unchanged on every other frame, so gating getWorldId() on it turns this from a per-frame
+        // call (string formatting, singleplayer/server lookups) into one that only runs on those
+        // transitions - identical result, since worldId never depends on which dimension the
+        // already-known server/world is currently in.
+        if (client.level == lastCheckedLevel) return;
+        lastCheckedLevel = client.level;
+
         String currentWorld = getWorldId();
         if (!currentWorld.equals("unknown") && !currentWorld.equals(lastWorldId)) {
             synchronized (lock) {
@@ -478,22 +528,25 @@ public class WaypointRenderer {
         }
     }
 
+    private static Path waypointsFile(String worldId) {
+        return new File(Minecraft.getInstance().gameDirectory, "config/easywp/waypoints_" + worldId + ".json").toPath();
+    }
+
     public static void saveToFile() {
         String worldId = getWorldId();
         if (worldId.equals("unknown")) return;
 
-        File configFile = new File(Minecraft.getInstance().gameDirectory, "config/easywp/waypoints_" + worldId + ".json");
         try {
-            configFile.getParentFile().mkdirs();
             List<WaypointData> dataList = new ArrayList<>();
             for (Waypoint wp : waypoints) {
                 dataList.add(new WaypointData(wp));
             }
 
+            // Serialised in full before anything touches the disk: JsonStore needs the whole
+            // document up front to write it in one atomic replacement, and this file is the only
+            // copy the waypoints exist in, so a half-written one would lose them for good.
             Gson gson = new GsonBuilder().setPrettyPrinting().create();
-            try (FileWriter writer = new FileWriter(configFile)) {
-                gson.toJson(dataList, writer);
-            }
+            JsonStore.write(waypointsFile(worldId), gson.toJson(dataList));
         } catch (Exception e) {
             EasyWp.LOGGER.error("Failed to save waypoints", e);
         }
@@ -503,23 +556,37 @@ public class WaypointRenderer {
         String worldId = getWorldId();
         if (worldId.equals("unknown")) return;
 
-        File configFile = new File(Minecraft.getInstance().gameDirectory, "config/easywp/waypoints_" + worldId + ".json");
+        Path configFile = waypointsFile(worldId);
         waypoints.clear();
-        if (!configFile.exists()) return;
 
-        try {
-            Gson gson = new Gson();
-            try (FileReader reader = new FileReader(configFile)) {
-                Type listType = new TypeToken<List<WaypointData>>(){}.getType();
-                List<WaypointData> dataList = gson.fromJson(reader, listType);
-                if (dataList != null) {
-                    for (WaypointData data : dataList) {
-                        waypoints.add(data.toWaypoint());
-                    }
-                }
+        List<WaypointData> dataList = parseWaypoints(JsonStore.read(configFile));
+        if (dataList == null) {
+            // Absent, empty or unparseable. A file left over from an older build predates the
+            // atomic writes and may well be truncated, so the backup is worth a try before
+            // silently starting the world with no waypoints at all.
+            dataList = parseWaypoints(JsonStore.read(JsonStore.backupOf(configFile)));
+            if (dataList != null) {
+                EasyWp.LOGGER.warn("Recovered the waypoints of {} from the backup file", worldId);
             }
+        }
+        if (dataList == null) return;
+
+        for (WaypointData data : dataList) {
+            if (data != null) {
+                waypoints.add(data.toWaypoint());
+            }
+        }
+    }
+
+    /** @return the parsed list, or {@code null} if {@code json} is absent or not readable as one. */
+    private static List<WaypointData> parseWaypoints(String json) {
+        if (json == null) return null;
+        try {
+            Type listType = new TypeToken<List<WaypointData>>(){}.getType();
+            return new Gson().fromJson(json, listType);
         } catch (Exception e) {
-            EasyWp.LOGGER.error("Failed to load waypoints", e);
+            EasyWp.LOGGER.error("Failed to parse waypoints", e);
+            return null;
         }
     }
 

@@ -22,10 +22,14 @@ public class WaypointCreateScreen extends Screen {
     private static final int FORM_WIDTH = 270;
     /**
      * Marker height in the preview, sized to match the real in-game ratio between the marker and its
-     * label text rather than an arbitrary GUI size. In WaypointRenderer, labelSize always equals
-     * markerSize (MARKER_PROJECTION_DIST == LABEL_PROJECTION_DIST), and the label's world-space text
-     * height works out to {@code 9 * (0.035 * labelSize / 0.7) = 0.45 * markerSize}. Our label is
-     * drawn at the standard unscaled 9px GUI line height, so the marker that keeps the same ratio is
+     * label text rather than an arbitrary GUI size. In WaypointRenderer the marker and the label are
+     * projected to different fixed distances, but each one's own apparent size is shrunk by exactly
+     * the distance it is pulled in by (a perspective projection divides by distance, so the two
+     * cancel), leaving both proportional to the same {@code baseSize / clampDist} regardless of
+     * which projection distance either one uses. Working that through, the label's apparent text
+     * height still comes out to {@code 9 * (0.035 * labelSize / 0.7) = 0.45 * markerSize} in terms
+     * of what each would render at if projected to the same distance. Our label is drawn at the
+     * standard unscaled 9px GUI line height, so the marker that keeps the same ratio is
      * {@code 9 / 0.45 = 20} px tall — this is that fixed point, not a look-good guess.
      */
     private static final float PREVIEW_MARKER_H = 20.0f;

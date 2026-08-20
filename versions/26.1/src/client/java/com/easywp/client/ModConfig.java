@@ -1,13 +1,14 @@
 package com.easywp.client;
 
 import com.easywp.EasyWp;
+import com.easywp.JsonStore;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import net.minecraft.client.Minecraft;
 
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * General, world-independent mod settings, stored once at
@@ -21,6 +22,7 @@ public class ModConfig {
     public Confirmations confirmations = new Confirmations();
     public Visibility visibility = new Visibility();
     public Ping ping = new Ping();
+    public ListOptions list = new ListOptions();
 
     public static class DeathWaypoints {
         public boolean enabled = true;
@@ -68,6 +70,11 @@ public class ModConfig {
         public boolean followRenderDistance = false;
     }
 
+    public static class ListOptions {
+        /** Row ordering of the waypoint list, stored as a {@link WaypointSortMode} name. */
+        public String sortMode = WaypointSortMode.CREATED.name();
+    }
+
     private static ModConfig instance;
 
     public static ModConfig get() {
@@ -77,39 +84,28 @@ public class ModConfig {
         return instance;
     }
 
-    private static File configFile() {
-        return new File(Minecraft.getInstance().gameDirectory, "config/easywp/config.json");
+    private static Path configFile() {
+        return new File(Minecraft.getInstance().gameDirectory, "config/easywp/config.json").toPath();
     }
 
     private static ModConfig load() {
-        File file = configFile();
-        if (file.exists()) {
-            try (FileReader reader = new FileReader(file)) {
-                ModConfig loaded = new Gson().fromJson(reader, ModConfig.class);
+        Path file = configFile();
+        if (Files.isRegularFile(file)) {
+            ModConfig loaded = parse(JsonStore.read(file));
+            if (loaded == null) {
+                loaded = parse(JsonStore.read(JsonStore.backupOf(file)));
                 if (loaded != null) {
-                    if (loaded.deathWaypoints == null) {
-                        loaded.deathWaypoints = new DeathWaypoints();
-                    }
-                    if (loaded.waypointSize == null) {
-                        loaded.waypointSize = new WaypointSize();
-                    }
-                    if (loaded.labelDisplay == null) {
-                        loaded.labelDisplay = new LabelDisplay();
-                    }
-                    if (loaded.confirmations == null) {
-                        loaded.confirmations = new Confirmations();
-                    }
-                    if (loaded.visibility == null) {
-                        loaded.visibility = new Visibility();
-                    }
-                    if (loaded.ping == null) {
-                        loaded.ping = new Ping();
-                    }
-                    return loaded;
+                    EasyWp.LOGGER.warn("Recovered the mod config from the backup file");
                 }
-            } catch (Exception e) {
-                EasyWp.LOGGER.error("Failed to load mod config, using defaults", e);
             }
+            if (loaded != null) {
+                fillMissingGroups(loaded);
+                return loaded;
+            }
+            // Neither the file nor its backup could be read. The defaults stand in for this
+            // session but are deliberately not written back: saving over an unreadable file
+            // would push it into the backup slot and destroy the last good revision, along
+            // with whatever hand edit the user may still want to salvage from it.
             return new ModConfig();
         }
 
@@ -120,15 +116,47 @@ public class ModConfig {
         return defaults;
     }
 
+    /** @return the parsed config, or {@code null} if {@code json} is absent or not readable as one. */
+    private static ModConfig parse(String json) {
+        if (json == null) return null;
+        try {
+            return new Gson().fromJson(json, ModConfig.class);
+        } catch (Exception e) {
+            EasyWp.LOGGER.error("Failed to load mod config, using defaults", e);
+            return null;
+        }
+    }
+
+    /** Backfills the groups a config.json written by an older build has never heard of. */
+    private static void fillMissingGroups(ModConfig loaded) {
+        if (loaded.deathWaypoints == null) {
+            loaded.deathWaypoints = new DeathWaypoints();
+        }
+        if (loaded.waypointSize == null) {
+            loaded.waypointSize = new WaypointSize();
+        }
+        if (loaded.labelDisplay == null) {
+            loaded.labelDisplay = new LabelDisplay();
+        }
+        if (loaded.confirmations == null) {
+            loaded.confirmations = new Confirmations();
+        }
+        if (loaded.visibility == null) {
+            loaded.visibility = new Visibility();
+        }
+        if (loaded.ping == null) {
+            loaded.ping = new Ping();
+        }
+        if (loaded.list == null) {
+            loaded.list = new ListOptions();
+        }
+    }
+
     public static void save() {
         if (instance == null) return;
-        File file = configFile();
         try {
-            file.getParentFile().mkdirs();
             Gson gson = new GsonBuilder().setPrettyPrinting().create();
-            try (FileWriter writer = new FileWriter(file)) {
-                gson.toJson(instance, writer);
-            }
+            JsonStore.write(configFile(), gson.toJson(instance));
         } catch (Exception e) {
             EasyWp.LOGGER.error("Failed to save mod config", e);
         }

@@ -2,24 +2,26 @@
 	"schemaVersion": 1,
 	"id": "easywp",
 	"version": "${version}",
-	"name": "easyWp",
-	"description": "A lightweight, minimalist, and non-intrusive waypoints mod. Highlights include a quick-toggle visibility hotkey, individual hide and focus options, native pixel-perfect occlusion, and shader-fog bypass.",
+	"name": "Easy Waypoints",
+	"description": "An easy-to-use, modern, and highly optimized waypoint mod for Fabric, designed to integrate with vanilla Minecraft.",
 	"authors": [
 		"Carlos Florian"
 	],
 	"contact": {
-		"homepage": "https://github.com/cflorians/easyWaypoints",
-		"sources": "https://github.com/cflorians/easyWaypoints"
+		"homepage": "https://modrinth.com/project/cDxVI98Z"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/easywp/icon.png",
-	"environment": "*",
+	"environment": "client",
 	"entrypoints": {
 		"main": [
 			"com.easywp.EasyWp"
 		],
 		"client": [
 			"com.easywp.client.EasyWpClient"
+		],
+		"modmenu": [
+			"com.easywp.client.ModMenuIntegration"
 		]
 	},
 	"mixins": [
@@ -30,5 +32,8 @@
 		"minecraft": ">=26.2",
 		"java": ">=25",
 		"fabric-api": "*"
+	},
+	"suggests": {
+		"modmenu": "*"
 	}
 }

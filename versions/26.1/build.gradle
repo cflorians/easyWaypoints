@@ -6,6 +6,13 @@ version = "${project.mod_version}+${project.minecraft_version_suffix}"
 group = project.maven_group
 base.archivesName = "easywp"
 
+repositories {
+	maven {
+		name = "Terraformers"
+		url = "https://maven.terraformersmc.com/releases"
+	}
+}
+
 loom {
 	splitEnvironmentSourceSets()
 
@@ -29,6 +36,10 @@ dependencies {
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 	implementation project(":common")
+
+	// Compile-only: only the entrypoint class needs the API, and Fabric instantiates it
+	// solely when Mod Menu is installed. Never bundled.
+	clientCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 
 processResources {

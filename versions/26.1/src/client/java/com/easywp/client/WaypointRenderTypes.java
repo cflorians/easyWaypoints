@@ -84,9 +84,8 @@ public final class WaypointRenderTypes {
 
     /**
      * Same shaders as vanilla's {@code textBackgroundSeeThrough} (colour only, no texture),
-     * depth write enabled for the same reason as {@link #MARKER_PIPELINE}. Used unconditionally
-     * for the label backdrop: unlike the marker, 26.1's text has never needed a separate
-     * shader-active variant (see {@link #labelBackdrop()}).
+     * depth write enabled for the same reason as {@link #MARKER_PIPELINE}. Only used when no
+     * shaderpack is rendering - see {@link #SHADER_BACKDROP} for why it cannot be used while one is.
      */
     private static final RenderPipeline BACKDROP_PIPELINE = RenderPipelines.register(
             RenderPipeline.builder(RenderPipelines.TEXT_SNIPPET)
@@ -98,12 +97,32 @@ public final class WaypointRenderTypes {
                     .build()
     );
 
-    /** Label backdrop pass, drawn as our own quad instead of through Font's built-in background
-     *  box so it can carry the depth write described above. */
+    /** Label backdrop pass without a shaderpack, drawn as our own quad instead of through Font's
+     *  built-in background box so it can carry the depth write described above. */
     public static final RenderType LABEL_BACKDROP = RenderType.create(
             "easywp_waypoint_label_backdrop",
             RenderSetup.builder(BACKDROP_PIPELINE).useLightmap().sortOnUpload().createRenderSetup()
     );
+
+    /**
+     * Label backdrop while a shaderpack is rendering.
+     *
+     * <p>{@link #LABEL_BACKDROP} is simply invisible under Iris. A pack swaps the core shader of
+     * every pipeline it recognises and skips the ones it does not, and unlike {@link
+     * #BEACON_PIPELINE} the private backdrop pipeline is never handed to it - so the quad is
+     * dropped, the glyphs keep drawing on their own, and the label turns unreadable the moment
+     * anything pale (fog, sky, snow) ends up behind it.
+     *
+     * <p>The fix is to ride a pipeline Iris does recognise: vanilla's own
+     * {@code textBackgroundSeeThrough}, the same family the glyphs already draw through in
+     * {@code SEE_THROUGH} mode. Sharing that family keeps both halves of the label equally
+     * un-occluded, so they can never disagree about being drawn. What it gives up is the depth
+     * write: with shaders on, clouds and water can paint over the backdrop again, exactly as
+     * they did before {@link #LABEL_BACKDROP}'s depth write was added. That is a far smaller
+     * problem than a label nobody can read, and it only applies while a pack is loaded - the
+     * vanilla path above keeps its depth write.
+     */
+    private static final RenderType SHADER_BACKDROP = RenderTypes.textBackgroundSeeThrough();
 
     private static RenderType shaderMarker = FALLBACK_MARKER;
     private static boolean initialized = false;
@@ -131,9 +150,12 @@ public final class WaypointRenderTypes {
         return shaderPackActive ? shaderMarker : VANILLA_MARKER;
     }
 
-    /** Returns the label backdrop pass. Unconditional, see {@link #LABEL_BACKDROP}. */
-    public static RenderType labelBackdrop() {
-        return LABEL_BACKDROP;
+    /**
+     * Returns the label backdrop pass for the current environment. Mirrors what the glyphs ride,
+     * so both halves of the label are always drawn or skipped together.
+     */
+    public static RenderType labelBackdrop(boolean shaderPackActive) {
+        return shaderPackActive ? SHADER_BACKDROP : LABEL_BACKDROP;
     }
 
     /**

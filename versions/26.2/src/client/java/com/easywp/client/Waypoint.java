@@ -14,6 +14,17 @@ public class Waypoint {
     private boolean death = false;
     private long createdAtMillis = 0L;
 
+    // Render-side cache of the on-screen label built for this waypoint (see WaypointRenderer).
+    // Lives here instead of a separate map because the renderer already reads and writes waypoint
+    // state directly with no store abstraction in between - this just rides along with it, and
+    // needs no cleanup when a waypoint is deleted since it goes away with the object.
+    private String cachedLabelSourceName;
+    private boolean cachedLabelUppercase;
+    private boolean cachedLabelShowDistance;
+    private int cachedLabelDistance;
+    private String cachedLabelText;
+    private float cachedLabelWidth;
+
     public Waypoint(String name, BlockPos pos) {
         this(name, pos, 0xFF00FF00);
     }
@@ -125,5 +136,31 @@ public class Waypoint {
 
     public void setCreatedAtMillis(long createdAtMillis) {
         this.createdAtMillis = createdAtMillis;
+    }
+
+    public String getCachedLabelText() {
+        return cachedLabelText;
+    }
+
+    public float getCachedLabelWidth() {
+        return cachedLabelWidth;
+    }
+
+    /** Whether the cached label is still valid for the given inputs, so the caller can skip rebuilding it. */
+    public boolean labelCacheMatches(String sourceName, boolean uppercase, boolean showDistance, int distanceMeters) {
+        return cachedLabelText != null
+                && cachedLabelUppercase == uppercase
+                && cachedLabelShowDistance == showDistance
+                && (!showDistance || cachedLabelDistance == distanceMeters)
+                && sourceName.equals(cachedLabelSourceName);
+    }
+
+    public void setCachedLabel(String sourceName, boolean uppercase, boolean showDistance, int distanceMeters, String text, float width) {
+        this.cachedLabelSourceName = sourceName;
+        this.cachedLabelUppercase = uppercase;
+        this.cachedLabelShowDistance = showDistance;
+        this.cachedLabelDistance = distanceMeters;
+        this.cachedLabelText = text;
+        this.cachedLabelWidth = width;
     }
 }

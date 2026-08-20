@@ -1,9 +1,21 @@
 #
 # https://help.github.com/articles/dealing-with-line-endings/
 #
+
+# Normalise all text to LF in the repository *and* in the working tree, ignoring
+# core.autocrlf. This is a requirement of the workflow described in CLAUDE.md:
+# the files duplicated between versions/26.1 and versions/26.2 are kept in sync
+# by comparing them with diff, and that only works if both copies agree on their
+# line terminator.
+*               text=auto eol=lf
+
 # Linux start script should use lf
 /gradlew        text eol=lf
 
 # These are Windows script files and should use crlf
 *.bat           text eol=crlf
 
+# Binaries: never rewrite the contents
+*.png           binary
+*.jar           binary
+*.ico           binary

@@ -2,3 +2,71 @@ plugins {
 	id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
 	id 'maven-publish'
 }
+
+/**
+ * Client sources that are duplicated verbatim between versions/26.1 and versions/26.2.
+ *
+ * They cannot move to common/: that module declares no Minecraft artifact at all and compiles
+ * standalone, so anything importing net.minecraft.* fails there (see CLAUDE.md). The duplication
+ * is deliberate, but until now "edit one, diff, copy to the other" was only documented - nothing
+ * caught a copy that drifted. This does, on every build.
+ */
+def sharedClientSources = [
+	'Waypoint.java',
+	'ModConfig.java',
+	'I18nHelper.java',
+	'ModernButton.java',
+	'WaypointDisplayMode.java',
+	'WaypointSortMode.java',
+	'WaypointPing.java',
+	'UiPalette.java',
+	'Icons.java'
+]
+
+tasks.register('checkSharedSources') {
+	group = 'verification'
+	description = 'Fails if the client sources duplicated across versions/26.1 and versions/26.2 have drifted apart.'
+
+	def referenceDir = file('versions/26.1/src/client/java/com/easywp/client')
+	def targetDir = file('versions/26.2/src/client/java/com/easywp/client')
+	def names = sharedClientSources
+
+	inputs.files(names.collect { new File(referenceDir, it) } + names.collect { new File(targetDir, it) })
+			.withPropertyName('sharedClientSources')
+	// Nothing is produced, so declare the marker explicitly to stay cacheable and up-to-date aware.
+	def marker = layout.buildDirectory.file('checkSharedSources.txt')
+	outputs.file(marker)
+
+	doLast {
+		def problems = []
+		names.each { name ->
+			def a = new File(referenceDir, name)
+			def b = new File(targetDir, name)
+			if (!a.isFile()) {
+				problems << "${name}: missing in versions/26.1"
+			} else if (!b.isFile()) {
+				problems << "${name}: missing in versions/26.2"
+			} else if (!java.util.Arrays.equals(a.bytes, b.bytes)) {
+				problems << "${name}: the 26.1 and 26.2 copies have drifted apart"
+			}
+		}
+
+		if (!problems.isEmpty()) {
+			throw new GradleException(
+					"Shared client sources are out of sync:\n  " + problems.join('\n  ') +
+					"\n\nEdit one copy, check it with diff, and copy it over the other (see CLAUDE.md).\n" +
+					"If diff reports every line as different, the file's line endings are wrong: .gitattributes\n" +
+					"pins the whole tree to LF."
+			)
+		}
+		marker.get().asFile.text = "ok\n"
+	}
+}
+
+subprojects {
+	plugins.withId('java') {
+		tasks.named('check').configure {
+			dependsOn rootProject.tasks.named('checkSharedSources')
+		}
+	}
+}
