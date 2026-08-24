@@ -76,12 +76,12 @@ public class ModConfigScreen extends OptionsSubScreen {
         this.list.addHeader(I18nHelper.getComponent("config.section.appearance"));
         this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, SIZE_PERCENT_FLOOR, SIZE_PERCENT_CEIL, 1.0,
-                        cfg.waypointSize.sizePercent, "config.size_row", this::applySizePercent),
+                        cfg.waypointSize.sizePercent, "config.size_row", 0, this::applySizePercent),
                 resetButton(this::resetSizePercent)
         );
         this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, OPACITY_FLOOR, OPACITY_CEIL, 1.0,
-                        cfg.waypointSize.opacityPercent, "config.opacity_row", this::applyOpacityPercent),
+                        cfg.waypointSize.opacityPercent, "config.opacity_row", 0, this::applyOpacityPercent),
                 resetButton(this::resetOpacityPercent)
         );
         this.list.addSmall(
@@ -115,17 +115,17 @@ public class ModConfigScreen extends OptionsSubScreen {
         );
         this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, MAX_DEATH_FLOOR, MAX_DEATH_CEIL, 1.0,
-                        cfg.deathWaypoints.maxCount, "config.max_death_row", this::applyMaxDeathCount),
+                        cfg.deathWaypoints.maxCount, "config.max_death_row", 0, this::applyMaxDeathCount),
                 resetButton(this::resetMaxDeathCount)
         );
         this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, RADIUS_FLOOR, RADIUS_CEIL, 1.0,
-                        cfg.deathWaypoints.radius, "config.radius_row", this::applyRadius),
+                        cfg.deathWaypoints.radius, "config.radius_row", 0, this::applyRadius),
                 resetButton(this::resetRadius)
         );
         this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, GRACE_FLOOR, GRACE_CEIL, 0.5,
-                        cfg.deathWaypoints.graceSeconds, "config.grace_row", this::applyGrace),
+                        cfg.deathWaypoints.graceSeconds, "config.grace_row", 1, this::applyGrace),
                 resetButton(this::resetGrace)
         );
 
@@ -144,7 +144,7 @@ public class ModConfigScreen extends OptionsSubScreen {
                 resetButton(this::resetPingFollowRenderDistance)
         );
         ConfigSlider pingDistanceSlider = new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, PING_DIST_FLOOR, PING_DIST_CEIL, 1.0,
-                cfg.ping.maxDistance, "config.ping_distance", this::applyPingDistance);
+                cfg.ping.maxDistance, "config.ping_distance", 0, this::applyPingDistance);
         pingDistanceSlider.active = !cfg.ping.followRenderDistance;
         this.list.addSmall(
                 pingDistanceSlider,
@@ -319,9 +319,16 @@ public class ModConfigScreen extends OptionsSubScreen {
         reopen();
     }
 
-    /** Rebuilds the screen from scratch so every widget reflects the freshly-reset config value. */
+    /**
+     * Rebuilds the screen from scratch so every widget reflects the freshly-reset config value.
+     * Carries the current scroll position over to the new {@link OptionsList} - it would otherwise
+     * start back at 0 on every reset/reopen, jerking the player back to the top of a scrolled list.
+     */
     private void reopen() {
-        this.minecraft.setScreenAndShow(new ModConfigScreen(this.lastScreen));
+        double scrollAmount = this.list.scrollAmount();
+        ModConfigScreen newScreen = new ModConfigScreen(this.lastScreen);
+        newScreen.list.setScrollAmount(scrollAmount);
+        this.minecraft.setScreenAndShow(newScreen);
     }
 
     private static double clamp(double value, double min, double max) {
@@ -334,15 +341,22 @@ public class ModConfigScreen extends OptionsSubScreen {
         private final double max;
         private final double step;
         private final String i18nKey;
+        private final int decimals;
         private final DoubleConsumer onChange;
 
+        /**
+         * @param decimals how many decimals the value is rendered with. It has to be stated here
+         *                 rather than living in the translation string, because Minecraft's
+         *                 translation formatter understands only {@code %s} - see {@link I18nHelper}.
+         */
         ConfigSlider(int width, int height, double min, double max, double step, double initial,
-                     String i18nKey, DoubleConsumer onChange) {
+                     String i18nKey, int decimals, DoubleConsumer onChange) {
             super(0, 0, width, height, Component.empty(), Mth.clamp((initial - min) / (max - min), 0.0, 1.0));
             this.min = min;
             this.max = max;
             this.step = step;
             this.i18nKey = i18nKey;
+            this.decimals = decimals;
             this.onChange = onChange;
             this.updateMessage();
         }
@@ -353,9 +367,15 @@ public class ModConfigScreen extends OptionsSubScreen {
             return Mth.clamp(stepped, min, max);
         }
 
+        /**
+         * The number reaches the translation already formatted. Handing a raw double to a
+         * {@code %s} placeholder would print "85.0" where the old {@code String.format("%.0f")}
+         * printed "85". No explicit Locale, so the decimal separator keeps following the system
+         * locale exactly as it did before the strings moved into the lang files.
+         */
         @Override
         protected void updateMessage() {
-            this.setMessage(I18nHelper.getComponent(i18nKey, currentValue()));
+            this.setMessage(I18nHelper.getComponent(i18nKey, String.format("%." + decimals + "f", currentValue())));
         }
 
         @Override

@@ -20,7 +20,8 @@ def sharedClientSources = [
 	'WaypointSortMode.java',
 	'WaypointPing.java',
 	'UiPalette.java',
-	'Icons.java'
+	'Icons.java',
+	'ShaderDetector.java'
 ]
 
 tasks.register('checkSharedSources') {

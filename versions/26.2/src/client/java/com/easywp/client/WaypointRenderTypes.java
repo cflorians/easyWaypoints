@@ -50,7 +50,7 @@ public final class WaypointRenderTypes {
      * and water painted later in the frame simply draw over the marker/label regardless of how
      * close they actually are. Writing a real depth value (at the marker's own, deliberately
      * near, projected distance) fixes that without reintroducing occlusion by solid terrain,
-     * since the test itself still always passes. Shared by the marker and the vanilla-mode
+     * since the marker's own test still always passes. Shared by the marker and the vanilla-mode
      * backdrop below; only the bound texture differs.
      *
      * <p>The RenderSetups below all route to {@link OutputTarget#WEATHER_TARGET} instead of the
@@ -58,11 +58,29 @@ public final class WaypointRenderTypes {
      * water renders into its own translucent target, which starts each frame as a straight copy
      * of the main target's depth buffer. Writing our near depth into main - the default target -
      * would get copied into that translucent depth buffer too, so water tries to depth-test
-     * itself against a wall that is, as far as it's concerned, only 4 blocks away, and loses -
-     * water simply fails to draw wherever a marker or label sits, revealing whatever solid
-     * terrain is behind it. The weather target is never copied into translucent, but still
-     * takes part in the same cross-target, depth-sorted composite that lets the marker win
-     * against clouds - so drawing there keeps the clouds fix intact without corrupting water.
+     * itself against a wall that is, as far as it's concerned, only a few blocks away, and loses
+     * - water simply fails to draw wherever a marker or label sits, revealing whatever solid
+     * terrain is behind it instead. The weather target is never copied into translucent, but
+     * still takes part in the same cross-target, depth-sorted composite that lets the marker win
+     * against clouds - so routing there keeps the clouds fix intact without corrupting water.
+     *
+     * <p><b>Known limitation, accepted deliberately:</b> that composite only exists when
+     * Minecraft's multi-target transparency compositor is actually running, gated behind
+     * {@code OptionsRenderState.improvedTransparency} - vanilla's "Fabulous!" graphics setting.
+     * Outside that mode (Fancy, vanilla's default, and Fast) {@code LevelRenderer} never
+     * allocates a separate weather target at all, so {@code OutputTarget.WEATHER_TARGET
+     * .getRenderTarget()} silently falls back to the default main target - the exact target the
+     * write above was meant to avoid - and the water-hole failure this javadoc just described as
+     * avoided happens anyway. This was confirmed in production under Sodium (which reimplements
+     * this part of {@code LevelRenderer} with its own mixins, so its handling of that fallback
+     * isn't verifiable from this codebase) with Fancy graphics. Reverting to a no-write pipeline
+     * removes the water-hole risk but brings back the original bug this fix exists for: clouds
+     * and nearby water simply paint over the marker/label, making a perfectly dry waypoint look
+     * submerged. Between the two, a label that occasionally leaves a small hole in nearby water
+     * was judged the lesser problem than one that routinely looks broken every time weather or
+     * water is anywhere near it - most waypoints are not placed inside or right at a water body,
+     * so the hole case is rare, while the paint-over case fires constantly. 26.1 carries the same
+     * pipeline and therefore the same accepted tradeoff.
      */
     private static final RenderPipeline MARKER_PIPELINE = RenderPipelines.register(
             RenderPipeline.builder(RenderPipelines.TEXT_SNIPPET)

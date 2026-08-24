@@ -670,7 +670,7 @@ public class WaypointListScreen extends Screen {
                     isVisible = wp.isFocused() || wp.isForceVisible();
                 }
                 Identifier visIcon = isVisible ? Icons.SHOW : Icons.HIDE;
-                int visColor = isVisible ? UiPalette.ICON_ACTIVE : UiPalette.ICON_DISABLED;
+                int visColor = isVisible ? UiPalette.ICON_IDLE : UiPalette.ICON_DISABLED;
                 graphics.blit(pipeline, visIcon, centerX + 40, itemY, 0.0f, 0.0f, 18, 18, 18, 18, visColor);
 
                 graphics.blit(pipeline, Icons.EDIT, centerX + 60, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_IDLE);

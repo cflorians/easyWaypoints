@@ -3,5 +3,52 @@
   "key.easywp.toggle": "Alternar Visibilidad de Waypoints",
   "key.easywp.create": "Crear Nuevo Waypoint",
   "key.easywp.list": "Abrir Lista de Waypoints",
-  "key.easywp.ping": "Marcar Waypoint en la Mira"
+  "key.easywp.ping": "Marcar Waypoint en la Mira",
+
+  "easywp.menu.title": "Lista de Waypoints",
+  "easywp.menu.no_waypoints": "No hay waypoints",
+  "easywp.menu.new": "Nuevo",
+  "easywp.menu.back": "Volver",
+  "easywp.menu.confirm_delete_title": "Confirmar Borrado",
+  "easywp.menu.confirm_delete_text": "¿Estás seguro de borrar \"%s\"?",
+  "easywp.menu.search": "Buscar...",
+  "easywp.menu.search_hint": "Buscar waypoint...",
+
+  "easywp.sort.created": "Creación",
+  "easywp.sort.name": "Nombre",
+  "easywp.sort.distance": "Distancia",
+
+  "easywp.create.title.new": "Nuevo Waypoint",
+  "easywp.create.title.edit": "Editar Waypoint",
+  "easywp.create.name_label": "Nombre:",
+  "easywp.create.coordinates_label": "Coordenadas (X / Y / Z):",
+  "easywp.create.save": "Guardar",
+  "easywp.create.feedback_edited": "§a¡Waypoint editado! §7(%s) en X: %s Y: %s Z: %s",
+  "easywp.create.feedback_created": "§a¡Waypoint creado! §7(%s) en X: %s Y: %s Z: %s",
+
+  "easywp.hud.mode.world": "§fWaypoints activados",
+  "easywp.hud.mode.disabled": "§7Waypoints desactivados",
+
+  "easywp.death.name": "Muerte %s",
+  "easywp.death.created": "§cWaypoint de muerte creado",
+  "easywp.death.reached": "§aWaypoint de muerte alcanzado",
+
+  "easywp.config.title": "Configuración",
+  "easywp.config.section.appearance": "§7Apariencia",
+  "easywp.config.size_row": "Tamaño: %s%%",
+  "easywp.config.opacity_row": "Opacidad: %s%%",
+  "easywp.config.show_distance": "Mostrar distancia",
+  "easywp.config.uppercase_labels": "Texto en mayúsculas",
+  "easywp.config.section.death_waypoint": "§7Waypoint de muerte",
+  "easywp.config.death_enabled_toggle": "Activar",
+  "easywp.config.max_death_row": "Máx. waypoints de muerte: %s",
+  "easywp.config.radius_row": "Radio: %s bloques",
+  "easywp.config.grace_row": "Tiempo: %s s",
+  "easywp.config.section.ping": "§7Ping",
+  "easywp.config.ping_follow_render_distance": "Seguir distancia de renderizado",
+  "easywp.config.ping_distance": "Alcance: %s bloques",
+  "easywp.config.ping_fluids": "Marcar fluidos",
+  "easywp.config.section.behavior": "§7Comportamiento",
+  "easywp.config.confirm_delete_toggle": "Confirmar antes de borrar",
+  "easywp.config.remember_visibility": "Recordar visibilidad"
 }

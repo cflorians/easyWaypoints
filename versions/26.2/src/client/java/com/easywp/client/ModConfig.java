@@ -16,6 +16,9 @@ import java.nio.file.Path;
  * a place to land without reshaping the file.
  */
 public class ModConfig {
+    /** Reused across loads and saves - Gson instances are safe to share and hold no per-call state. */
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
     public DeathWaypoints deathWaypoints = new DeathWaypoints();
     public WaypointSize waypointSize = new WaypointSize();
     public LabelDisplay labelDisplay = new LabelDisplay();
@@ -120,7 +123,7 @@ public class ModConfig {
     private static ModConfig parse(String json) {
         if (json == null) return null;
         try {
-            return new Gson().fromJson(json, ModConfig.class);
+            return GSON.fromJson(json, ModConfig.class);
         } catch (Exception e) {
             EasyWp.LOGGER.error("Failed to load mod config, using defaults", e);
             return null;
@@ -155,8 +158,7 @@ public class ModConfig {
     public static void save() {
         if (instance == null) return;
         try {
-            Gson gson = new GsonBuilder().setPrettyPrinting().create();
-            JsonStore.write(configFile(), gson.toJson(instance));
+            JsonStore.write(configFile(), GSON.toJson(instance));
         } catch (Exception e) {
             EasyWp.LOGGER.error("Failed to save mod config", e);
         }

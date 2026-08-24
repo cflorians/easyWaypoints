@@ -1,6 +1,7 @@
 package com.easywp.client;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
@@ -329,17 +330,22 @@ public class WaypointCreateScreen extends Screen {
             this.editingWaypoint.setDeath(false);
 
             if (this.minecraft.player != null) {
+                // Gray is set as the component's own style instead of being left to the §7 in the
+                // translation. A translated string is split into one part per placeholder and every
+                // part is rendered starting from the component's style, so a § code stops applying
+                // at the next %s rather than running to the end of the line.
                 this.minecraft.gui.setOverlayMessage(I18nHelper.getComponent(
                     "create.feedback_edited", name, newPos.getX(), newPos.getY(), newPos.getZ()
-                ), true);
+                ).withStyle(ChatFormatting.GRAY), true);
             }
         } else {
             WaypointRenderer.waypoints.add(new Waypoint(name, newPos, this.selectedColor, dimension, this.dimShared));
 
             if (this.minecraft.player != null) {
+                // Same reasoning as the edited-feedback message above.
                 this.minecraft.gui.setOverlayMessage(I18nHelper.getComponent(
                     "create.feedback_created", name, newPos.getX(), newPos.getY(), newPos.getZ()
-                ), true);
+                ).withStyle(ChatFormatting.GRAY), true);
             }
         }
 

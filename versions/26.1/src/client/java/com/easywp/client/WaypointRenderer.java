@@ -35,6 +35,9 @@ public class WaypointRenderer {
     public static final List<Waypoint> waypoints = new ArrayList<>();
     private static boolean initialized = false;
 
+    /** Reused across loads and saves - Gson instances are safe to share and hold no per-call state. */
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
     private static final int LABEL_BACKDROP = 0x40000000;
 
     // Scaling constants for angular distance sizing
@@ -60,6 +63,9 @@ public class WaypointRenderer {
     private static String lastWorldId = "";
     private static Object lastCheckedLevel = null;
     private static final Object lock = new Object();
+
+    /** Refreshed only alongside {@link #lastCheckedLevel} - see {@link #checkAndLoadWorldWaypoints()}. */
+    private static String cachedDimension = "minecraft:overworld";
 
     /** Per-frame view bob translation, converted from camera space to world axes. */
     private static final Vector3f bobOffset = new Vector3f();
@@ -138,7 +144,7 @@ public class WaypointRenderer {
 
         Vec3 cameraPos = cameraState.pos;
         PoseStack poseStack = context.poseStack();
-        String currentDimension = client.level.dimension().identifier().toString();
+        String currentDimension = cachedDimension;
 
         boolean hasAnyFocused = false;
         for (Waypoint wp : waypoints) {
@@ -430,9 +436,12 @@ public class WaypointRenderer {
         // unchanged on every other frame, so gating getWorldId() on it turns this from a per-frame
         // call (string formatting, singleplayer/server lookups) into one that only runs on those
         // transitions - identical result, since worldId never depends on which dimension the
-        // already-known server/world is currently in.
+        // already-known server/world is currently in. cachedDimension piggybacks on the same gate:
+        // dimension().identifier().toString() allocates too, and it can only change on the same
+        // transitions that change client.level's identity.
         if (client.level == lastCheckedLevel) return;
         lastCheckedLevel = client.level;
+        cachedDimension = client.level.dimension().identifier().toString();
 
         String currentWorld = getWorldId();
         if (!currentWorld.equals("unknown") && !currentWorld.equals(lastWorldId)) {
@@ -441,6 +450,13 @@ public class WaypointRenderer {
                 loadFromFile();
             }
         }
+    }
+
+    /** The current dimension id, cached alongside {@link #checkAndLoadWorldWaypoints()}. Callers
+     *  that already trigger that check first (render(), DeathWaypointManager.tick()) always see a
+     *  value fresh for the current frame/tick. */
+    public static String getCurrentDimension() {
+        return cachedDimension;
     }
 
     private static Path waypointsFile(String worldId) {
@@ -460,8 +476,7 @@ public class WaypointRenderer {
             // Serialised in full before anything touches the disk: JsonStore needs the whole
             // document up front to write it in one atomic replacement, and this file is the only
             // copy the waypoints exist in, so a half-written one would lose them for good.
-            Gson gson = new GsonBuilder().setPrettyPrinting().create();
-            JsonStore.write(waypointsFile(worldId), gson.toJson(dataList));
+            JsonStore.write(waypointsFile(worldId), GSON.toJson(dataList));
         } catch (Exception e) {
             EasyWp.LOGGER.error("Failed to save waypoints", e);
         }
@@ -498,7 +513,7 @@ public class WaypointRenderer {
         if (json == null) return null;
         try {
             Type listType = new TypeToken<List<WaypointData>>(){}.getType();
-            return new Gson().fromJson(json, listType);
+            return GSON.fromJson(json, listType);
         } catch (Exception e) {
             EasyWp.LOGGER.error("Failed to parse waypoints", e);
             return null;

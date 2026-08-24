@@ -28,6 +28,10 @@ public class DeathWaypointManager {
     /** Per-waypoint dwell start time, since more than one death waypoint can be in range at once when maxCount > 1. */
     private static final Map<Waypoint, Long> dwellStart = new HashMap<>();
 
+    /** Reused scratch space for {@link #checkArrival}, which runs every client tick - avoids
+     *  allocating a fresh list 20 times a second in the common case of zero death waypoints. */
+    private static final List<Waypoint> deathsScratch = new ArrayList<>();
+
     public static void tick(Minecraft client) {
         if (client.player == null || client.level == null) {
             wasAlive = true;
@@ -81,7 +85,7 @@ public class DeathWaypointManager {
         }
 
         BlockPos pos = client.player.blockPosition();
-        String dimension = client.level.dimension().identifier().toString();
+        String dimension = WaypointRenderer.getCurrentDimension();
         String name = I18nHelper.getComponent("death.name", LocalTime.now().format(TIME_FORMAT)).getString();
 
         Waypoint wp = new Waypoint(name, pos, DEATH_COLOR, dimension, false, true, false, true, System.currentTimeMillis());
@@ -92,27 +96,27 @@ public class DeathWaypointManager {
     }
 
     private static void checkArrival(Minecraft client, ModConfig.DeathWaypoints cfg) {
-        List<Waypoint> deaths = new ArrayList<>();
+        deathsScratch.clear();
         for (Waypoint wp : WaypointRenderer.waypoints) {
             if (wp != null && wp.isDeath()) {
-                deaths.add(wp);
+                deathsScratch.add(wp);
             }
         }
 
         // Drop dwell timers for deaths that no longer exist (deleted manually, or evicted by a new death).
-        dwellStart.keySet().retainAll(deaths);
+        dwellStart.keySet().retainAll(deathsScratch);
 
-        if (deaths.isEmpty()) {
+        if (deathsScratch.isEmpty()) {
             return;
         }
 
-        String currentDimension = client.level.dimension().identifier().toString();
+        String currentDimension = WaypointRenderer.getCurrentDimension();
         BlockPos playerPos = client.player.blockPosition();
         long now = System.currentTimeMillis();
 
         // Each death waypoint dwells independently, so with maxCount > 1 the player can walk
         // through several at once and each is deleted on its own schedule.
-        for (Waypoint deathWp : deaths) {
+        for (Waypoint deathWp : deathsScratch) {
             String wpDim = deathWp.getDimension() != null ? deathWp.getDimension() : "minecraft:overworld";
 
             double dx = playerPos.getX() - deathWp.getPos().getX();

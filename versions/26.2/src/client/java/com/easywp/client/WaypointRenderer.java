@@ -37,6 +37,9 @@ public class WaypointRenderer {
     public static final List<Waypoint> waypoints = new ArrayList<>();
     private static boolean initialized = false;
 
+    /** Reused across loads and saves - Gson instances are safe to share and hold no per-call state. */
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
     /** Label backdrop, ARGB. Same value Font uses for the box in the 26.1 renderer. */
     private static final int LABEL_BACKDROP = 0x40000000;
 
@@ -47,8 +50,28 @@ public class WaypointRenderer {
 
     /**
      * How far behind the glyphs the backdrop sits, in billboard local units (+Z points away from
-     * the viewer). Both halves of the label now share a depth writing pipeline, so leaving them
-     * coplanar makes them z-fight and the text flickers as the camera moves.
+     * the viewer), used only while a shaderpack is active. Under a shaderpack both halves of the
+     * label ride a real depth-testing pipeline ({@code textPolygonOffset}, see
+     * {@link WaypointRenderTypes#labelBackdrop}), so leaving them exactly coplanar makes them
+     * z-fight and the text flickers as the camera moves.
+     *
+     * <p>Applying this gap in vanilla mode too was tried and reverted: {@link WaypointRenderTypes}'s
+     * vanilla-mode pipeline tests depth as {@code ALWAYS_PASS} for both the backdrop and (via
+     * vanilla's own see-through text) the glyphs, so neither ever depth-tests against the other -
+     * z-fighting needs both sides of a pair to actually compare depth, not just one of them to
+     * write it, and the backdrop writing a value nothing compares against has no flicker to cause.
+     * The gap has no z-fighting to prevent in vanilla mode, so it only costs accuracy there. The
+     * label's own billboard sits only
+     * {@link #LABEL_PROJECTION_DIST} (0.25 blocks) from the eye, and that distance is itself a
+     * camera-space depth of {@code LABEL_PROJECTION_DIST * cos(θ)} where θ is the angle between the
+     * view direction and the ray to the waypoint - shrinking toward zero as a waypoint drifts from
+     * the crosshair toward the edge of the screen. A depth gap that is a fixed absolute value
+     * becomes a growing fraction of that shrinking depth, and since the backdrop and the glyphs
+     * then divide by different depths in the perspective projection, the two drift apart on screen
+     * - the backdrop pulls toward the screen centre relative to the text, worse the further off
+     * centre the waypoint is. Gating the gap on shader-mode removes the drift for every player who
+     * has no shaderpack loaded, which is the common case, without touching the shader-mode pipeline
+     * this constant exists for.
      */
     private static final float LABEL_DEPTH_GAP = 0.005f;
 
@@ -96,6 +119,9 @@ public class WaypointRenderer {
     private static String lastWorldId = "";
     private static Object lastCheckedLevel = null;
     private static final Object lock = new Object();
+
+    /** Refreshed only alongside {@link #lastCheckedLevel} - see {@link #checkAndLoadWorldWaypoints()}. */
+    private static String cachedDimension = "minecraft:overworld";
 
     /** Per-frame view bob translation, converted from camera space to world axes. */
     private static final Vector3f bobOffset = new Vector3f();
@@ -221,7 +247,7 @@ public class WaypointRenderer {
         Vec3 cameraPos = cameraState.pos;
         PoseStack poseStack = context.poseStack();
         SubmitNodeCollector collector = context.submitNodeCollector();
-        String currentDimension = client.level.dimension().identifier().toString();
+        String currentDimension = cachedDimension;
 
         boolean hasAnyFocused = false;
         for (Waypoint wp : waypoints) {
@@ -393,10 +419,11 @@ public class WaypointRenderer {
             float bgXMax = textWidth * 0.5f * textScale;
             float bgYMin = anchorY - 9.0f * textScale;
             float bgYMax = anchorY + textScale;
+            float backdropDepthZ = isShaderActive ? LABEL_DEPTH_GAP : 0.0f;
 
             collector.submitCustomGeometry(
                     poseStack, backdropType,
-                    (pose, buffer) -> drawBackdrop(pose, buffer, bgXMin, bgYMin, bgXMax, bgYMax, LABEL_BACKDROP)
+                    (pose, buffer) -> drawBackdrop(pose, buffer, bgXMin, bgYMin, bgXMax, bgYMax, LABEL_BACKDROP, backdropDepthZ)
             );
 
             poseStack.pushPose();
@@ -455,30 +482,33 @@ public class WaypointRenderer {
 
     /**
      * Emits the label's backing box. Same vertex layout and winding as the marker quad.
+     *
+     * @param depthZ how far behind the glyphs (+Z) to push the quad - {@link #LABEL_DEPTH_GAP}
+     *               under a shaderpack, {@code 0} otherwise; see that constant's javadoc.
      */
-    private static void drawBackdrop(PoseStack.Pose pose, VertexConsumer buffer, float xMin, float yMin, float xMax, float yMax, int argb) {
+    private static void drawBackdrop(PoseStack.Pose pose, VertexConsumer buffer, float xMin, float yMin, float xMax, float yMax, int argb, float depthZ) {
         int a = (argb >>> 24) & 0xFF;
         int r = (argb >> 16)  & 0xFF;
         int g = (argb >> 8)   & 0xFF;
         int b = argb          & 0xFF;
         int lightmap = 240;
 
-        buffer.addVertex(pose, xMin, yMax, LABEL_DEPTH_GAP)
+        buffer.addVertex(pose, xMin, yMax, depthZ)
                 .setColor(r, g, b, a)
                 .setUv(0.0f, 0.0f)
                 .setUv2(lightmap, lightmap)
                 .setNormal(pose, 0.0f, 0.0f, 1.0f);
-        buffer.addVertex(pose, xMax, yMax, LABEL_DEPTH_GAP)
+        buffer.addVertex(pose, xMax, yMax, depthZ)
                 .setColor(r, g, b, a)
                 .setUv(1.0f, 0.0f)
                 .setUv2(lightmap, lightmap)
                 .setNormal(pose, 0.0f, 0.0f, 1.0f);
-        buffer.addVertex(pose, xMax, yMin, LABEL_DEPTH_GAP)
+        buffer.addVertex(pose, xMax, yMin, depthZ)
                 .setColor(r, g, b, a)
                 .setUv(1.0f, 1.0f)
                 .setUv2(lightmap, lightmap)
                 .setNormal(pose, 0.0f, 0.0f, 1.0f);
-        buffer.addVertex(pose, xMin, yMin, LABEL_DEPTH_GAP)
+        buffer.addVertex(pose, xMin, yMin, depthZ)
                 .setColor(r, g, b, a)
                 .setUv(0.0f, 1.0f)
                 .setUv2(lightmap, lightmap)
@@ -515,9 +545,12 @@ public class WaypointRenderer {
         // unchanged on every other frame, so gating getWorldId() on it turns this from a per-frame
         // call (string formatting, singleplayer/server lookups) into one that only runs on those
         // transitions - identical result, since worldId never depends on which dimension the
-        // already-known server/world is currently in.
+        // already-known server/world is currently in. cachedDimension piggybacks on the same gate:
+        // dimension().identifier().toString() allocates too, and it can only change on the same
+        // transitions that change client.level's identity.
         if (client.level == lastCheckedLevel) return;
         lastCheckedLevel = client.level;
+        cachedDimension = client.level.dimension().identifier().toString();
 
         String currentWorld = getWorldId();
         if (!currentWorld.equals("unknown") && !currentWorld.equals(lastWorldId)) {
@@ -526,6 +559,13 @@ public class WaypointRenderer {
                 loadFromFile();
             }
         }
+    }
+
+    /** The current dimension id, cached alongside {@link #checkAndLoadWorldWaypoints()}. Callers
+     *  that already trigger that check first (render(), DeathWaypointManager.tick()) always see a
+     *  value fresh for the current frame/tick. */
+    public static String getCurrentDimension() {
+        return cachedDimension;
     }
 
     private static Path waypointsFile(String worldId) {
@@ -545,8 +585,7 @@ public class WaypointRenderer {
             // Serialised in full before anything touches the disk: JsonStore needs the whole
             // document up front to write it in one atomic replacement, and this file is the only
             // copy the waypoints exist in, so a half-written one would lose them for good.
-            Gson gson = new GsonBuilder().setPrettyPrinting().create();
-            JsonStore.write(waypointsFile(worldId), gson.toJson(dataList));
+            JsonStore.write(waypointsFile(worldId), GSON.toJson(dataList));
         } catch (Exception e) {
             EasyWp.LOGGER.error("Failed to save waypoints", e);
         }
@@ -583,7 +622,7 @@ public class WaypointRenderer {
         if (json == null) return null;
         try {
             Type listType = new TypeToken<List<WaypointData>>(){}.getType();
-            return new Gson().fromJson(json, listType);
+            return GSON.fromJson(json, listType);
         } catch (Exception e) {
             EasyWp.LOGGER.error("Failed to parse waypoints", e);
             return null;

@@ -8,6 +8,7 @@ import com.mojang.blaze3d.platform.CompareOp;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.rendertype.OutputTarget;
 import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
@@ -38,6 +39,17 @@ import java.lang.reflect.Method;
  * simply draw over the marker regardless of how close it actually is. Writing a real depth
  * value (at the marker's own, deliberately near, projected distance) fixes that without
  * reintroducing occlusion by solid terrain, since the marker's own test still always passes.
+ *
+ * <p>That depth write has a second, less obvious consequence: water renders into its own
+ * translucent target, which starts each frame as a straight copy of the main target's depth
+ * buffer. Writing our near depth into the main target - the default one - gets copied into that
+ * translucent depth buffer too, so water then depth-tests itself against a "wall" only a few
+ * blocks away and loses: it simply fails to draw wherever a marker or label sits, revealing
+ * whatever solid terrain is behind it instead. Every {@link RenderSetup} below that writes depth
+ * therefore routes to {@link OutputTarget#WEATHER_TARGET} instead, for the same reason vanilla's
+ * own {@code LIGHTNING} render type does: that target is never copied into translucent, but still
+ * takes part in the same cross-target, depth-sorted composite that lets the marker win against
+ * clouds - so routing there keeps the clouds fix intact without corrupting water.
  */
 public final class WaypointRenderTypes {
     public static final Identifier MARKER_TEXTURE = Identifier.fromNamespaceAndPath("easywp", "textures/waypoint_marker.png");
@@ -60,7 +72,8 @@ public final class WaypointRenderTypes {
     /** Marker pass used when no shaderpack is rendering. */
     public static final RenderType VANILLA_MARKER = RenderType.create(
             "easywp_waypoint_marker",
-            RenderSetup.builder(MARKER_PIPELINE).withTexture("Sampler0", MARKER_TEXTURE).useLightmap().createRenderSetup()
+            RenderSetup.builder(MARKER_PIPELINE).withTexture("Sampler0", MARKER_TEXTURE).useLightmap()
+                    .setOutputTarget(OutputTarget.WEATHER_TARGET).createRenderSetup()
     );
 
     /** Vanilla beacon beam, kept as the depth-tested fallback if Iris rejects our pipeline. */
@@ -79,6 +92,7 @@ public final class WaypointRenderTypes {
             RenderSetup.builder(BEACON_PIPELINE)
                     .withTexture("Sampler0", MARKER_TEXTURE)
                     .sortOnUpload()
+                    .setOutputTarget(OutputTarget.WEATHER_TARGET)
                     .createRenderSetup()
     );
 
@@ -101,7 +115,8 @@ public final class WaypointRenderTypes {
      *  built-in background box so it can carry the depth write described above. */
     public static final RenderType LABEL_BACKDROP = RenderType.create(
             "easywp_waypoint_label_backdrop",
-            RenderSetup.builder(BACKDROP_PIPELINE).useLightmap().sortOnUpload().createRenderSetup()
+            RenderSetup.builder(BACKDROP_PIPELINE).useLightmap().sortOnUpload()
+                    .setOutputTarget(OutputTarget.WEATHER_TARGET).createRenderSetup()
     );
 
     /**
