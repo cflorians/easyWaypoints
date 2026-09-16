@@ -33,7 +33,6 @@ import java.util.regex.Pattern;
  */
 public class WaypointRenderer {
     public static final List<Waypoint> waypoints = new ArrayList<>();
-    private static boolean initialized = false;
 
     /** Reused across loads and saves - Gson instances are safe to share and hold no per-call state. */
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -62,7 +61,6 @@ public class WaypointRenderer {
 
     private static String lastWorldId = "";
     private static Object lastCheckedLevel = null;
-    private static final Object lock = new Object();
 
     /** Refreshed only alongside {@link #lastCheckedLevel} - see {@link #checkAndLoadWorldWaypoints()}. */
     private static String cachedDimension = "minecraft:overworld";
@@ -121,11 +119,6 @@ public class WaypointRenderer {
 
     private static final List<WaypointHolder> activeWaypoints = new ArrayList<>();
     private static final List<WaypointHolder> holderPool = new ArrayList<>();
-
-    public static void init() {
-        if (initialized) return;
-        initialized = true;
-    }
 
     /**
      * Renders 3D billboards for waypoints in world space.
@@ -407,8 +400,9 @@ public class WaypointRenderer {
     }
 
     /** Characters that are unsafe in a file name, stripped when deriving the world id. Hoisted to a
-     *  constant because getWorldId() runs once per frame and String.replaceAll recompiles the
-     *  pattern on every call. */
+     *  constant rather than inlined as String.replaceAll, which recompiles the pattern on every
+     *  call - getWorldId() is now gated behind the level-identity check in
+     *  checkAndLoadWorldWaypoints(), but it still runs on every save. */
     private static final Pattern UNSAFE_FILENAME_CHARS = Pattern.compile("[\\\\/:*?\"<>| ]");
 
     public static String getWorldId() {
@@ -443,12 +437,15 @@ public class WaypointRenderer {
         lastCheckedLevel = client.level;
         cachedDimension = client.level.dimension().identifier().toString();
 
+        // Not synchronized: every caller of this - render(), DeathWaypointManager.tick() and the
+        // screens - runs on the client thread, and so does every mutation of the waypoint list, so
+        // there is no second thread for a monitor to exclude. The lock that used to sit here
+        // guarded this one block while the rest of the list was mutated freely without it, which
+        // bought nothing.
         String currentWorld = getWorldId();
         if (!currentWorld.equals("unknown") && !currentWorld.equals(lastWorldId)) {
-            synchronized (lock) {
-                lastWorldId = currentWorld;
-                loadFromFile();
-            }
+            lastWorldId = currentWorld;
+            loadFromFile();
         }
     }
 
@@ -499,11 +496,11 @@ public class WaypointRenderer {
                 EasyWp.LOGGER.warn("Recovered the waypoints of {} from the backup file", worldId);
             }
         }
-        if (dataList == null) return;
-
-        for (WaypointData data : dataList) {
-            if (data != null) {
-                waypoints.add(data.toWaypoint());
+        if (dataList != null) {
+            for (WaypointData data : dataList) {
+                if (data != null) {
+                    waypoints.add(data.toWaypoint());
+                }
             }
         }
     }
@@ -532,6 +529,7 @@ public class WaypointRenderer {
         Boolean focused;
         Boolean death;
         Long createdAt;
+        Boolean fastPing;
 
         public WaypointData(Waypoint wp) {
             this.name = wp.getName();
@@ -545,10 +543,11 @@ public class WaypointRenderer {
             this.focused = wp.isFocused();
             this.death = wp.isDeath();
             this.createdAt = wp.getCreatedAtMillis();
+            this.fastPing = wp.isFastPing();
         }
 
         public Waypoint toWaypoint() {
-            return new Waypoint(
+            Waypoint wp = new Waypoint(
                 name,
                 new BlockPos(x, y, z),
                 color,
@@ -559,6 +558,8 @@ public class WaypointRenderer {
                 death == null ? false : death,
                 createdAt == null ? 0L : createdAt
             );
+            wp.setFastPing(fastPing != null && fastPing);
+            return wp;
         }
     }
 }

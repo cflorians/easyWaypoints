@@ -26,6 +26,7 @@ public class ModConfig {
     public Visibility visibility = new Visibility();
     public Ping ping = new Ping();
     public ListOptions list = new ListOptions();
+    public XaeroIntegration xaeroIntegration = new XaeroIntegration();
 
     public static class DeathWaypoints {
         public boolean enabled = true;
@@ -76,6 +77,19 @@ public class ModConfig {
     public static class ListOptions {
         /** Row ordering of the waypoint list, stored as a {@link WaypointSortMode} name. */
         public String sortMode = WaypointSortMode.CREATED.name();
+    }
+
+    public static class XaeroIntegration {
+        /** Master switch. Nothing in this integration ever runs on its own, so this only decides
+         *  whether the Import/Export buttons appear in {@code WaypointListScreen} at all (alongside
+         *  Xaero actually being installed) and whether those two actions do anything when clicked. */
+        public boolean enabled = true;
+        /** Shares waypoints in chat using Xaero's own {@code xaero-waypoint:} format (offering
+         *  recipients who run Xaero an [Add] button) instead of the plain readable message.
+         *  <b>Off</b> by default: a recipient without Xaero sees the raw tag-like string instead of a
+         *  readable sentence, and most recipients are in that position, so the readable format is the
+         *  one that works for everyone and the clickable one is the opt-in. */
+        public boolean xaeroChatFormat = false;
     }
 
     private static ModConfig instance;
@@ -152,6 +166,9 @@ public class ModConfig {
         }
         if (loaded.list == null) {
             loaded.list = new ListOptions();
+        }
+        if (loaded.xaeroIntegration == null) {
+            loaded.xaeroIntegration = new XaeroIntegration();
         }
     }
 

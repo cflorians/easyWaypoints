@@ -6,6 +6,7 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.OptionsList;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.options.OptionsSubScreen;
 import net.minecraft.network.chat.Component;
@@ -179,6 +180,44 @@ public class ModConfigScreen extends OptionsSubScreen {
                                 }),
                 resetButton(this::resetRememberVisibility)
         );
+
+        // Both Xaero rows are greyed out when Xaero's Minimap isn't installed: neither setting can do
+        // anything without it, and a live toggle that silently changes nothing is worse than a
+        // visibly unavailable one - the section stays listed so the integration is discoverable.
+        boolean xaeroPresent = XaeroBridge.isModInstalled();
+        this.list.addHeader(I18nHelper.getComponent("config.section.xaero"));
+        this.list.addSmall(
+                gated(xaeroPresent, CycleButton.onOffBuilder(cfg.xaeroIntegration.enabled)
+                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.xaero_enabled_toggle"),
+                                (button, value) -> {
+                                    ModConfig.get().xaeroIntegration.enabled = value;
+                                    ModConfig.save();
+                                })),
+                gated(xaeroPresent, resetButton(this::resetXaeroEnabled))
+        );
+        this.list.addSmall(
+                gated(xaeroPresent, CycleButton.onOffBuilder(cfg.xaeroIntegration.xaeroChatFormat)
+                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.xaero_chat_format"),
+                                (button, value) -> {
+                                    ModConfig.get().xaeroIntegration.xaeroChatFormat = value;
+                                    ModConfig.save();
+                                })),
+                gated(xaeroPresent, resetButton(this::resetXaeroChatFormat))
+        );
+        // No Import/Export action row here: those two live in WaypointListScreen's bottom-right
+        // corner, next to the list they act on, and duplicating them here would mean two places to
+        // click for the same thing with no way to tell which one the player will reach for.
+    }
+
+    /** Disables {@code widget} unless {@code available}, and explains why on hover. Returns the same
+     *  widget so it can wrap an {@code addSmall} argument inline. Vanilla's own options widgets draw
+     *  their label greyed out when inactive, so nothing else is needed to make the state visible. */
+    private AbstractWidget gated(boolean available, AbstractWidget widget) {
+        if (!available) {
+            widget.active = false;
+            widget.setTooltip(Tooltip.create(I18nHelper.getComponent("config.xaero_missing")));
+        }
+        return widget;
     }
 
     @Override
@@ -319,16 +358,37 @@ public class ModConfigScreen extends OptionsSubScreen {
         reopen();
     }
 
+    private void resetXaeroEnabled() {
+        ModConfig.get().xaeroIntegration.enabled = new ModConfig.XaeroIntegration().enabled;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetXaeroChatFormat() {
+        ModConfig.get().xaeroIntegration.xaeroChatFormat = new ModConfig.XaeroIntegration().xaeroChatFormat;
+        ModConfig.save();
+        reopen();
+    }
+
     /**
      * Rebuilds the screen from scratch so every widget reflects the freshly-reset config value.
      * Carries the current scroll position over to the new {@link OptionsList} - it would otherwise
      * start back at 0 on every reset/reopen, jerking the player back to the top of a scrolled list.
+     *
+     * <p>The scroll is restored <em>after</em> the screen is set, not before: {@code list} is
+     * declared nullable by {@link OptionsSubScreen} and is only assigned in {@link #addContents()},
+     * which runs from {@code init()} - and {@code init()} is what {@link ClientCompat#setScreen}
+     * ends up calling. Touching {@code newScreen.list} first therefore dereferences null. Setting
+     * the screen first also means the list is populated by the time {@code setScrollAmount} clamps
+     * against its max scroll, instead of being clamped to 0 against an empty one.
      */
     private void reopen() {
-        double scrollAmount = this.list.scrollAmount();
+        double scrollAmount = this.list != null ? this.list.scrollAmount() : 0.0;
         ModConfigScreen newScreen = new ModConfigScreen(this.lastScreen);
-        newScreen.list.setScrollAmount(scrollAmount);
-        this.minecraft.setScreen(newScreen);
+        ClientCompat.setScreen(this.minecraft, newScreen);
+        if (newScreen.list != null) {
+            newScreen.list.setScrollAmount(scrollAmount);
+        }
     }
 
     private static double clamp(double value, double min, double max) {

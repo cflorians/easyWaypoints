@@ -92,7 +92,7 @@ public class DeathWaypointManager {
         WaypointRenderer.waypoints.add(wp);
         WaypointRenderer.saveToFile();
 
-        client.gui.hud.setOverlayMessage(I18nHelper.getComponent("death.created"), true);
+        ClientCompat.setOverlayMessage(client, I18nHelper.getComponent("death.created"), true);
     }
 
     private static void checkArrival(Minecraft client, ModConfig.DeathWaypoints cfg) {
@@ -141,7 +141,7 @@ public class DeathWaypointManager {
             if ((now - start) >= (long) (cfg.graceSeconds * 1000.0)) {
                 WaypointRenderer.waypoints.remove(deathWp);
                 WaypointRenderer.saveToFile();
-                client.gui.hud.setOverlayMessage(I18nHelper.getComponent("death.reached"), true);
+                ClientCompat.setOverlayMessage(client, I18nHelper.getComponent("death.reached"), true);
                 dwellStart.remove(deathWp);
             }
         }

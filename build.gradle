@@ -19,10 +19,31 @@ def sharedClientSources = [
 	'WaypointDisplayMode.java',
 	'WaypointSortMode.java',
 	'WaypointPing.java',
+	'ModMenuIntegration.java',
 	'UiPalette.java',
 	'Icons.java',
-	'ShaderDetector.java'
+	'ShaderDetector.java',
+	'DeathWaypointManager.java',
+	'ModConfigScreen.java',
+	'ModKeyBindings.java',
+	'WaypointListScreen.java',
+	'DimensionNames.java',
+	'XaeroBridge.java',
+	'XaeroMinimapBridge.java',
+	'XaeroSync.java',
+	'XaeroLinkLedger.java',
+	'WaypointColors.java'
 ]
+
+/**
+ * Files that are byte-identical today but deliberately NOT guarded as shared.
+ *
+ * The check below fails on any identical pair missing from sharedClientSources, because an
+ * unlisted-but-identical file is exactly the state in which a later drift ships unnoticed - which
+ * is what happened to ModMenuIntegration.java. This is the escape hatch for a pair that matches by
+ * coincidence and is expected to diverge; it is empty on purpose.
+ */
+def intentionallyUnsharedSources = []
 
 tasks.register('checkSharedSources') {
 	group = 'verification'
@@ -31,9 +52,12 @@ tasks.register('checkSharedSources') {
 	def referenceDir = file('versions/26.1/src/client/java/com/easywp/client')
 	def targetDir = file('versions/26.2/src/client/java/com/easywp/client')
 	def names = sharedClientSources
+	def exempt = intentionallyUnsharedSources
 
-	inputs.files(names.collect { new File(referenceDir, it) } + names.collect { new File(targetDir, it) })
-			.withPropertyName('sharedClientSources')
+	// Every client source on both sides is an input, not just the listed ones: the unlisted-file
+	// detection below has to re-run when any of them changes.
+	inputs.files(fileTree(referenceDir) { include '*.java' }, fileTree(targetDir) { include '*.java' })
+			.withPropertyName('clientSources')
 	// Nothing is produced, so declare the marker explicitly to stay cacheable and up-to-date aware.
 	def marker = layout.buildDirectory.file('checkSharedSources.txt')
 	outputs.file(marker)
@@ -60,6 +84,108 @@ tasks.register('checkSharedSources') {
 					"pins the whole tree to LF."
 			)
 		}
+
+		// A file that is identical in both trees but absent from the list is unguarded: nothing
+		// would notice the day the two copies stop matching. Flag it so it gets listed now, while
+		// they still agree, rather than after a silent divergence has already shipped.
+		def unguarded = []
+		referenceDir.listFiles({ f -> f.isFile() && f.name.endsWith('.java') } as FileFilter).each { a ->
+			def name = a.name
+			if (names.contains(name) || exempt.contains(name)) return
+			def b = new File(targetDir, name)
+			if (b.isFile() && java.util.Arrays.equals(a.bytes, b.bytes)) {
+				unguarded << name
+			}
+		}
+
+		if (!unguarded.isEmpty()) {
+			throw new GradleException(
+					"These client sources are byte-identical across both versions but are not guarded:\n  " +
+					unguarded.sort().join('\n  ') +
+					"\n\nAdd each to sharedClientSources in build.gradle so a future drift fails the build.\n" +
+					"If a pair matches only by coincidence and is expected to diverge, add it to\n" +
+					"intentionallyUnsharedSources instead."
+			)
+		}
+
+		marker.get().asFile.text = "ok\n"
+	}
+}
+
+/**
+ * Locales that must stay a verbatim copy of es_es.json.
+ *
+ * Minecraft resolves regional codes by exact match with no es_mx -> es -> en_us cascade, so every
+ * Spanish code Mojang ships needs its own file or those players silently fall back to English
+ * (see CLAUDE.md, i18n). They are maintained as copies, and nothing checked that until now.
+ * Remove one from this list the day it earns genuinely regional wording.
+ */
+def spanishCopiesOfEsEs = ['es_ar', 'es_cl', 'es_ec', 'es_mx', 'es_uy', 'es_ve']
+
+tasks.register('checkLangParity') {
+	group = 'verification'
+	description = 'Fails if a lang file is missing keys present in en_us.json, or if an es_* copy has drifted from es_es.json.'
+
+	def langDir = file('common/src/main/resources/assets/easywp/lang')
+	def copies = spanishCopiesOfEsEs
+
+	inputs.files(fileTree(langDir) { include '*.json' }).withPropertyName('langFiles')
+	def marker = layout.buildDirectory.file('checkLangParity.txt')
+	outputs.file(marker)
+
+	doLast {
+		def slurper = new groovy.json.JsonSlurper()
+		def reference = new File(langDir, 'en_us.json')
+		if (!reference.isFile()) {
+			throw new GradleException("Missing the reference language file: ${reference}")
+		}
+		def referenceKeys = slurper.parse(reference, 'UTF-8').keySet()
+
+		def problems = []
+		langDir.listFiles({ f -> f.isFile() && f.name.endsWith('.json') } as FileFilter).sort { it.name }.each { f ->
+			if (f.name == 'en_us.json') return
+			def keys
+			try {
+				keys = slurper.parse(f, 'UTF-8').keySet()
+			} catch (Exception e) {
+				problems << "${f.name}: is not valid JSON (${e.message})"
+				return
+			}
+			def missing = (referenceKeys - keys).sort()
+			// An extra key is never harmless - it is a key nothing ever looks up, i.e. a typo that
+			// leaves the real string untranslated while looking translated in the file.
+			def extra = (keys - referenceKeys).sort()
+			if (!missing.isEmpty()) {
+				problems << "${f.name}: missing ${missing.size()} key(s) present in en_us.json: ${missing.join(', ')}"
+			}
+			if (!extra.isEmpty()) {
+				problems << "${f.name}: has ${extra.size()} key(s) en_us.json does not: ${extra.join(', ')}"
+			}
+		}
+
+		def esEs = new File(langDir, 'es_es.json')
+		if (!esEs.isFile()) {
+			problems << "es_es.json: missing, but other Spanish locales are declared as copies of it"
+		} else {
+			copies.each { code ->
+				def copy = new File(langDir, "${code}.json")
+				if (!copy.isFile()) {
+					problems << "${code}.json: missing - Minecraft has no es_* fallback chain, so those players get English"
+				} else if (!java.util.Arrays.equals(esEs.bytes, copy.bytes)) {
+					problems << "${code}.json: has drifted from es_es.json"
+				}
+			}
+		}
+
+		if (!problems.isEmpty()) {
+			throw new GradleException(
+					"Language files are inconsistent:\n  " + problems.join('\n  ') +
+					"\n\nen_us.json is the reference: every other file must carry exactly its key set.\n" +
+					"The es_* files are verbatim copies of es_es.json (see CLAUDE.md, i18n); edit es_es.json\n" +
+					"and copy it over them, or drop a locale from spanishCopiesOfEsEs in build.gradle if it is\n" +
+					"meant to differ."
+			)
+		}
 		marker.get().asFile.text = "ok\n"
 	}
 }
@@ -68,6 +194,7 @@ subprojects {
 	plugins.withId('java') {
 		tasks.named('check').configure {
 			dependsOn rootProject.tasks.named('checkSharedSources')
+			dependsOn rootProject.tasks.named('checkLangParity')
 		}
 	}
 }

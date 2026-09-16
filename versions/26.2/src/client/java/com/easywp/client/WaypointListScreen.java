@@ -1,12 +1,15 @@
 package com.easywp.client;
 
+import com.easywp.XaeroWaypointFormat;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.BlockPos;
@@ -35,6 +38,17 @@ public class WaypointListScreen extends Screen {
     private List<WaypointEntry> cachedFilteredWaypoints = new ArrayList<>();
     private boolean cachedHasAnyFocused = false;
     private boolean cachedShowTP = false;
+
+    /**
+     * Whether to offer the Xaero Import/Export pair at all. Resolved once per {@link #init()} rather
+     * than per frame, and read by both the widget creation and the glyph drawing so the two can never
+     * disagree about whether the buttons exist. Gated on Xaero merely being <em>installed</em>, not on
+     * {@code XaeroBridge.isAvailable()}: if the live bridge is unusable (an incompatible Xaero
+     * release) the two actions still work through the {@code waypoints.txt} fallback, and hiding the
+     * buttons there would remove the only way to reach it.
+     */
+    private boolean showXaeroButtons = false;
+
 
     /** The three vanilla dimensions, always offered so the tab order never shifts under the player. */
     private static final List<String> VANILLA_DIMENSIONS = List.of(
@@ -75,6 +89,16 @@ public class WaypointListScreen extends Screen {
     /** Size of the hand-drawn sort glyph and the gap it keeps from the label it sits beside. */
     private static final int SORT_ICON_WIDTH = 3;
     private static final int SORT_ICON_GAP = 4;
+
+    /**
+     * The Xaero pair sits in the screen's bottom-right corner, mirroring the config gear in the
+     * bottom-left: same 20x20 size, same 8px margin from its own edge, same anchoring to the
+     * <em>screen</em> rather than to the modal, so neither moves when the modal's contents change.
+     * 24px of pitch puts a 4px gap between the two.
+     */
+    private static final int CORNER_BUTTON_SIZE = 20;
+    private static final int CORNER_BUTTON_MARGIN = 8;
+    private static final int CORNER_BUTTON_PITCH = 24;
 
     /**
      * One row's worth of data. An entry is built for every waypoint in the selected dimension on
@@ -277,59 +301,6 @@ public class WaypointListScreen extends Screen {
         this.dimensions = tabs;
     }
 
-    /** Header label for a dimension tab. */
-    private static String dimensionTitle(String dimension) {
-        return switch (dimension) {
-            case "minecraft:overworld"  -> "OVERWORLD";
-            case "minecraft:the_nether" -> "NETHER";
-            case "minecraft:the_end"    -> "THE END";
-            default -> prettyName(dimension).toUpperCase(Locale.ROOT);
-        };
-    }
-
-    /** Dimension name used in the chat message the share button sends. */
-    private static String dimensionChatName(String dimension) {
-        return switch (dimension) {
-            case "minecraft:overworld"  -> "Overworld";
-            case "minecraft:the_nether" -> "Nether";
-            case "minecraft:the_end"    -> "The End";
-            default -> prettyName(dimension);
-        };
-    }
-
-    /** Turns an identifier into something readable: "twilightforest:dark_forest" -> "Dark Forest". */
-    private static String prettyName(String dimension) {
-        int colon = dimension.indexOf(':');
-        String path = colon >= 0 ? dimension.substring(colon + 1) : dimension;
-
-        StringBuilder sb = new StringBuilder();
-        for (String word : path.split("_")) {
-            if (word.isEmpty()) continue;
-            if (sb.length() > 0) sb.append(' ');
-            sb.append(Character.toUpperCase(word.charAt(0))).append(word, 1, word.length());
-        }
-        return sb.length() == 0 ? dimension : sb.toString();
-    }
-
-    private static int dimensionColor(String dimension) {
-        return switch (dimension) {
-            case "minecraft:overworld"  -> UiPalette.DIM_OVERWORLD;
-            case "minecraft:the_nether" -> UiPalette.DIM_NETHER;
-            case "minecraft:the_end"    -> UiPalette.DIM_END;
-            default -> UiPalette.TEXT_PRIMARY;
-        };
-    }
-
-    /**
-     * Whether waypoints in this dimension can be mirrored into another one. Only the Overworld and
-     * the Nether have the 1:8 relationship the renderer knows how to convert, which is the same
-     * rule WaypointCreateScreen already applies to its own share toggle. For the vanilla three
-     * this is exactly the old {@code !equals("minecraft:the_end")} test.
-     */
-    private static boolean isConvertible(String dimension) {
-        return dimension.equals("minecraft:overworld") || dimension.equals("minecraft:the_nether");
-    }
-
     private void updateWaypointsCache() {
         updateDimensionTabs();
         this.cachedFilteredWaypoints = getFilteredWaypoints();
@@ -365,11 +336,45 @@ public class WaypointListScreen extends Screen {
 
         this.addRenderableWidget(
             ModernButton.modernBuilder(Component.literal(""), btn -> {
-                this.minecraft.setScreenAndShow(new ModConfigScreen(this));
-            }).pos(8, this.height - 28).size(20, 20).build()
+                ClientCompat.setScreen(this.minecraft, new ModConfigScreen(this));
+            }).pos(CORNER_BUTTON_MARGIN, this.height - 28).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE).build()
         );
 
+        this.showXaeroButtons = ModConfig.get().xaeroIntegration.enabled && XaeroBridge.isModInstalled();
+        if (this.showXaeroButtons) {
+            var importBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
+                reportSync("xaero.imported", XaeroSync.importNow());
+                // Rebuild the rows: imported and removed waypoints are already applied to the list,
+                // but this screen only rereads it when something tells it to, so the change would
+                // otherwise stay invisible until the next keystroke or dimension switch.
+                refreshItemWidgets();
+            }).pos(xaeroButtonX(1), this.height - 28).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE).build();
+            importBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("list.xaero_import")));
+            this.addRenderableWidget(importBtn);
+
+            var exportBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
+                reportSync("xaero.exported", XaeroSync.exportNow());
+            }).pos(xaeroButtonX(0), this.height - 28).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE).build();
+            exportBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("list.xaero_export")));
+            this.addRenderableWidget(exportBtn);
+        }
+
         refreshItemWidgets();
+    }
+
+    /** Left edge of the Xaero corner button {@code slotFromRight} places in from the screen's right
+     *  edge: 0 is the outermost (Export), 1 the one beside it (Import). */
+    private int xaeroButtonX(int slotFromRight) {
+        return this.width - CORNER_BUTTON_MARGIN - CORNER_BUTTON_SIZE - slotFromRight * CORNER_BUTTON_PITCH;
+    }
+
+    /** Reports a sync in the same transient action-bar overlay every other mutating action here uses.
+     *  Both counts are always shown, including zeroes: a sync that removes waypoints should say so
+     *  plainly, and "0 added, 0 removed" is a meaningful answer rather than a reason to stay silent. */
+    private void reportSync(String messageKey, XaeroSync.SyncResult result) {
+        ClientCompat.setOverlayMessage(this.minecraft, result == null
+                ? I18nHelper.getComponent("xaero.unavailable")
+                : I18nHelper.getComponent(messageKey, String.valueOf(result.added()), String.valueOf(result.removed())), true);
     }
 
     private void refreshItemWidgets() {
@@ -402,13 +407,13 @@ public class WaypointListScreen extends Screen {
 
             var delBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 if (ModConfig.get().confirmations.confirmBeforeDelete) {
-                    this.minecraft.setScreenAndShow(new ConfirmScreen(
+                    ClientCompat.setScreen(this.minecraft, new ConfirmScreen(
                         confirmed -> {
                             if (confirmed) {
                                 WaypointRenderer.waypoints.remove(wp);
                                 WaypointRenderer.saveToFile();
                             }
-                            this.minecraft.setScreenAndShow(this);
+                            ClientCompat.setScreen(this.minecraft, this);
                         },
                         I18nHelper.getComponent("menu.confirm_delete_title"),
                         I18nHelper.getComponent("menu.confirm_delete_text", wp.getName())
@@ -428,16 +433,37 @@ public class WaypointListScreen extends Screen {
                 WaypointRenderer.saveToFile();
                 refreshItemWidgets();
             }).pos(buttonX, itemY).size(18, 18).build();
-            dimBtn.active = isConvertible(selectedDimension);
+            dimBtn.active = DimensionNames.isConvertible(selectedDimension);
             this.addRenderableWidget(dimBtn);
             dynamicWidgets.add(dimBtn);
             buttonX -= 20;
 
             var shareBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 if (this.minecraft.player != null && this.minecraft.player.connection != null) {
-                    String dimName = dimensionChatName(selectedDimension);
-                    String msg = String.format("%s -> [%d, %d, %d] at %s",
-                        wp.getName().toUpperCase(Locale.ROOT), pos.getX(), pos.getY(), pos.getZ(), dimName);
+                    String msg;
+                    if (ModConfig.get().xaeroIntegration.xaeroChatFormat) {
+                        // Xaero's own chat listener recognizes this exact prefix and offers
+                        // recipients who run it an [Add] button - see XaeroWaypointFormat.
+                        // The set name is irrelevant to chatShareLine (the chat format carries no set
+                        // field at all - see its javadoc) but the convenience constructor requires one.
+                        XaeroWaypointFormat.XaeroWaypoint xwp = new XaeroWaypointFormat.XaeroWaypoint(
+                                wp.getName(), pos.getX(), pos.getY(), pos.getZ(),
+                                XaeroWaypointFormat.nearestColorOrdinal(wp.getColor()),
+                                XaeroWaypointFormat.DEFAULT_SET_NAME
+                        );
+                        msg = XaeroWaypointFormat.chatShareLine(xwp);
+                    } else {
+                        // Plain text, no color codes: vanilla strips the section sign from any
+                        // chat message a player sends before broadcasting it (a long-standing
+                        // anti-spoofing measure), so a client mod cannot color another player's
+                        // view of this message - only the in-game list itself can use DimensionNames'
+                        // per-dimension colors, which this line can't carry over the network.
+                        String dimName = DimensionNames.chatName(selectedDimension);
+                        msg = I18nHelper.getComponent("share.chat",
+                                wp.getName().toUpperCase(Locale.ROOT), dimName,
+                                String.valueOf(pos.getX()), String.valueOf(pos.getY()), String.valueOf(pos.getZ())
+                        ).getString();
+                    }
                     this.minecraft.player.connection.sendChat(msg);
                     this.onClose();
                 }
@@ -447,7 +473,7 @@ public class WaypointListScreen extends Screen {
             buttonX -= 20;
 
             var editBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
-                this.minecraft.setScreenAndShow(new WaypointCreateScreen(wp));
+                ClientCompat.setScreen(this.minecraft, new WaypointCreateScreen(wp));
             }).pos(buttonX, itemY).size(18, 18).build();
             this.addRenderableWidget(editBtn);
             dynamicWidgets.add(editBtn);
@@ -529,7 +555,7 @@ public class WaypointListScreen extends Screen {
 
         var newBtn = ModernButton.modernBuilder(I18nHelper.getComponent("menu.new"), btn -> {
             if (this.minecraft.player != null) {
-                this.minecraft.setScreenAndShow(new WaypointCreateScreen(this.minecraft.player.blockPosition()));
+                ClientCompat.setScreen(this.minecraft, new WaypointCreateScreen(this.minecraft.player.blockPosition()));
             }
         }).pos(centerX - 105, centerY + 86).size(102, 20).build();
         this.addRenderableWidget(newBtn);
@@ -537,7 +563,7 @@ public class WaypointListScreen extends Screen {
 
         var backBtn = ModernButton.modernBuilder(I18nHelper.getComponent("menu.back"), btn -> {
             if (parentScreen != null) {
-                this.minecraft.setScreenAndShow(parentScreen);
+                ClientCompat.setScreen(this.minecraft, parentScreen);
             } else {
                 this.onClose();
             }
@@ -578,11 +604,79 @@ public class WaypointListScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
+    /** Window for the double-click-to-copy gesture below, hand-timed rather than trusting the
+     *  engine's own {@code doubleClick} parameter: confirmed from {@code MouseHandler}'s own
+     *  bytecode that the one call site reaching a {@code Screen} subclass's {@code mouseClicked}
+     *  override always passes a literal {@code false} - real double-click detection happens deeper
+     *  inside {@code Screen}'s default widget-dispatch logic, which overriding this method bypasses
+     *  entirely. 250ms matches the feel of double-click elsewhere in vanilla's own UI. */
+    private static final long COORDS_DOUBLE_CLICK_MS = 250;
+    private long lastCoordsClickTime = 0L;
+    private int lastCoordsClickIndex = -1;
+
+    /** How long the inline "Copied!" feedback (drawn beside the coordinates, see
+     *  {@code extractRenderState}) stays up after a successful copy. */
+    private static final long COPIED_FEEDBACK_MS = 1000;
+    private int copiedFeedbackIndex = -1;
+    private long copiedFeedbackUntilMillis = 0L;
+
+    /**
+     * Double-clicking a row's name or coordinates text copies the coordinates to the clipboard -
+     * replaces what used to be a dedicated button in the action strip, which had no room left once
+     * the strip already ran from the swatch to within 7px of the modal's own edge. There is no
+     * per-region callback for a plain drawn text area (unlike e.g. {@code EditBox}'s own
+     * word-select), so the hit test below (mirroring where {@code extractRenderState} actually
+     * draws the text) is the only custom part needed besides the timing above.
+     */
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (event.button() == 0) {
+            int hitIndex = nameOrCoordsRowAt(event.x(), event.y());
+            if (hitIndex >= 0) {
+                long now = System.currentTimeMillis();
+                if (hitIndex == lastCoordsClickIndex && now - lastCoordsClickTime <= COORDS_DOUBLE_CLICK_MS) {
+                    BlockPos displayPos = this.cachedFilteredWaypoints.get(hitIndex).displayPos;
+                    String coords = String.format("%d, %d, %d", displayPos.getX(), displayPos.getY(), displayPos.getZ());
+                    this.minecraft.keyboardHandler.setClipboard(coords);
+                    // Inline feedback beside the coordinates themselves, not a HUD overlay message -
+                    // see extractRenderState, which draws it for exactly COPIED_FEEDBACK_MS.
+                    copiedFeedbackIndex = hitIndex;
+                    copiedFeedbackUntilMillis = now + COPIED_FEEDBACK_MS;
+                    lastCoordsClickTime = 0L;
+                    lastCoordsClickIndex = -1;
+                    return true;
+                }
+                lastCoordsClickTime = now;
+                lastCoordsClickIndex = hitIndex;
+            }
+        }
+        return super.mouseClicked(event, doubleClick);
+    }
+
+    /** @return the index into {@link #cachedFilteredWaypoints} (i.e. the currently visible page)
+     *  whose name or coordinates text sits under {@code (mouseX, mouseY)}, or -1. Mirrors the row
+     *  layout {@code extractRenderState} actually draws with - the full name+coords column, both
+     *  lines, rather than a separate widget's own bounds - so a double-click lands the same whether
+     *  it's on the row's name or its coordinates. */
+    private int nameOrCoordsRowAt(double mouseX, double mouseY) {
+        int centerX = this.width / 2;
+        int centerY = this.height / 2;
+        int startIndex = scrollIndex;
+        int endIndex = Math.min(startIndex + ITEMS_PER_PAGE, this.cachedFilteredWaypoints.size());
+        for (int i = startIndex; i < endIndex; i++) {
+            int itemY = centerY - 60 + (i - startIndex) * 22;
+            if (mouseX >= centerX - 117 && mouseX < centerX - 117 + NAME_MAX_WIDTH
+                    && mouseY >= itemY && mouseY < itemY + 21) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     @Override
     public void extractRenderState(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final float a) {
         int centerX = this.width / 2;
         int centerY = this.height / 2;
-        int headerCenterX = centerX;
 
         int bgW = 290;
         int bgH = 226;
@@ -600,13 +694,21 @@ public class WaypointListScreen extends Screen {
         List<WaypointEntry> waypoints = this.cachedFilteredWaypoints;
         int totalWaypoints = waypoints.size();
 
-        String headerDimText = dimensionTitle(selectedDimension) + " (" + totalWaypoints + ")";
-        graphics.centeredText(this.font, Component.literal(headerDimText), headerCenterX, centerY - 106,
-                dimensionColor(selectedDimension));
+        String headerDimText = DimensionNames.title(selectedDimension) + " (" + totalWaypoints + ")";
+        graphics.centeredText(this.font, Component.literal(headerDimText), centerX, centerY - 106,
+                DimensionNames.color(selectedDimension));
 
         super.extractRenderState(graphics, mouseX, mouseY, a);
 
-        graphics.blit(pipeline, Icons.CONFIG, 9, this.height - 27, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_IDLE);
+        graphics.blit(pipeline, Icons.CONFIG, CORNER_BUTTON_MARGIN + 1, this.height - 27, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_IDLE);
+
+        if (this.showXaeroButtons) {
+            // The glyph is 7px tall (4 of triangle, a 2px gap, 1 of bar), so centering it in the
+            // 20px button puts its top 6px down from the button's own top edge.
+            int glyphY = this.height - 28 + (CORNER_BUTTON_SIZE - 7) / 2;
+            drawImportGlyph(graphics, xaeroButtonX(1) + CORNER_BUTTON_SIZE / 2, glyphY, UiPalette.ICON_IDLE);
+            drawExportGlyph(graphics, xaeroButtonX(0) + CORNER_BUTTON_SIZE / 2, glyphY, UiPalette.ICON_IDLE);
+        }
 
         // Sort icon: drawn to the left of the button's own centered label instead of being baked
         // into ModernButton, so the label keeps its normal hover-reactive colour and the icon
@@ -627,15 +729,15 @@ public class WaypointListScreen extends Screen {
         boolean showTP = this.cachedShowTP;
 
         if (totalWaypoints == 0) {
-            graphics.centeredText(this.font, I18nHelper.getComponent("menu.no_waypoints"), headerCenterX, centerY + 5, UiPalette.TEXT_SECONDARY);
+            graphics.centeredText(this.font, I18nHelper.getComponent("menu.no_waypoints"), centerX, centerY + 5, UiPalette.TEXT_SECONDARY);
         } else {
             int arrowColor = UiPalette.SCROLL_ARROW;
             if (scrollIndex > 0) {
-                drawUpTriangle(graphics, headerCenterX, centerY - 68, arrowColor);
+                drawUpTriangle(graphics, centerX, centerY - 68, arrowColor);
             }
 
             if (startIndex + ITEMS_PER_PAGE < totalWaypoints) {
-                drawDownTriangle(graphics, headerCenterX, centerY + 72, arrowColor);
+                drawDownTriangle(graphics, centerX, centerY + 72, arrowColor);
             }
 
             for (int i = startIndex; i < endIndex; i++) {
@@ -659,7 +761,15 @@ public class WaypointListScreen extends Screen {
                 graphics.text(this.font, entry.name(this.font), centerX - 117, itemY + 1, nameColor);
 
                 int coordsColor = isDimmed ? UiPalette.TEXT_DIM_SOFT : UiPalette.TEXT_SECONDARY;
-                graphics.text(this.font, entry.coords(), centerX - 117, itemY + 10, coordsColor);
+                Component coordsComponent = entry.coords();
+                graphics.text(this.font, coordsComponent, centerX - 117, itemY + 10, coordsColor);
+
+                // Inline "Copied!" feedback right after the coordinates text, for exactly
+                // COPIED_FEEDBACK_MS after a double-click copy - see mouseClicked/nameOrCoordsRowAt.
+                if (i == copiedFeedbackIndex && System.currentTimeMillis() < copiedFeedbackUntilMillis) {
+                    int copiedX = centerX - 117 + this.font.width(coordsComponent) + 4;
+                    graphics.text(this.font, I18nHelper.getComponent("list.coords_copied"), copiedX, itemY + 10, UiPalette.TEXT_SUCCESS);
+                }
 
                 if (showTP) {
                     graphics.blit(pipeline, Icons.TP, centerX + 20, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_ACCENT);
@@ -677,7 +787,7 @@ public class WaypointListScreen extends Screen {
                 graphics.blit(pipeline, Icons.SHARE, centerX + 80, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_IDLE);
 
                 Icons.drawPortalIcon(graphics, pipeline, centerX + 100, itemY,
-                        wp.isShared(), isConvertible(selectedDimension));
+                        wp.isShared(), DimensionNames.isConvertible(selectedDimension));
 
                 graphics.blit(pipeline, Icons.DELETE, centerX + 120, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_DESTRUCTIVE);
             }
@@ -741,6 +851,23 @@ public class WaypointListScreen extends Screen {
         graphics.fill(centerX - 2, startY + 1, centerX + 3, startY + 2, color);
         graphics.fill(centerX - 1, startY + 2, centerX + 2, startY + 3, color);
         graphics.fill(centerX, startY + 3, centerX + 1, startY + 4, color);
+    }
+
+    /**
+     * Arrow-onto-a-bar, the universal download glyph, for the Xaero Import button - hand-drawn with
+     * {@code fill} rather than added as a texture asset, the same choice {@link #drawSortIcon} already
+     * documents: it is only ever used at this one size and colour. The bar is what distinguishes it
+     * from the bare scroll arrows above, which have none.
+     */
+    private void drawImportGlyph(GuiGraphicsExtractor graphics, int centerX, int startY, int color) {
+        drawDownTriangle(graphics, centerX, startY, color);
+        graphics.fill(centerX - 4, startY + 6, centerX + 5, startY + 7, color);
+    }
+
+    /** Arrow-off-a-bar, the counterpart to {@link #drawImportGlyph}, for the Xaero Export button. */
+    private void drawExportGlyph(GuiGraphicsExtractor graphics, int centerX, int startY, int color) {
+        drawUpTriangle(graphics, centerX, startY, color);
+        graphics.fill(centerX - 4, startY + 6, centerX + 5, startY + 7, color);
     }
 
     @Override

@@ -11,6 +11,10 @@ repositories {
 		name = "Terraformers"
 		url = "https://maven.terraformersmc.com/releases"
 	}
+	maven {
+		name = "Xaero"
+		url = "https://chocolateminecraft.com/maven"
+	}
 }
 
 loom {
@@ -40,6 +44,13 @@ dependencies {
 	// Compile-only: only the entrypoint class needs the API, and Fabric instantiates it
 	// solely when Mod Menu is installed. Never bundled.
 	clientCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+
+	// Compile-only: XaeroBridge gates every call on FabricLoader.isModLoaded("xaerominimap"), so
+	// none of this is ever bundled or even loaded if the player doesn't have Xaero's Minimap.
+	// xaerolib is Xaero's own shared-code dependency; pinned explicitly instead of letting the
+	// POM's [1.7.0, 1.8) range resolve dynamically, for a reproducible build.
+	clientCompileOnly "xaero.minimap:xaerominimap-fabric-${project.minecraft_version}:${project.xaero_minimap_version}"
+	clientCompileOnly "xaero.lib:xaerolib-fabric-${project.minecraft_version}:${project.xaerolib_version}"
 }
 
 processResources {
@@ -63,9 +74,3 @@ java {
 	sourceCompatibility = JavaVersion.VERSION_25
 	targetCompatibility = JavaVersion.VERSION_25
 }
-
-
-
-
-
-

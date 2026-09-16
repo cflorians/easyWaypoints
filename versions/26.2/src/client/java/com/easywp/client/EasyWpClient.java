@@ -9,7 +9,6 @@ public class EasyWpClient implements ClientModInitializer {
 	public void onInitializeClient() {
 		ModKeyBindings.register();
 		WaypointRenderTypes.init();
-		WaypointRenderer.init();
 
 		// Waypoints are queued as world submits rather than drawn immediately, so the hook is
 		// the submit collection phase instead of the end of the main pass.

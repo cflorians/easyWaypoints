@@ -70,7 +70,7 @@ public final class WaypointRenderTypes {
     );
 
     /** Marker pass used when no shaderpack is rendering. */
-    public static final RenderType VANILLA_MARKER = RenderType.create(
+    private static final RenderType VANILLA_MARKER = RenderType.create(
             "easywp_waypoint_marker",
             RenderSetup.builder(MARKER_PIPELINE).withTexture("Sampler0", MARKER_TEXTURE).useLightmap()
                     .setOutputTarget(OutputTarget.WEATHER_TARGET).createRenderSetup()
@@ -113,7 +113,7 @@ public final class WaypointRenderTypes {
 
     /** Label backdrop pass without a shaderpack, drawn as our own quad instead of through Font's
      *  built-in background box so it can carry the depth write described above. */
-    public static final RenderType LABEL_BACKDROP = RenderType.create(
+    private static final RenderType LABEL_BACKDROP = RenderType.create(
             "easywp_waypoint_label_backdrop",
             RenderSetup.builder(BACKDROP_PIPELINE).useLightmap().sortOnUpload()
                     .setOutputTarget(OutputTarget.WEATHER_TARGET).createRenderSetup()
@@ -189,9 +189,9 @@ public final class WaypointRenderTypes {
             Method assignPipeline = apiClass.getMethod("assignPipeline", RenderPipeline.class, programClass);
             assignPipeline.invoke(api, BEACON_PIPELINE, beaconBeam);
             return true;
-        } catch (ClassNotFoundException e) {
-            return false;
         } catch (Exception e) {
+            // Iris absent (ClassNotFoundException), an older Iris without assignPipeline, or the
+            // pipeline was already claimed - all of which just leave the vanilla fallback in place.
             return false;
         }
     }

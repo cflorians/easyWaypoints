@@ -13,7 +13,6 @@ import net.minecraft.core.BlockPos;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
-import java.util.Random;
 
 /**
  * Centered modal screen for creating or editing waypoints.
@@ -44,22 +43,6 @@ public class WaypointCreateScreen extends Screen {
     private final Waypoint editingWaypoint;
     private boolean dimShared = false;
 
-    /**
-     * 15 columns (grayscale, then 14 hues in spectrum order) x 4 rows (vivid / light / deep / dark
-     * shade of each hue), so scanning either direction lands on similar colors: down a column for
-     * shades of the same hue, across a row for neighboring hues at the same shade.
-     */
-    private static final int[][] COLOR_GRID = {
-        // Row 1: Vivid — bright, saturated tones across the spectrum
-        { 0xFFFFFFFF, 0xFFFF3B30, 0xFFFF9500, 0xFFFFC107, 0xFFFFCC00, 0xFFAEEA00, 0xFF28CD41, 0xFF00C7BE, 0xFF00E5FF, 0xFF29B6F6, 0xFF007AFF, 0xFF5856D6, 0xFF7C4DFF, 0xFFAF52DE, 0xFFFF2D92 },
-        // Row 2: Light — pastel tints of the same hues
-        { 0xFFC0C0C0, 0xFFFF8A80, 0xFFFFB74D, 0xFFFFE082, 0xFFFFF176, 0xFFDCE775, 0xFF81C784, 0xFF4DB6AC, 0xFF4DD0E1, 0xFF81D4FA, 0xFF64B5F6, 0xFF7986CB, 0xFFB39DDB, 0xFFBA68C8, 0xFFF48FB1 },
-        // Row 3: Deep — saturated dark shades of the same hues
-        { 0xFF4A4A4A, 0xFFB71C1C, 0xFFE65100, 0xFFFF8F00, 0xFFC7A600, 0xFF7CB342, 0xFF1B5E20, 0xFF004D40, 0xFF006064, 0xFF0277BD, 0xFF0D47A1, 0xFF1A237E, 0xFF4A148C, 0xFF6A1B9A, 0xFFAD1457 },
-        // Row 4: Dark — near-black shades of the same hues
-        { 0xFF000000, 0xFF4A0000, 0xFF7A3C00, 0xFF7A4F00, 0xFF5C4B00, 0xFF33691E, 0xFF0D3010, 0xFF00251A, 0xFF00363A, 0xFF01315C, 0xFF052863, 0xFF0B1247, 0xFF260A4A, 0xFF380E52, 0xFF5C0B2C }
-    };
-
     private static class ColorSampleButton extends Button {
         public ColorSampleButton(int x, int y, int width, int height, OnPress onPress) {
             super(x, y, width, height, Component.literal(""), onPress, DEFAULT_NARRATION);
@@ -76,10 +59,7 @@ public class WaypointCreateScreen extends Screen {
         this.originalPos = pos != null ? pos : BlockPos.ZERO;
         this.editingWaypoint = null;
 
-        Random rand = new Random();
-        int r = rand.nextInt(COLOR_GRID.length);
-        int c = rand.nextInt(COLOR_GRID[r].length);
-        this.selectedColor = COLOR_GRID[r][c];
+        this.selectedColor = WaypointColors.random();
     }
 
     public WaypointCreateScreen(Waypoint waypointToEdit) {
@@ -104,7 +84,7 @@ public class WaypointCreateScreen extends Screen {
         if (this.editingWaypoint != null) {
             this.nameField.setValue(this.editingWaypoint.getName());
         } else {
-            this.nameField.setValue("WAYPOINT #" + (WaypointRenderer.waypoints.size() + 1));
+            this.nameField.setValue(I18nHelper.getComponent("create.default_name", String.valueOf(WaypointRenderer.waypoints.size() + 1)).getString());
         }
         this.addRenderableWidget(this.nameField);
 
@@ -135,15 +115,15 @@ public class WaypointCreateScreen extends Screen {
         this.zField.setValue(String.valueOf(originalPos.getZ()));
         this.addRenderableWidget(this.zField);
 
-        int cols = COLOR_GRID[0].length;
+        int cols = WaypointColors.COLOR_GRID[0].length;
         int stepX = 14;
         int gridW = cols * stepX;
         int startX = centerX - gridW / 2;
         int startY = centerY + 19;
 
-        for (int r = 0; r < COLOR_GRID.length; r++) {
+        for (int r = 0; r < WaypointColors.COLOR_GRID.length; r++) {
             for (int c = 0; c < cols; c++) {
-                final int col = COLOR_GRID[r][c];
+                final int col = WaypointColors.COLOR_GRID[r][c];
                 int btnX = startX + c * stepX;
                 int btnY = startY + r * 14;
                 this.addRenderableWidget(
@@ -169,7 +149,7 @@ public class WaypointCreateScreen extends Screen {
 
         this.addRenderableWidget(
             ModernButton.modernBuilder(Component.literal(""), btn -> {
-                this.minecraft.setScreenAndShow(new WaypointListScreen(this));
+                ClientCompat.setScreen(this.minecraft, new WaypointListScreen(this));
             }).pos(centerX + 96, centerY + 85).size(22, 20).build()
         );
     }
@@ -207,15 +187,15 @@ public class WaypointCreateScreen extends Screen {
         super.extractRenderState(graphics, mouseX, mouseY, a);
 
         // Batch draw color palette grid samples directly
-        int cols = COLOR_GRID[0].length;
+        int cols = WaypointColors.COLOR_GRID[0].length;
         int stepX = 14;
         int gridW = cols * stepX;
         int startX = centerX - gridW / 2;
         int startY = centerY + 19;
 
-        for (int r = 0; r < COLOR_GRID.length; r++) {
+        for (int r = 0; r < WaypointColors.COLOR_GRID.length; r++) {
             for (int c = 0; c < cols; c++) {
-                int col = COLOR_GRID[r][c];
+                int col = WaypointColors.COLOR_GRID[r][c];
                 int btnX = startX + c * stepX;
                 int btnY = startY + r * 14;
 
@@ -294,7 +274,7 @@ public class WaypointCreateScreen extends Screen {
     private String resolveWaypointName() {
         String name = this.nameField.getValue();
         if (name.isEmpty()) {
-            name = this.editingWaypoint != null ? this.editingWaypoint.getName() : "WAYPOINT #" + (WaypointRenderer.waypoints.size() + 1);
+            name = this.editingWaypoint != null ? this.editingWaypoint.getName() : I18nHelper.getComponent("create.default_name", String.valueOf(WaypointRenderer.waypoints.size() + 1)).getString();
         }
         return name;
     }
@@ -330,15 +310,18 @@ public class WaypointCreateScreen extends Screen {
             this.editingWaypoint.setShared(this.dimShared);
             // A manual edit turns a temporary death waypoint into a regular, permanent one
             // so it stops being auto-deleted on arrival (avoids the classic "renamed
-            // deathpoint still gets deleted" bug seen in other waypoint mods).
+            // deathpoint still gets deleted" bug seen in other waypoint mods). Fast Ping's flag is
+            // cleared the same way: once edited, it's a waypoint the player shaped on purpose, not
+            // a throwaway ping, so it stops counting toward Ping # numbering.
             this.editingWaypoint.setDeath(false);
+            this.editingWaypoint.setFastPing(false);
 
             if (this.minecraft.player != null) {
                 // Gray is set as the component's own style instead of being left to the §7 in the
                 // translation. A translated string is split into one part per placeholder and every
                 // part is rendered starting from the component's style, so a § code stops applying
                 // at the next %s rather than running to the end of the line.
-                this.minecraft.gui.hud.setOverlayMessage(I18nHelper.getComponent(
+                ClientCompat.setOverlayMessage(this.minecraft, I18nHelper.getComponent(
                     "create.feedback_edited", name, newPos.getX(), newPos.getY(), newPos.getZ()
                 ).withStyle(ChatFormatting.GRAY), true);
             }
@@ -347,7 +330,7 @@ public class WaypointCreateScreen extends Screen {
 
             if (this.minecraft.player != null) {
                 // Same reasoning as the edited-feedback message above.
-                this.minecraft.gui.hud.setOverlayMessage(I18nHelper.getComponent(
+                ClientCompat.setOverlayMessage(this.minecraft, I18nHelper.getComponent(
                     "create.feedback_created", name, newPos.getX(), newPos.getY(), newPos.getZ()
                 ).withStyle(ChatFormatting.GRAY), true);
             }

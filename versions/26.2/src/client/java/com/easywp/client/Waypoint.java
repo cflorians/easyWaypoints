@@ -13,6 +13,10 @@ public class Waypoint {
     private boolean forceVisible = false;
     private boolean death = false;
     private long createdAtMillis = 0L;
+    // Set only by setter, like forceVisible: Fast Ping (ModKeyBindings) is the only creation path,
+    // which builds a plain Waypoint and flags it after - adding this to the canonical constructor
+    // below would mean touching every call site for a flag almost none of them ever need.
+    private boolean fastPing = false;
 
     // Render-side cache of the on-screen label built for this waypoint (see WaypointRenderer).
     // Lives here instead of a separate map because the renderer already reads and writes waypoint
@@ -130,12 +134,17 @@ public class Waypoint {
         this.death = death;
     }
 
-    public long getCreatedAtMillis() {
-        return createdAtMillis;
+    public boolean isFastPing() {
+        return fastPing;
     }
 
-    public void setCreatedAtMillis(long createdAtMillis) {
-        this.createdAtMillis = createdAtMillis;
+    public void setFastPing(boolean fastPing) {
+        this.fastPing = fastPing;
+    }
+
+    /** Set once at construction; nothing reassigns it, so there is deliberately no setter. */
+    public long getCreatedAtMillis() {
+        return createdAtMillis;
     }
 
     public String getCachedLabelText() {

@@ -16,6 +16,21 @@ repositories {
 dependencies {
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "org.slf4j:slf4j-api:2.0.13"
+
+	// The only tests in the repository live here, and they can only live here: this module compiles
+	// standalone against a Minecraft-free dependency set, so its classes are the only ones that can
+	// be exercised without a game client. See CLAUDE.md ("Tests").
+	testImplementation platform("org.junit:junit-bom:${project.junit_version}")
+	testImplementation "org.junit.jupiter:junit-jupiter"
+	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	testLogging {
+		events "failed"
+		exceptionFormat = "full"
+	}
 }
 
 tasks.withType(JavaCompile).configureEach {

@@ -23,7 +23,6 @@ public final class UiPalette {
     // ICON_DESTRUCTIVE y ICON_ACCENT se dejan igual: son colores semánticos (rojo = borrar,
     // morado = portal) que no dependen del tema.
     public static final int ICON_IDLE        = 0xFFBCC8DE;
-    public static final int ICON_ACTIVE      = 0xFFFFFFFF;
     public static final int ICON_DISABLED    = 0xFF4A5570;
     public static final int ICON_DESTRUCTIVE = 0xFFD45C5C;
     public static final int ICON_ACCENT      = 0xFFC88CFF;
@@ -45,6 +44,11 @@ public final class UiPalette {
     public static final int TEXT_SECONDARY = 0xFF7C88A6;
     public static final int TEXT_DIM       = 0xFF4A5570;
     public static final int TEXT_DIM_SOFT  = 0xFF2E3446;
+
+    // Aviso transitorio de "Copiado" junto a las coordenadas tras un doble clic - mismo tono que
+    // DIM_OVERWORLD pero con su propio nombre, para que un futuro cambio de los colores de
+    // dimensión no re-tiña este texto sin relación con ellos.
+    public static final int TEXT_SUCCESS = 0xFF5BC93B;
 
     // Acentos
     public static final int DIM_OVERWORLD = 0xFF5BC93B;
