@@ -1,7 +1,6 @@
 package com.easywp.client;
 
 import com.easywp.XaeroWaypointFormat;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -10,7 +9,6 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.BlockPos;
 import net.minecraft.client.Minecraft;
@@ -683,8 +681,6 @@ public class WaypointListScreen extends Screen {
         int minX = centerX - bgW / 2;
         int minY = centerY - bgH / 2;
 
-        RenderPipeline pipeline = RenderPipelines.GUI_TEXTURED;
-
         graphics.fill(minX, minY, minX + bgW, minY + bgH, UiPalette.MODAL_BG);
         graphics.fill(minX, minY, minX + bgW, minY + 1, UiPalette.MODAL_BORDER);
         graphics.fill(minX, minY + bgH - 1, minX + bgW, minY + bgH, UiPalette.MODAL_BORDER);
@@ -700,7 +696,7 @@ public class WaypointListScreen extends Screen {
 
         super.extractRenderState(graphics, mouseX, mouseY, a);
 
-        graphics.blit(pipeline, Icons.CONFIG, CORNER_BUTTON_MARGIN + 1, this.height - 27, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_IDLE);
+        ClientCompat.blitTinted(graphics, Icons.CONFIG, CORNER_BUTTON_MARGIN + 1, this.height - 27, 18, 18, UiPalette.ICON_IDLE);
 
         if (this.showXaeroButtons) {
             // The glyph is 7px tall (4 of triangle, a 2px gap, 1 of bar), so centering it in the
@@ -755,7 +751,7 @@ public class WaypointListScreen extends Screen {
                 int swatchFill = isDimmed ? dim(wp.getColor()) : wp.getColor();
                 int swatchOutlineBase = focused ? UiPalette.FOCUS_OUTLINE_ON : UiPalette.MARKER_OUTLINE;
                 int swatchOutline = isDimmed ? dim(swatchOutlineBase) : swatchOutlineBase;
-                Icons.drawMarkerIcon(graphics, pipeline, centerX - 138, itemY, swatchFill, swatchOutline, wp.isDeath());
+                Icons.drawMarkerIcon(graphics, centerX - 138, itemY, swatchFill, swatchOutline, wp.isDeath());
 
                 int nameColor = isDimmed ? UiPalette.TEXT_DIM : (entry.converted ? UiPalette.TEXT_CONVERTED : UiPalette.TEXT_PRIMARY);
                 graphics.text(this.font, entry.name(this.font), centerX - 117, itemY + 1, nameColor);
@@ -772,7 +768,7 @@ public class WaypointListScreen extends Screen {
                 }
 
                 if (showTP) {
-                    graphics.blit(pipeline, Icons.TP, centerX + 20, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_ACCENT);
+                    ClientCompat.blitTinted(graphics, Icons.TP, centerX + 20, itemY, 18, 18, UiPalette.ICON_ACCENT);
                 }
 
                 boolean isVisible = wp.isVisible();
@@ -781,15 +777,15 @@ public class WaypointListScreen extends Screen {
                 }
                 Identifier visIcon = isVisible ? Icons.SHOW : Icons.HIDE;
                 int visColor = isVisible ? UiPalette.ICON_IDLE : UiPalette.ICON_DISABLED;
-                graphics.blit(pipeline, visIcon, centerX + 40, itemY, 0.0f, 0.0f, 18, 18, 18, 18, visColor);
+                ClientCompat.blitTinted(graphics, visIcon, centerX + 40, itemY, 18, 18, visColor);
 
-                graphics.blit(pipeline, Icons.EDIT, centerX + 60, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_IDLE);
-                graphics.blit(pipeline, Icons.SHARE, centerX + 80, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_IDLE);
+                ClientCompat.blitTinted(graphics, Icons.EDIT, centerX + 60, itemY, 18, 18, UiPalette.ICON_IDLE);
+                ClientCompat.blitTinted(graphics, Icons.SHARE, centerX + 80, itemY, 18, 18, UiPalette.ICON_IDLE);
 
-                Icons.drawPortalIcon(graphics, pipeline, centerX + 100, itemY,
+                Icons.drawPortalIcon(graphics, centerX + 100, itemY,
                         wp.isShared(), DimensionNames.isConvertible(selectedDimension));
 
-                graphics.blit(pipeline, Icons.DELETE, centerX + 120, itemY, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_DESTRUCTIVE);
+                ClientCompat.blitTinted(graphics, Icons.DELETE, centerX + 120, itemY, 18, 18, UiPalette.ICON_DESTRUCTIVE);
             }
 
             if (totalWaypoints > ITEMS_PER_PAGE) {

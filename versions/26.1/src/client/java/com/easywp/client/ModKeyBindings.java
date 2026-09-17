@@ -1,13 +1,11 @@
 package com.easywp.client;
 
-import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.glfw.GLFW;
 
 public class ModKeyBindings {
     public static KeyMapping toggleWaypointsKey;
@@ -24,22 +22,22 @@ public class ModKeyBindings {
 
         toggleWaypointsKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.easywp.toggle",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_K,
+                ClientCompat.KEYBOARD,
+                ClientCompat.KEY_K,
                 EASYWP_CATEGORY
         ));
 
         createWaypointKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.easywp.create",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_N,
+                ClientCompat.KEYBOARD,
+                ClientCompat.KEY_N,
                 EASYWP_CATEGORY
         ));
 
         listWaypointsKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.easywp.list",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_J,
+                ClientCompat.KEYBOARD,
+                ClientCompat.KEY_J,
                 EASYWP_CATEGORY
         ));
 
@@ -47,8 +45,8 @@ public class ModKeyBindings {
         // no-menu press - freeing V for it and bumping classic Ping to its neighbor on the keyboard.
         pingWaypointKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.easywp.ping",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_H,
+                ClientCompat.KEYBOARD,
+                ClientCompat.KEY_H,
                 EASYWP_CATEGORY
         ));
 
@@ -57,8 +55,8 @@ public class ModKeyBindings {
         // player's own feet - see the handler below.
         fastPingKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.easywp.fast_ping",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_V,
+                ClientCompat.KEYBOARD,
+                ClientCompat.KEY_V,
                 EASYWP_CATEGORY
         ));
 

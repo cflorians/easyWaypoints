@@ -4,12 +4,16 @@ plugins {
 }
 
 /**
- * Client sources that are duplicated verbatim between versions/26.1 and versions/26.2.
+ * Client sources that are duplicated verbatim across every versions/* subproject.
  *
  * They cannot move to common/: that module declares no Minecraft artifact at all and compiles
  * standalone, so anything importing net.minecraft.* fails there (see CLAUDE.md). The duplication
  * is deliberate, but until now "edit one, diff, copy to the other" was only documented - nothing
  * caught a copy that drifted. This does, on every build.
+ *
+ * The check below reads the version list off the included subprojects rather than naming them, so
+ * adding versions/26.4 to settings.gradle brings it under the same guarantee with no edit here.
+ * Every listed file must be byte-identical in ALL of them, not merely in some pair.
  */
 def sharedClientSources = [
 	'Waypoint.java',
@@ -32,78 +36,97 @@ def sharedClientSources = [
 	'XaeroMinimapBridge.java',
 	'XaeroSync.java',
 	'XaeroLinkLedger.java',
-	'WaypointColors.java'
+	'WaypointColors.java',
+	'ImportWorldScreen.java'
 ]
 
 /**
  * Files that are byte-identical today but deliberately NOT guarded as shared.
  *
- * The check below fails on any identical pair missing from sharedClientSources, because an
- * unlisted-but-identical file is exactly the state in which a later drift ships unnoticed - which
- * is what happened to ModMenuIntegration.java. This is the escape hatch for a pair that matches by
- * coincidence and is expected to diverge; it is empty on purpose.
+ * The check below fails on any file that is identical in every version and missing from
+ * sharedClientSources, because identical-but-unlisted is exactly the state in which a later drift
+ * ships unnoticed - which is what happened to ModMenuIntegration.java. This is the escape hatch for
+ * a file that matches everywhere by coincidence and is expected to diverge; it is empty on purpose.
+ *
+ * A file identical in only SOME versions is not flagged and does not belong here: EasyWpClient.java
+ * is the same in 26.2 and 26.3 (both hook COLLECT_SUBMITS) and different in 26.1 (END_MAIN), which
+ * is the intended state, not an unguarded one.
  */
 def intentionallyUnsharedSources = []
 
 tasks.register('checkSharedSources') {
 	group = 'verification'
-	description = 'Fails if the client sources duplicated across versions/26.1 and versions/26.2 have drifted apart.'
+	description = 'Fails if the client sources duplicated across every versions/* subproject have drifted apart.'
 
-	def referenceDir = file('versions/26.1/src/client/java/com/easywp/client')
-	def targetDir = file('versions/26.2/src/client/java/com/easywp/client')
+	// Derived from the included subprojects, not hardcoded: a version added to settings.gradle is
+	// checked from its first build, and one removed stops being looked for.
+	def clientDirs = subprojects
+			.findAll { it.projectDir.parentFile == file('versions') }
+			.sort { it.name }
+			.collect { [name: it.name, dir: new File(it.projectDir, 'src/client/java/com/easywp/client')] }
 	def names = sharedClientSources
 	def exempt = intentionallyUnsharedSources
 
-	// Every client source on both sides is an input, not just the listed ones: the unlisted-file
+	// Every client source in every tree is an input, not just the listed ones: the unlisted-file
 	// detection below has to re-run when any of them changes.
-	inputs.files(fileTree(referenceDir) { include '*.java' }, fileTree(targetDir) { include '*.java' })
+	inputs.files(clientDirs.collect { fileTree(it.dir) { include '*.java' } })
 			.withPropertyName('clientSources')
 	// Nothing is produced, so declare the marker explicitly to stay cacheable and up-to-date aware.
 	def marker = layout.buildDirectory.file('checkSharedSources.txt')
 	outputs.file(marker)
 
 	doLast {
+		if (clientDirs.size() < 2) {
+			marker.get().asFile.text = "ok\n"
+			return
+		}
+
 		def problems = []
 		names.each { name ->
-			def a = new File(referenceDir, name)
-			def b = new File(targetDir, name)
-			if (!a.isFile()) {
-				problems << "${name}: missing in versions/26.1"
-			} else if (!b.isFile()) {
-				problems << "${name}: missing in versions/26.2"
-			} else if (!java.util.Arrays.equals(a.bytes, b.bytes)) {
-				problems << "${name}: the 26.1 and 26.2 copies have drifted apart"
+			// Group the versions by content, so a three-way split reports which copies agree with
+			// which instead of just naming one of them as the odd one out.
+			def missing = clientDirs.findAll { !new File(it.dir, name).isFile() }.collect { it.name }
+			if (!missing.isEmpty()) {
+				problems << "${name}: missing in ${missing.join(', ')}"
+				return
+			}
+			def byContent = clientDirs.groupBy { new File(it.dir, name).bytes.encodeHex().toString() }
+			if (byContent.size() > 1) {
+				def groups = byContent.values().collect { it.collect { v -> v.name }.join('+') }.sort()
+				problems << "${name}: the copies have drifted apart (${groups.join(' vs ')})"
 			}
 		}
 
 		if (!problems.isEmpty()) {
 			throw new GradleException(
 					"Shared client sources are out of sync:\n  " + problems.join('\n  ') +
-					"\n\nEdit one copy, check it with diff, and copy it over the other (see CLAUDE.md).\n" +
+					"\n\nEdit one copy, check it with diff, and copy it over the others (see CLAUDE.md).\n" +
 					"If diff reports every line as different, the file's line endings are wrong: .gitattributes\n" +
 					"pins the whole tree to LF."
 			)
 		}
 
-		// A file that is identical in both trees but absent from the list is unguarded: nothing
-		// would notice the day the two copies stop matching. Flag it so it gets listed now, while
-		// they still agree, rather than after a silent divergence has already shipped.
+		// A file that is identical in every tree but absent from the list is unguarded: nothing would
+		// notice the day the copies stop matching. Flag it so it gets listed now, while they still
+		// agree, rather than after a silent divergence has already shipped. A file identical in only
+		// some of the trees is a deliberate split (see intentionallyUnsharedSources) and is left alone.
+		def reference = clientDirs.first()
+		def others = clientDirs.tail()
 		def unguarded = []
-		referenceDir.listFiles({ f -> f.isFile() && f.name.endsWith('.java') } as FileFilter).each { a ->
+		reference.dir.listFiles({ f -> f.isFile() && f.name.endsWith('.java') } as FileFilter).each { a ->
 			def name = a.name
 			if (names.contains(name) || exempt.contains(name)) return
-			def b = new File(targetDir, name)
-			if (b.isFile() && java.util.Arrays.equals(a.bytes, b.bytes)) {
+			if (others.every { def b = new File(it.dir, name); b.isFile() && java.util.Arrays.equals(a.bytes, b.bytes) }) {
 				unguarded << name
 			}
 		}
 
 		if (!unguarded.isEmpty()) {
 			throw new GradleException(
-					"These client sources are byte-identical across both versions but are not guarded:\n  " +
+					"These client sources are byte-identical across every version but are not guarded:\n  " +
 					unguarded.sort().join('\n  ') +
 					"\n\nAdd each to sharedClientSources in build.gradle so a future drift fails the build.\n" +
-					"If a pair matches only by coincidence and is expected to diverge, add it to\n" +
+					"If a file matches everywhere only by coincidence and is expected to diverge, add it to\n" +
 					"intentionallyUnsharedSources instead."
 			)
 		}

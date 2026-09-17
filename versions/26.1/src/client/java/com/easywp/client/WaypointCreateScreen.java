@@ -1,16 +1,13 @@
 package com.easywp.client;
 
-import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.BlockPos;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
 
@@ -18,8 +15,23 @@ import java.util.Locale;
  * Centered modal screen for creating or editing waypoints.
  */
 public class WaypointCreateScreen extends Screen {
-    /** Modal width. Sized to fit the 15-wide color grid, the widest row in the single centered column. */
+    /** Modal width, sized for the widest row inside it. The color picker below used to be that row
+     *  (a dense grid of every color); since its 2026-09 redesign into a 14-color family bar plus a
+     *  15-shade bar for whichever one is active, at {@link #PICKER_WIDTH} (210) it is narrower
+     *  than this, and the name field + share icon group is the binding constraint instead. */
     private static final int FORM_WIDTH = 270;
+    // Color picker geometry: WaypointColors.FAMILY_BAR (14 colors) as one touching row, then
+    // WaypointColors's active family (WaypointColors.SHADE_COUNT = 15 shades, dark to light) as a
+    // second touching row below it. PICKER_WIDTH divides evenly by both counts (210 / 14 = 15,
+    // 210 / 15 = 14), which is why each bar's own swatch width is derived rather than fixed.
+    private static final int PICKER_WIDTH = 210;
+    // Matches FAMILY_SWATCH_W (15) exactly - square top-bar swatches, and the bottom bar's own
+    // 14px-wide swatches one pixel off square, close enough to read as the same shape.
+    private static final int BAR_HEIGHT = 15;
+    private static final int BAR_GAP = 10;
+    private static final int BAR_FRAME_PAD = 2;
+    private static final int FAMILY_SWATCH_W = PICKER_WIDTH / WaypointColors.FAMILY_BAR.length;
+    private static final int SHADE_SWATCH_W = PICKER_WIDTH / WaypointColors.SHADE_COUNT;
     /**
      * Marker height in the preview, sized to match the real in-game ratio between the marker and its
      * label text rather than an arbitrary GUI size. In WaypointRenderer the label rides the marker's
@@ -35,6 +47,12 @@ public class WaypointCreateScreen extends Screen {
     private EditBox yField;
     private EditBox zField;
     private int selectedColor = 0xFF00FF00;
+    /** Which entry of {@code WaypointColors.FAMILY_BAR} the shade bar below it is currently
+     *  browsing - not necessarily the family whose own value equals {@link #selectedColor}, since
+     *  the player may have picked one of its shades instead. Seeded from {@code selectedColor} in
+     *  {@link #init()} via {@code WaypointColors.nearestMatch}, then only ever changed by clicking
+     *  a family-bar swatch. */
+    private int activeBaseIndex = 0;
     private final BlockPos originalPos;
     private final Waypoint editingWaypoint;
     private boolean dimShared = false;
@@ -111,23 +129,42 @@ public class WaypointCreateScreen extends Screen {
         this.zField.setValue(String.valueOf(originalPos.getZ()));
         this.addRenderableWidget(this.zField);
 
-        int cols = WaypointColors.COLOR_GRID[0].length;
-        int stepX = 14;
-        int gridW = cols * stepX;
-        int startX = centerX - gridW / 2;
-        int startY = centerY + 19;
+        // Top bar: the 14 family colors, touching (no gap between them). Clicking one selects it
+        // outright and switches the bottom bar to that color's own shades - see the field
+        // javadoc on activeBaseIndex.
+        this.activeBaseIndex = WaypointColors.nearestMatch(this.selectedColor)[0];
 
-        for (int r = 0; r < WaypointColors.COLOR_GRID.length; r++) {
-            for (int c = 0; c < cols; c++) {
-                final int col = WaypointColors.COLOR_GRID[r][c];
-                int btnX = startX + c * stepX;
-                int btnY = startY + r * 14;
-                this.addRenderableWidget(
-                    new ColorSampleButton(btnX, btnY, 13, 13, btn -> {
-                        this.selectedColor = col;
-                    })
-                );
-            }
+        int familyBarX = centerX - PICKER_WIDTH / 2;
+        int familyBarY = centerY + 29;
+        int shadeBarX = familyBarX;
+        int shadeBarY = familyBarY + BAR_HEIGHT + BAR_GAP;
+
+        for (int i = 0; i < WaypointColors.FAMILY_BAR.length; i++) {
+            final int baseIndex = i;
+            final int col = WaypointColors.FAMILY_BAR[i];
+            int btnX = familyBarX + i * FAMILY_SWATCH_W;
+            this.addRenderableWidget(
+                new ColorSampleButton(btnX, familyBarY, FAMILY_SWATCH_W, BAR_HEIGHT, btn -> {
+                    this.activeBaseIndex = baseIndex;
+                    this.selectedColor = col;
+                })
+            );
+        }
+
+        // Bottom bar: the active family's own shades, dark (left) to light (right), also
+        // touching. These WaypointColors.SHADE_COUNT buttons are created once and never rebuilt
+        // when activeBaseIndex changes above - each looks up its own current color from
+        // WaypointColors.familyOf(activeBaseIndex) at click time (the render loop does the same
+        // every frame), so switching families is just mutating a field, not touching the widget
+        // list.
+        for (int slot = 0; slot < WaypointColors.SHADE_COUNT; slot++) {
+            final int shadeIndex = slot;
+            int btnX = shadeBarX + slot * SHADE_SWATCH_W;
+            this.addRenderableWidget(
+                new ColorSampleButton(btnX, shadeBarY, SHADE_SWATCH_W, BAR_HEIGHT, btn -> {
+                    this.selectedColor = WaypointColors.familyOf(this.activeBaseIndex)[shadeIndex];
+                })
+            );
         }
 
         this.addRenderableWidget(
@@ -165,8 +202,6 @@ public class WaypointCreateScreen extends Screen {
         int nameFieldX = centerX - nameGroupW / 2;
         int shareIconX = nameFieldX + nameFieldW + 6;
 
-        RenderPipeline pipeline = RenderPipelines.GUI_TEXTURED;
-
         graphics.fill(minX, minY, minX + bgW, minY + bgH, UiPalette.MODAL_BG);
 
         graphics.fill(minX, minY, minX + bgW, minY + 1, UiPalette.MODAL_BORDER);
@@ -182,40 +217,52 @@ public class WaypointCreateScreen extends Screen {
 
         super.extractRenderState(graphics, mouseX, mouseY, a);
 
-        // Batch draw color palette grid samples directly
-        int cols = WaypointColors.COLOR_GRID[0].length;
-        int stepX = 14;
-        int gridW = cols * stepX;
-        int startX = centerX - gridW / 2;
-        int startY = centerY + 19;
+        // Batch draw both color bars directly - see the matching loop in init() above for the
+        // geometry and why the bottom bar needs no rebuilding when activeBaseIndex changes.
+        int familyBarX = centerX - PICKER_WIDTH / 2;
+        int familyBarY = centerY + 29;
+        int shadeBarX = familyBarX;
+        int shadeBarY = familyBarY + BAR_HEIGHT + BAR_GAP;
 
-        for (int r = 0; r < WaypointColors.COLOR_GRID.length; r++) {
-            for (int c = 0; c < cols; c++) {
-                int col = WaypointColors.COLOR_GRID[r][c];
-                int btnX = startX + c * stepX;
-                int btnY = startY + r * 14;
+        // A frame around each bar, not just the modal's own border, is what makes them read as
+        // two distinct panels instead of one blob of touching color once neither bar has a gap
+        // of its own left to draw a separator into.
+        graphics.fill(familyBarX - BAR_FRAME_PAD, familyBarY - BAR_FRAME_PAD,
+                familyBarX + PICKER_WIDTH + BAR_FRAME_PAD, familyBarY + BAR_HEIGHT + BAR_FRAME_PAD, UiPalette.MODAL_BORDER);
+        graphics.fill(shadeBarX - BAR_FRAME_PAD, shadeBarY - BAR_FRAME_PAD,
+                shadeBarX + PICKER_WIDTH + BAR_FRAME_PAD, shadeBarY + BAR_HEIGHT + BAR_FRAME_PAD, UiPalette.MODAL_BORDER);
 
-                boolean isHovered = mouseX >= btnX && mouseY >= btnY && mouseX < btnX + 13 && mouseY < btnY + 13;
-                if (isHovered) {
-                    graphics.fill(btnX, btnY, btnX + 13, btnY + 13, UiPalette.SWATCH_HOVER);
-                }
+        for (int i = 0; i < WaypointColors.FAMILY_BAR.length; i++) {
+            int col = WaypointColors.FAMILY_BAR[i];
+            int btnX = familyBarX + i * FAMILY_SWATCH_W;
+            drawColorSwatch(graphics, mouseX, mouseY, btnX, familyBarY, FAMILY_SWATCH_W, BAR_HEIGHT, col);
 
-                // Centered color sample dot
-                graphics.fill(btnX + 2, btnY + 2, btnX + 11, btnY + 11, col);
-
-                // Selection outline
-                if (this.selectedColor == col) {
-                    graphics.fill(btnX, btnY, btnX + 13, btnY + 13, 0xFFFFFFFF);
-                    graphics.fill(btnX + 1, btnY + 1, btnX + 12, btnY + 12, UiPalette.MODAL_BG);
-                    graphics.fill(btnX + 2, btnY + 2, btnX + 11, btnY + 11, col);
-                }
+            // Marks which family the bottom bar is currently browsing. Skipped when that family's
+            // own value is already getting the full selection outline drawn inside drawColorSwatch
+            // (the player picked the family color itself, not one of its shades) - the two would
+            // otherwise sit right on top of each other. An inset frame rather than an outer ring,
+            // like the selection outline itself, so it never breaks the bar's touching edges - and
+            // the same fixed UiPalette.MODAL_BORDER color as the selection outline and the bars'
+            // own frame, rather than a third color of its own, so nothing about the picker's
+            // highlight color ever changes depending on which of the two states is showing.
+            if (i == this.activeBaseIndex && col != this.selectedColor) {
+                graphics.fill(btnX, familyBarY, btnX + FAMILY_SWATCH_W, familyBarY + 2, UiPalette.MODAL_BORDER);
+                graphics.fill(btnX, familyBarY + BAR_HEIGHT - 2, btnX + FAMILY_SWATCH_W, familyBarY + BAR_HEIGHT, UiPalette.MODAL_BORDER);
+                graphics.fill(btnX, familyBarY, btnX + 2, familyBarY + BAR_HEIGHT, UiPalette.MODAL_BORDER);
+                graphics.fill(btnX + FAMILY_SWATCH_W - 2, familyBarY, btnX + FAMILY_SWATCH_W, familyBarY + BAR_HEIGHT, UiPalette.MODAL_BORDER);
             }
         }
 
-        Icons.drawPortalIcon(graphics, pipeline, shareIconX, centerY - 82, this.dimShared, true);
+        int[] activeFamily = WaypointColors.familyOf(this.activeBaseIndex);
+        for (int slot = 0; slot < WaypointColors.SHADE_COUNT; slot++) {
+            int btnX = shadeBarX + slot * SHADE_SWATCH_W;
+            drawColorSwatch(graphics, mouseX, mouseY, btnX, shadeBarY, SHADE_SWATCH_W, BAR_HEIGHT, activeFamily[slot]);
+        }
 
-        graphics.blit(pipeline, Icons.CANCEL, centerX - 116, centerY + 86, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_DESTRUCTIVE);
-        graphics.blit(pipeline, Icons.LIST, centerX + 98, centerY + 86, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_IDLE);
+        Icons.drawPortalIcon(graphics, shareIconX, centerY - 82, this.dimShared, true);
+
+        ClientCompat.blitTinted(graphics, Icons.CANCEL, centerX - 116, centerY + 86, 18, 18, UiPalette.ICON_DESTRUCTIVE);
+        ClientCompat.blitTinted(graphics, Icons.LIST, centerX + 98, centerY + 86, 18, 18, UiPalette.ICON_IDLE);
 
         // Live preview: how this waypoint will look in the 3D world (real marker sprite, real label rules).
         String previewName = resolveWaypointName();
@@ -247,13 +294,40 @@ public class WaypointCreateScreen extends Screen {
         graphics.pose().pushMatrix();
         graphics.pose().translate(markerX, markerY);
         graphics.pose().scale(markerScale, markerScale);
-        graphics.blit(pipeline, WaypointRenderTypes.MARKER_TEXTURE, 0, 0, 0.0f, 0.0f, 5, 7, 5, 7, markerTint);
+        ClientCompat.blitTinted(graphics, WaypointRenderTypes.MARKER_TEXTURE, 0, 0, 5, 7, markerTint);
         graphics.pose().popMatrix();
+    }
+
+    /**
+     * Fills the whole {@code w}x{@code h} cell with {@code col} - not inset, unlike the previous
+     * design's swatches, because these ones have to touch their neighbors on every edge with no
+     * gap. A hover tint overlays the whole cell too. If {@code col} is the current selection, a
+     * 2px frame is drawn *inside* the cell's own bounds instead of an outer ring around it, for
+     * the same reason: an outer ring would draw over the neighboring swatch, and there is no gap
+     * on either side to draw it into. That frame is {@code UiPalette.MODAL_BORDER} - the same
+     * fixed color the bars' own outer frame uses, and the same one the "active family, not the
+     * exact selection" mark on the family bar uses - so a selection highlight is always this one
+     * color, on either bar, never white on one and something else on the other.
+     */
+    private void drawColorSwatch(GuiGraphicsExtractor graphics, int mouseX, int mouseY, int btnX, int btnY, int w, int h, int col) {
+        graphics.fill(btnX, btnY, btnX + w, btnY + h, col);
+
+        boolean isHovered = mouseX >= btnX && mouseY >= btnY && mouseX < btnX + w && mouseY < btnY + h;
+        if (isHovered) {
+            graphics.fill(btnX, btnY, btnX + w, btnY + h, UiPalette.SWATCH_HOVER);
+        }
+
+        if (this.selectedColor == col) {
+            graphics.fill(btnX, btnY, btnX + w, btnY + 2, UiPalette.MODAL_BORDER);
+            graphics.fill(btnX, btnY + h - 2, btnX + w, btnY + h, UiPalette.MODAL_BORDER);
+            graphics.fill(btnX, btnY, btnX + 2, btnY + h, UiPalette.MODAL_BORDER);
+            graphics.fill(btnX + w - 2, btnY, btnX + w, btnY + h, UiPalette.MODAL_BORDER);
+        }
     }
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (event.key() == GLFW.GLFW_KEY_ENTER || event.key() == GLFW.GLFW_KEY_KP_ENTER) {
+        if (event.key() == ClientCompat.KEY_ENTER || event.key() == ClientCompat.KEY_KP_ENTER) {
             saveWaypoint();
             this.onClose();
             return true;

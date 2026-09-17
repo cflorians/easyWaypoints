@@ -1,0 +1,40 @@
+{
+	"schemaVersion": 1,
+	"id": "easywp",
+	"version": "${version}",
+	"name": "Easy Waypoints",
+	"description": "An easy-to-use, modern, and highly optimized waypoint mod for Fabric, designed to integrate with vanilla Minecraft.",
+	"authors": [
+		"Carlos Florian"
+	],
+	"contact": {
+		"homepage": "https://modrinth.com/project/cDxVI98Z"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/easywp/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"main": [
+			"com.easywp.EasyWp"
+		],
+		"client": [
+			"com.easywp.client.EasyWpClient"
+		],
+		"modmenu": [
+			"com.easywp.client.ModMenuIntegration"
+		]
+	},
+	"mixins": [
+		"easywp.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": ">=26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"modmenu": "*",
+		"xaerominimap": "*"
+	}
+}

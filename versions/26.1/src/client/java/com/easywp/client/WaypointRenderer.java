@@ -10,11 +10,13 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.state.level.CameraEntityRenderState;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
@@ -24,8 +26,10 @@ import java.io.File;
 import java.lang.reflect.Type;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
@@ -416,10 +420,68 @@ public class WaypointRenderer {
             }
             return "sp_world";
         }
-        if (client.getCurrentServer() != null) {
-            return "mp_" + UNSAFE_FILENAME_CHARS.matcher(client.getCurrentServer().ip.replace(':', '_')).replaceAll("_");
+        ServerData server = client.getCurrentServer();
+        if (server != null) {
+            // A Realm is named after the Realm, not after where it answered from. ServerData.ip is
+            // the only address the client has, and for a direct server it is a stable identity - but
+            // for a Realm it is the session address Mojang's backend resolves per join attempt
+            // (RealmsJoinInformation.address(), region-routed via RegionData), which
+            // RealmsServer.toServerData drops straight into that same field. It changes on its own:
+            // a player whose Realm was updated between two sessions came back to a different
+            // address, a different worldId, and an empty waypoint list - the old file still sat
+            // intact under the previous address. ServerData.Type.REALM (via isRealm(), which is
+            // exactly that comparison) is what tells the two cases apart.
+            //
+            // The name is the best identity reachable from here, not a perfect one, and it is worth
+            // being precise about which: RealmsServer carries a genuinely stable long id, but
+            // toServerData does not pass it on, and ServerData is all this method ever sees. So the
+            // name it is - stable unless the owner renames the Realm, which is rare, deliberate, and
+            // recoverable by renaming the file to match. It does NOT change when the Realm switches
+            // to a minigame: that name is RealmsServer.minigameName, a separate field, and
+            // RealmsConnect sets it on the packet listener rather than on this ServerData.
+            if (server.isRealm()) {
+                String realmName = realmFileName(server);
+                if (realmName != null) {
+                    return "mp_realm_" + realmName;
+                }
+                // Fall through to the address. It brings back the very instability above for this
+                // one Realm, which is the lesser evil: see realmFileName().
+            }
+            return "mp_" + UNSAFE_FILENAME_CHARS.matcher(server.ip.replace(':', '_')).replaceAll("_");
         }
         return "mp_lan";
+    }
+
+    /**
+     * Vanilla's placeholder for a Realm whose name the Realms API did not return.
+     *
+     * <p>{@code RealmsServer.toServerData} is
+     * {@code new ServerData(Objects.requireNonNullElse(this.name, "unknown server"), address, REALM)},
+     * so {@code ServerData.name} is never null on a Realm - a null-check here would never fire and
+     * this literal would sail straight through as if it were a name.
+     */
+    private static final String UNNAMED_REALM = "unknown server";
+
+    /**
+     * @return the sanitized name to file this Realm under, or {@code null} if it has none usable.
+     *
+     * <p>Rejecting {@link #UNNAMED_REALM} matters more than it looks: it is a constant, so every
+     * unnamed Realm would otherwise share one {@code waypoints_mp_realm_unknown_server.json} and
+     * show each other's waypoints. Mixing two Realms' lists together is a worse outcome than the
+     * address instability this whole branch exists to fix - that one only makes waypoints look
+     * missing, with the real file intact and recoverable - so an unnamed Realm falls back to the
+     * address rather than into a shared file.
+     *
+     * <p>The remaining hole is accepted rather than solved, because {@code ServerData} carries
+     * nothing else to disambiguate with: two <em>differently</em> named Realms never collide, but
+     * two Realms that happen to share a name do, and the fix is for the player to rename one.
+     */
+    private static String realmFileName(ServerData server) {
+        String name = server.name;
+        if (name == null || name.isBlank() || name.equals(UNNAMED_REALM)) {
+            return null;
+        }
+        return UNSAFE_FILENAME_CHARS.matcher(name).replaceAll("_");
     }
 
     public static void checkAndLoadWorldWaypoints() {
@@ -460,6 +522,10 @@ public class WaypointRenderer {
         return new File(Minecraft.getInstance().gameDirectory, "config/easywp/waypoints_" + worldId + ".json").toPath();
     }
 
+    private static Path configDir() {
+        return new File(Minecraft.getInstance().gameDirectory, "config/easywp").toPath();
+    }
+
     public static void saveToFile() {
         String worldId = getWorldId();
         if (worldId.equals("unknown")) return;
@@ -486,23 +552,225 @@ public class WaypointRenderer {
         Path configFile = waypointsFile(worldId);
         waypoints.clear();
 
-        List<WaypointData> dataList = parseWaypoints(JsonStore.read(configFile));
-        if (dataList == null) {
-            // Absent, empty or unparseable. A file left over from an older build predates the
-            // atomic writes and may well be truncated, so the backup is worth a try before
-            // silently starting the world with no waypoints at all.
-            dataList = parseWaypoints(JsonStore.read(JsonStore.backupOf(configFile)));
-            if (dataList != null) {
-                EasyWp.LOGGER.warn("Recovered the waypoints of {} from the backup file", worldId);
-            }
-        }
+        List<WaypointData> dataList = readWaypointData(configFile, worldId);
         if (dataList != null) {
             for (WaypointData data : dataList) {
                 if (data != null) {
                     waypoints.add(data.toWaypoint());
                 }
             }
+        } else {
+            warnAboutOrphanedRealmFiles(worldId, configFile);
         }
+    }
+
+    /**
+     * Every OTHER world/server's waypoint file this player has used the mod on - the manual
+     * cross-world import in {@code ModConfigScreen}'s picker screen reads this, so a Realm whose
+     * session address changed (see this class's own javadoc) or any other world's waypoints stay
+     * reachable by hand instead of only through {@link #warnAboutOrphanedRealmFiles}'s log line.
+     *
+     * @return every {@code waypoints_*.json} under the config directory except the current
+     *         world's own file, sorted by file name. Never {@code null}; empty if the directory
+     *         does not exist yet or holds nothing else.
+     */
+    public static List<Path> listOtherWorldFiles() {
+        String currentWorldId = getWorldId();
+        Path currentFile = currentWorldId.equals("unknown") ? null : waypointsFile(currentWorldId);
+
+        File[] all = configDir().toFile().listFiles((dir, name) ->
+                name.startsWith("waypoints_") && name.endsWith(".json"));
+        if (all == null) return new ArrayList<>();
+
+        List<Path> others = new ArrayList<>();
+        for (File f : all) {
+            Path p = f.toPath();
+            if (currentFile == null || !p.equals(currentFile)) {
+                others.add(p);
+            }
+        }
+        others.sort(Comparator.comparing(p -> p.getFileName().toString()));
+        return others;
+    }
+
+    /**
+     * Reads one waypoints file without touching the live, in-memory list - unlike
+     * {@link #loadFromFile()}, which always targets and mutates the current world's own. Shares
+     * that method's fallback to {@code .bak} on a missing/truncated main file, for the same
+     * reason: a file this old could predate atomic writes.
+     *
+     * @return the parsed waypoints, or an empty list if {@code file} is absent or unreadable.
+     */
+    public static List<Waypoint> loadWaypointsFrom(Path file) {
+        List<Waypoint> result = new ArrayList<>();
+        List<WaypointData> dataList = readWaypointData(file, null);
+        if (dataList != null) {
+            for (WaypointData data : dataList) {
+                if (data != null) {
+                    result.add(data.toWaypoint());
+                }
+            }
+        }
+        return result;
+    }
+
+    /** How many waypoints a file holds, for the import picker's per-row count - reads the file
+     *  without materializing full {@link Waypoint} objects. */
+    public static int countWaypointsIn(Path file) {
+        List<WaypointData> dataList = readWaypointData(file, null);
+        return dataList == null ? 0 : dataList.size();
+    }
+
+    /**
+     * Reads {@code file}, falling back to its {@code .bak} if the main copy is missing, empty or
+     * unparseable - shared by {@link #loadFromFile()} and the import picker's own reads.
+     *
+     * @param worldIdForLog when non-null, a successful fallback to the backup is logged as
+     *                      "recovered" under this world id - used only by {@link #loadFromFile()}
+     *                      for the current world. The import picker passes {@code null}: reading
+     *                      an arbitrary other file recovering from its own backup is not this
+     *                      world's problem to log.
+     */
+    private static List<WaypointData> readWaypointData(Path file, String worldIdForLog) {
+        List<WaypointData> dataList = parseWaypoints(JsonStore.read(file));
+        if (dataList == null) {
+            dataList = parseWaypoints(JsonStore.read(JsonStore.backupOf(file)));
+            if (dataList != null && worldIdForLog != null) {
+                EasyWp.LOGGER.warn("Recovered the waypoints of {} from the backup file", worldIdForLog);
+            }
+        }
+        return dataList;
+    }
+
+    /**
+     * Result of a cross-world import merge: how many waypoints were actually added, and how many
+     * were already present under the same identity and left untouched.
+     */
+    public record MergeResult(int added, int skipped) {
+    }
+
+    /**
+     * Merges {@code incoming} into the current world's live waypoint list, additively - the only
+     * mode the import picker in {@code ModConfigScreen} offers, on purpose: this file format is
+     * the only copy of some player's waypoints that may exist, so importing can only ever add to
+     * the current world's list, never replace or remove from it.
+     *
+     * <p>A waypoint already present under the same identity - name, exact position, and
+     * dimension - is left alone rather than duplicated. This is a stricter identity than the
+     * name+X+Z (no Y) rule {@code XaeroSync}/{@code XaeroWaypointFormat} use for their own
+     * dedup: that rule exists only because an Xaero waypoint saved without a Y coordinate reports
+     * a synthetic {@code y = 64}, which would never match on Y even for the exact same waypoint.
+     * Nothing here comes from Xaero's file format - both sides of this merge are this mod's own
+     * JSON, where Y is always real - so there is no reason to throw that precision away.
+     *
+     * <p>{@code death} and {@code fastPing} are always cleared on the copy that gets added, the
+     * same way {@code WaypointCreateScreen.saveWaypoint()} already clears them the moment either
+     * kind of waypoint is edited by hand: a death waypoint's dwell-timer deletion and a Fast
+     * Ping's numbering both belong to the world that created them, and would either delete
+     * themselves for no reason or miscount in a world where no matching death/ping ever happened.
+     */
+    public static MergeResult mergeFrom(List<Waypoint> incoming) {
+        int added = 0;
+        int skipped = 0;
+        for (Waypoint candidate : incoming) {
+            if (hasSameIdentity(candidate)) {
+                skipped++;
+                continue;
+            }
+            Waypoint copy = new Waypoint(
+                    candidate.getName(),
+                    candidate.getPos(),
+                    candidate.getColor(),
+                    candidate.getDimension(),
+                    candidate.isShared(),
+                    candidate.isVisible(),
+                    candidate.isFocused(),
+                    false,
+                    candidate.getCreatedAtMillis()
+            );
+            waypoints.add(copy);
+            added++;
+        }
+        if (added > 0) {
+            saveToFile();
+        }
+        return new MergeResult(added, skipped);
+    }
+
+    private static boolean hasSameIdentity(Waypoint candidate) {
+        for (Waypoint existing : waypoints) {
+            if (existing == null) continue;
+            if (Objects.equals(existing.getName(), candidate.getName())
+                    && existing.getPos().equals(candidate.getPos())
+                    && Objects.equals(existing.getDimension(), candidate.getDimension())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A human-readable label for a {@code waypoints_<worldId>.json} file, for the import picker.
+     * The inverse of {@link #getWorldId()}'s four prefixes - kept beside it for the same reason a
+     * future prefix added there needs a matching case added here.
+     *
+     * <p>Lossy by construction: {@link #getWorldId()} already replaced every unsafe filename
+     * character (including spaces) with {@code _} before this ever sees the string, so the
+     * original name cannot always be recovered exactly. Underscores are turned back into spaces
+     * on a best-effort basis; nothing here is used for anything but display.
+     */
+    public static Component prettyWorldName(Path file) {
+        String fileName = file.getFileName().toString();
+        String worldId = fileName.startsWith("waypoints_") && fileName.endsWith(".json")
+                ? fileName.substring("waypoints_".length(), fileName.length() - ".json".length())
+                : fileName;
+
+        if (worldId.equals("mp_lan")) {
+            return I18nHelper.getComponent("import.world_lan");
+        }
+        if (worldId.startsWith("mp_realm_")) {
+            return I18nHelper.getComponent("import.world_realm", humanize(worldId.substring("mp_realm_".length())));
+        }
+        if (worldId.startsWith("sp_")) {
+            return I18nHelper.getComponent("import.world_singleplayer", humanize(worldId.substring("sp_".length())));
+        }
+        if (worldId.startsWith("mp_")) {
+            return I18nHelper.getComponent("import.world_server", humanize(worldId.substring("mp_".length())));
+        }
+        return Component.literal(worldId);
+    }
+
+    private static String humanize(String sanitized) {
+        return sanitized.replace('_', ' ');
+    }
+
+    /**
+     * Points a Realm player at the file their waypoints are actually in, once.
+     *
+     * <p>Only ever runs for a Realm whose own file is absent, and only logs. Before Realms were
+     * filed under their name, they were filed under the session address the backend happened to
+     * hand out, so a player who has used this mod on a Realm before has their waypoints sitting in
+     * a waypoints_mp_&lt;address&gt;.json that nothing will open again. Which one is not decidable
+     * from here - a session address is opaque and carries nothing tying it back to a Realm, so a
+     * rename done automatically could just as easily adopt some unrelated server's waypoints. The
+     * list of candidates plus the name to rename one to is the most this can do without guessing.
+     */
+    private static void warnAboutOrphanedRealmFiles(String worldId, Path expected) {
+        if (!worldId.startsWith("mp_realm_")) return;
+
+        File[] candidates = expected.getParent().toFile().listFiles((dir, name) ->
+                name.startsWith("waypoints_mp_") && name.endsWith(".json") && !name.startsWith("waypoints_mp_realm_"));
+        if (candidates == null || candidates.length == 0) return;
+
+        List<String> names = new ArrayList<>();
+        for (File candidate : candidates) {
+            names.add(candidate.getName());
+        }
+        EasyWp.LOGGER.info(
+                "No waypoints for this Realm yet. Older versions filed a Realm under its session address, "
+                + "which changes between joins; if this Realm's waypoints are missing, one of {} is them - "
+                + "rename it to {} to bring it back.",
+                names, expected.getFileName());
     }
 
     /** @return the parsed list, or {@code null} if {@code json} is absent or not readable as one. */

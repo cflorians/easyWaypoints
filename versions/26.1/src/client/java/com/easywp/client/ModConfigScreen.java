@@ -204,9 +204,35 @@ public class ModConfigScreen extends OptionsSubScreen {
                                 })),
                 gated(xaeroPresent, resetButton(this::resetXaeroChatFormat))
         );
-        // No Import/Export action row here: those two live in WaypointListScreen's bottom-right
-        // corner, next to the list they act on, and duplicating them here would mean two places to
-        // click for the same thing with no way to tell which one the player will reach for.
+        // No Xaero Import/Export action row here: those two live in WaypointListScreen's
+        // bottom-right corner, next to the list they act on, and duplicating them here would mean
+        // two places to click for the same thing with no way to tell which one the player will
+        // reach for. The cross-world import below is a different feature entirely - it has no
+        // second home to duplicate, and no list to sit next to, since it acts on a file the
+        // current world's list has never seen.
+
+        this.list.addHeader(I18nHelper.getComponent("config.section.import"));
+        // addSmall(widget, widget), not addBig(AbstractWidget): 26.1's OptionsList never grew the
+        // single-widget addBig overload that 26.2/26.3 did - only addBig(OptionInstance<?>), which
+        // this button is not one of. addSmall's two-widget overload exists on all three, so the
+        // button rides the label column at the row's usual CONTROL_WIDTH, with an invisible,
+        // inactive placeholder standing in for the reset button this row has no use for.
+        this.list.addSmall(
+                ModernButton.modernBuilder(I18nHelper.getComponent("config.import_button"), btn ->
+                        ClientCompat.setScreen(this.minecraft, new ImportWorldScreen(this))
+                ).size(CONTROL_WIDTH, ROW_HEIGHT).build(),
+                emptyPlaceholder()
+        );
+    }
+
+    /** Stands in for the reset-button slot on a row that has nothing to reset - see the import
+     *  button's row above. */
+    private AbstractWidget emptyPlaceholder() {
+        ModernButton placeholder = ModernButton.modernBuilder(Component.literal(""), btn -> { })
+                .size(RESET_WIDTH, ROW_HEIGHT).build();
+        placeholder.visible = false;
+        placeholder.active = false;
+        return placeholder;
     }
 
     /** Disables {@code widget} unless {@code available}, and explains why on hover. Returns the same

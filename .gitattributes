@@ -4,9 +4,9 @@
 
 # Normalise all text to LF in the repository *and* in the working tree, ignoring
 # core.autocrlf. This is a requirement of the workflow described in CLAUDE.md:
-# the files duplicated between versions/26.1 and versions/26.2 are kept in sync
-# by comparing them with diff, and that only works if both copies agree on their
-# line terminator.
+# the files duplicated across every versions/* subproject are kept in sync by
+# comparing them with diff, and that only works if every copy agrees on its line
+# terminator.
 *               text=auto eol=lf
 
 # Linux start script should use lf

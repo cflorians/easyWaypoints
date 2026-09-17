@@ -1,6 +1,5 @@
 package com.easywp.client;
 
-import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.resources.Identifier;
 
@@ -25,14 +24,14 @@ public final class Icons {
     public static final Identifier SHARE   = Identifier.fromNamespaceAndPath("easywp", "textures/gui/sharebutton.png");
 
     /** Marker in layers: fill tinted with the waypoint's own color (skip if 0), then outline, then an optional skull badge. */
-    public static void drawMarkerIcon(GuiGraphicsExtractor g, RenderPipeline pipeline, int x, int y,
-                                       int fillColor, int outlineColor, boolean skull) {
+    public static void drawMarkerIcon(GuiGraphicsExtractor g, int x, int y,
+                                      int fillColor, int outlineColor, boolean skull) {
         if (fillColor != 0) {
-            g.blit(pipeline, MARKER_FILL, x, y, 0.0f, 0.0f, 18, 18, 18, 18, fillColor);
+            ClientCompat.blitTinted(g, MARKER_FILL, x, y, 18, 18, fillColor);
         }
-        g.blit(pipeline, MARKER_OUTLINE, x, y, 0.0f, 0.0f, 18, 18, 18, 18, outlineColor);
+        ClientCompat.blitTinted(g, MARKER_OUTLINE, x, y, 18, 18, outlineColor);
         if (skull) {
-            g.blit(pipeline, MARKER_SKULL, x, y, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.MARKER_SKULL);
+            ClientCompat.blitTinted(g, MARKER_SKULL, x, y, 18, 18, UiPalette.MARKER_SKULL);
         }
     }
 
@@ -41,15 +40,15 @@ public final class Icons {
      * always-visible stone frame), purple swirl fill only while shared. Only truly blocked states
      * (e.g. sharing disabled in The End) fall back to a plain gray frame.
      */
-    public static void drawPortalIcon(GuiGraphicsExtractor g, RenderPipeline pipeline, int x, int y,
-                                       boolean shared, boolean enabled) {
+    public static void drawPortalIcon(GuiGraphicsExtractor g, int x, int y,
+                                      boolean shared, boolean enabled) {
         if (!enabled) {
-            g.blit(pipeline, PORTAL_FRAME, x, y, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_DISABLED);
+            ClientCompat.blitTinted(g, PORTAL_FRAME, x, y, 18, 18, UiPalette.ICON_DISABLED);
             return;
         }
         if (shared) {
-            g.blit(pipeline, PORTAL_FILL, x, y, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.ICON_ACCENT);
+            ClientCompat.blitTinted(g, PORTAL_FILL, x, y, 18, 18, UiPalette.ICON_ACCENT);
         }
-        g.blit(pipeline, PORTAL_FRAME, x, y, 0.0f, 0.0f, 18, 18, 18, 18, UiPalette.PORTAL_FRAME);
+        ClientCompat.blitTinted(g, PORTAL_FRAME, x, y, 18, 18, UiPalette.PORTAL_FRAME);
     }
 }

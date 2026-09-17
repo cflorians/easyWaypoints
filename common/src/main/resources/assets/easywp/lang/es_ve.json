@@ -45,6 +45,15 @@
   "easywp.xaero.exported": "§aHacia Xaero: %s añadidos, %s eliminados",
   "easywp.xaero.unavailable": "§7La integración con Xaero está desactivada",
 
+  "easywp.import.title": "Importar Waypoints",
+  "easywp.import.no_files": "No se encontraron otros archivos de waypoints",
+  "easywp.import.row": "%s — %s waypoints",
+  "easywp.import.result": "§aImportados %s waypoints §7(%s ya existían)",
+  "easywp.import.world_lan": "Mundo LAN",
+  "easywp.import.world_realm": "%s (Realm)",
+  "easywp.import.world_singleplayer": "%s (Un jugador)",
+  "easywp.import.world_server": "%s (Servidor)",
+
   "easywp.config.title": "Configuración",
   "easywp.config.section.appearance": "§7Apariencia",
   "easywp.config.size_row": "Tamaño: %s%%",
@@ -66,5 +75,7 @@
   "easywp.config.section.xaero": "§7Minimapa de Xaero",
   "easywp.config.xaero_enabled_toggle": "Activar",
   "easywp.config.xaero_chat_format": "Formato de chat de Xaero",
-  "easywp.config.xaero_missing": "Requiere Xaero's Minimap"
+  "easywp.config.xaero_missing": "Requiere Xaero's Minimap",
+  "easywp.config.section.import": "§7Importar",
+  "easywp.config.import_button": "Importar waypoints..."
 }
