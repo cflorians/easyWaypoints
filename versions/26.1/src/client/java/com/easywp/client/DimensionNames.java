@@ -16,15 +16,19 @@ import java.util.Locale;
  */
 public final class DimensionNames {
 
+    public static final String OVERWORLD = "minecraft:overworld";
+    public static final String NETHER = "minecraft:the_nether";
+    public static final String END = "minecraft:the_end";
+
     private DimensionNames() {
     }
 
     /** Header label for a dimension tab. */
     public static String title(String dimension) {
         return switch (dimension) {
-            case "minecraft:overworld" -> "OVERWORLD";
-            case "minecraft:the_nether" -> "NETHER";
-            case "minecraft:the_end" -> "THE END";
+            case OVERWORLD -> "OVERWORLD";
+            case NETHER -> "NETHER";
+            case END -> "THE END";
             default -> prettyName(dimension).toUpperCase(Locale.ROOT);
         };
     }
@@ -32,9 +36,9 @@ public final class DimensionNames {
     /** Natural-case dimension name, used in the share-to-chat message. */
     public static String chatName(String dimension) {
         return switch (dimension) {
-            case "minecraft:overworld" -> "Overworld";
-            case "minecraft:the_nether" -> "Nether";
-            case "minecraft:the_end" -> "The End";
+            case OVERWORLD -> "Overworld";
+            case NETHER -> "Nether";
+            case END -> "The End";
             default -> prettyName(dimension);
         };
     }
@@ -55,9 +59,9 @@ public final class DimensionNames {
 
     public static int color(String dimension) {
         return switch (dimension) {
-            case "minecraft:overworld" -> UiPalette.DIM_OVERWORLD;
-            case "minecraft:the_nether" -> UiPalette.DIM_NETHER;
-            case "minecraft:the_end" -> UiPalette.DIM_END;
+            case OVERWORLD -> UiPalette.DIM_OVERWORLD;
+            case NETHER -> UiPalette.DIM_NETHER;
+            case END -> UiPalette.DIM_END;
             default -> UiPalette.TEXT_PRIMARY;
         };
     }
@@ -66,9 +70,9 @@ public final class DimensionNames {
      * Whether waypoints in this dimension can be mirrored into another one. Only the Overworld and
      * the Nether have the 1:8 relationship the renderer knows how to convert, which is the same rule
      * {@code WaypointCreateScreen} already applies to its own share toggle. For the vanilla three
-     * this is exactly the old {@code !equals("minecraft:the_end")} test.
+     * this is exactly the old {@code !equals(END)} test.
      */
     public static boolean isConvertible(String dimension) {
-        return dimension.equals("minecraft:overworld") || dimension.equals("minecraft:the_nether");
+        return dimension.equals(OVERWORLD) || dimension.equals(NETHER);
     }
 }

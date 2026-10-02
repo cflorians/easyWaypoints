@@ -48,6 +48,8 @@
   "easywp.import.title": "Import Waypoints",
   "easywp.import.no_files": "No other waypoint files found",
   "easywp.import.row": "%s — %s waypoints",
+  "easywp.import.confirm_message": "Are you sure you want to import the waypoints from %s?",
+  "easywp.import.confirm_button": "Import",
   "easywp.import.result": "§aImported %s waypoints §7(%s already existed)",
   "easywp.import.world_lan": "LAN World",
   "easywp.import.world_realm": "%s (Realm)",
@@ -58,6 +60,8 @@
   "easywp.config.section.appearance": "§7Appearance",
   "easywp.config.size_row": "Size: %s%%",
   "easywp.config.opacity_row": "Opacity: %s%%",
+  "easywp.config.unlooked_opacity_row": "Unlooked Opacity: %s%%",
+  "easywp.config.look_area_row": "Look Area: %s",
   "easywp.config.show_distance": "Show Distance",
   "easywp.config.uppercase_labels": "Uppercase Text",
   "easywp.config.section.death_waypoint": "§7Death Waypoint",
@@ -76,6 +80,5 @@
   "easywp.config.xaero_enabled_toggle": "Enabled",
   "easywp.config.xaero_chat_format": "Xaero Chat Format",
   "easywp.config.xaero_missing": "Requires Xaero's Minimap",
-  "easywp.config.section.import": "§7Import",
   "easywp.config.import_button": "Import Waypoints..."
 }

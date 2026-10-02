@@ -222,7 +222,7 @@ final class XaeroMinimapBridge {
     }
 
     private static ResourceKey<Level> dimensionKey(String dimension) {
-        Identifier id = Identifier.parse(dimension != null ? dimension : "minecraft:overworld");
+        Identifier id = Identifier.parse(dimension != null ? dimension : DimensionNames.OVERWORLD);
         return ResourceKey.create(Registries.DIMENSION, id);
     }
 

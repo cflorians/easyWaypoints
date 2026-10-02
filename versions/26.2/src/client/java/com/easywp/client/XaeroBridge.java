@@ -19,9 +19,8 @@ import java.util.List;
  * plain {@code catch (Exception)} does NOT catch - precisely the failure mode reflection never had.
  * Every public method here therefore catches {@code LinkageError} as well as
  * {@code RuntimeException}, logs the failure exactly once per session (not once per call), and
- * reports unavailable rather than letting the crash reach the caller - the same contract
- * {@link ShaderDetector} already uses for its own optional, reflection-based integrations, just with
- * a wider catch because this path is a real compiled dependency rather than reflection.
+ * reports unavailable rather than letting the crash reach the caller - a wider catch than an
+ * optional reflection-based integration would need, because this path is a real compiled dependency.
  *
  * <p><b>{@link #isModInstalled()} and {@link #isAvailable()} are deliberately different questions.</b>
  * The first only asks whether the player has Xaero at all, and is what decides whether easyWp shows

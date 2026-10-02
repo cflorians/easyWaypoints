@@ -2,6 +2,8 @@ package com.easywp.client;
 
 import net.minecraft.core.BlockPos;
 
+import java.util.function.BiConsumer;
+
 public class Waypoint {
     private String name;
     private BlockPos pos;
@@ -34,7 +36,7 @@ public class Waypoint {
     }
 
     public Waypoint(String name, BlockPos pos, int color) {
-        this(name, pos, color, "minecraft:overworld");
+        this(name, pos, color, DimensionNames.OVERWORLD);
     }
 
     public Waypoint(String name, BlockPos pos, int color, String dimension) {
@@ -92,6 +94,59 @@ public class Waypoint {
 
     public void setDimension(String dimension) {
         this.dimension = dimension;
+    }
+
+    /** {@link #getDimension()}, with the Overworld standing in for a missing one (older save files). */
+    public String dimensionOrOverworld() {
+        return dimension != null ? dimension : DimensionNames.OVERWORLD;
+    }
+
+    /**
+     * Where this waypoint shows up in {@code viewedDimension}, or {@code null} if it doesn't.
+     *
+     * <p>Its own dimension gets its own position. A {@code shared} waypoint also shows up in the
+     * other half of the Overworld/Nether pair, at the 1:8 converted X/Z (Y unchanged) - the only
+     * dimension pair with a coordinate relationship to convert. This, and {@link #forEachPosition},
+     * are the single definition of that projection: the renderer, the list screen and the Xaero
+     * sync all ask here instead of each carrying its own copy of the ratio.
+     */
+    public BlockPos positionIn(String viewedDimension) {
+        String own = dimensionOrOverworld();
+        if (own.equals(viewedDimension)) {
+            return pos;
+        }
+        if (!shared) {
+            return null;
+        }
+        if (own.equals(DimensionNames.OVERWORLD) && viewedDimension.equals(DimensionNames.NETHER)) {
+            return scaled(1.0 / 8.0);
+        }
+        if (own.equals(DimensionNames.NETHER) && viewedDimension.equals(DimensionNames.OVERWORLD)) {
+            return scaled(8.0);
+        }
+        return null;
+    }
+
+    /** Every dimension this waypoint shows up in, with its position there - its own first. */
+    public void forEachPosition(BiConsumer<String, BlockPos> consumer) {
+        String own = dimensionOrOverworld();
+        consumer.accept(own, pos);
+        if (!shared) {
+            return;
+        }
+        if (own.equals(DimensionNames.OVERWORLD)) {
+            consumer.accept(DimensionNames.NETHER, scaled(1.0 / 8.0));
+        } else if (own.equals(DimensionNames.NETHER)) {
+            consumer.accept(DimensionNames.OVERWORLD, scaled(8.0));
+        }
+    }
+
+    private BlockPos scaled(double factor) {
+        return new BlockPos(
+                (int) Math.round(pos.getX() * factor),
+                pos.getY(),
+                (int) Math.round(pos.getZ() * factor)
+        );
     }
 
     public boolean isShared() {

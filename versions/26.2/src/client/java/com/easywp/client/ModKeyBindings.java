@@ -7,6 +7,11 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 public class ModKeyBindings {
     public static KeyMapping toggleWaypointsKey;
     public static KeyMapping createWaypointKey;
@@ -114,12 +119,12 @@ public class ModKeyBindings {
                     BlockPos pos = WaypointPing.target(client);
                     String dimension = client.level.dimension().identifier().toString();
                     String name = I18nHelper.getComponent("create.ping_name",
-                            String.valueOf(countFastPings() + 1)).getString();
+                            String.valueOf(nextFreeFastPingNumber())).getString();
 
                     Waypoint wp = new Waypoint(name, pos, WaypointColors.random(), dimension);
                     wp.setFastPing(true);
-                    WaypointRenderer.waypoints.add(wp);
-                    WaypointRenderer.saveToFile();
+                    WaypointStore.waypoints.add(wp);
+                    WaypointStore.saveToFile();
 
                     ClientCompat.setOverlayMessage(client, I18nHelper.getComponent(
                             "create.feedback_created", name, pos.getX(), pos.getY(), pos.getZ()
@@ -139,19 +144,37 @@ public class ModKeyBindings {
         });
     }
 
-    /** How many Fast Ping waypoints currently exist, for the next one's "Ping #N" name. Counts the
-     *  {@code fastPing} flag rather than matching the rendered name text, so it stays correct
-     *  regardless of locale and isn't confused by a player renaming an unrelated waypoint to
-     *  something that happens to look like "Ping #3". Deleting pings lowers this count, so a
-     *  number can be reused after a deletion - the same trade-off the old quick-create name always
-     *  made by counting the whole waypoint list. */
-    private static int countFastPings() {
-        int count = 0;
-        for (Waypoint wp : WaypointRenderer.waypoints) {
-            if (wp != null && wp.isFastPing()) {
-                count++;
+    /** The last run of digits in a name - "Ping #12" gives 12, in any locale's wording. */
+    private static final Pattern LAST_NUMBER = Pattern.compile("(\\d+)\\D*$");
+
+    /**
+     * The number for the next Fast Ping's "Ping #N": the lowest positive number no existing Fast
+     * Ping is using. Deleting pings frees their numbers for reuse, so after clearing out old pings
+     * numbering starts again from #1 instead of continuing past the highest one ever made, and it
+     * can never produce a name that is still in use.
+     *
+     * <p>Only waypoints still carrying the {@code fastPing} flag are considered - an edited ping
+     * loses it (see {@code WaypointCreateScreen.saveWaypoint()}), and a player renaming an
+     * unrelated waypoint to "Ping #3" never counts. The number is read back from the name's last
+     * digit run, so it works whatever the locale's wording of "Ping #N" is.
+     */
+    private static int nextFreeFastPingNumber() {
+        Set<Integer> used = new HashSet<>();
+        for (Waypoint wp : WaypointStore.waypoints) {
+            if (wp == null || !wp.isFastPing() || wp.getName() == null) continue;
+            Matcher m = LAST_NUMBER.matcher(wp.getName());
+            if (m.find()) {
+                try {
+                    used.add(Integer.parseInt(m.group(1)));
+                } catch (NumberFormatException tooLong) {
+                    // A digit run past int range is not a number this mod ever wrote.
+                }
             }
         }
-        return count;
+        int next = 1;
+        while (used.contains(next)) {
+            next++;
+        }
+        return next;
     }
 }

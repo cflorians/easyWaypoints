@@ -10,6 +10,18 @@ import net.minecraft.network.chat.Component;
  */
 public class ModernButton extends Button {
 
+    /**
+     * Draws a button's icon, in the button's own render pass and from its own position, so the
+     * icon can never drift away from where the button actually is (or be clicked in one place and
+     * drawn in another). Called after the background and label.
+     */
+    @FunctionalInterface
+    public interface IconPainter {
+        void paint(GuiGraphicsExtractor graphics, ModernButton button, boolean hovered);
+    }
+
+    private IconPainter icon;
+
     public ModernButton(int x, int y, int width, int height, Component message, OnPress onPress) {
         super(x, y, width, height, message, onPress, DEFAULT_NARRATION);
     }
@@ -25,6 +37,7 @@ public class ModernButton extends Button {
         private int y;
         private int width = 150;
         private int height = 20;
+        private IconPainter icon;
 
         public ModernBuilder(Component message, OnPress onPress) {
             this.message = message;
@@ -43,8 +56,15 @@ public class ModernButton extends Button {
             return this;
         }
 
+        public ModernBuilder icon(IconPainter icon) {
+            this.icon = icon;
+            return this;
+        }
+
         public ModernButton build() {
-            return new ModernButton(this.x, this.y, this.width, this.height, this.message, this.onPress);
+            ModernButton button = new ModernButton(this.x, this.y, this.width, this.height, this.message, this.onPress);
+            button.icon = this.icon;
+            return button;
         }
     }
 
@@ -81,6 +101,10 @@ public class ModernButton extends Button {
             int textX = this.getX() + this.width / 2;
             int textY = this.getY() + (this.height - 8) / 2;
             graphics.centeredText(mc.font, this.getMessage(), textX, textY, textColor);
+        }
+
+        if (this.icon != null) {
+            this.icon.paint(graphics, this, isHovered);
         }
     }
 }

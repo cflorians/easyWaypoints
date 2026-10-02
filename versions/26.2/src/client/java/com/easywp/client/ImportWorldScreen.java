@@ -1,8 +1,10 @@
 package com.easywp.client;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
 import java.nio.file.Path;
@@ -10,28 +12,34 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Cross-world waypoint import picker, reached from {@code ModConfigScreen}'s own new "Import"
- * section - see the Persistence section of CLAUDE.md for why this exists: a Realm's session
- * address can change between joins and orphan a whole world's own {@code waypoints_*.json} under
- * its previous address, and this screen is the manual escape hatch a player reaches for once
+ * Cross-world waypoint import picker, reached from {@code ModConfigScreen}'s own "Import" section -
+ * see the Persistence section of CLAUDE.md for why this exists: a Realm's session address can
+ * change between joins and orphan a whole world's own {@code waypoints_*.json} under its previous
+ * address, and this screen is the manual escape hatch a player reaches for once
  * {@code loadFromFile()}'s log line has told them which file to look for.
  *
  * <p>Lists every {@code waypoints_*.json} under the config directory except the current world's
- * own (see {@code WaypointRenderer.listOtherWorldFiles()}), each as one full-width button naming
- * the world/server it belongs to and how many waypoints it holds. Clicking a row imports
- * immediately - see {@code WaypointRenderer.mergeFrom()} for exactly what "import" means here
- * (additive, deduplicated, never destructive) - and the screen stays open afterward so a second
- * file can be imported in the same visit without navigating back and forth.
+ * own (see {@code WaypointStore.listOtherWorldFiles()}), each as one vanilla button naming the
+ * world/server it belongs to and how many waypoints it holds. Clicking a row opens
+ * {@link ImportConfirmScreen}, which previews the waypoints and does the actual import; either
+ * answer returns here, so a second file can be imported in the same visit.
+ *
+ * <p>Styled as a vanilla screen (default background, white title, vanilla {@link Button}s) rather
+ * than with this mod's own dark modal, since it is reached from {@code ModConfigScreen}, which is
+ * itself a native-looking options screen.
  */
 public class ImportWorldScreen extends Screen {
     private static final int ROW_WIDTH = 250;
     private static final int ROW_HEIGHT = 20;
     private static final int ROW_STEP = 24;
-    private static final int ITEMS_PER_PAGE = 6;
+    private static final int TITLE_Y = 15;
+    private static final int LIST_TOP = 40;
+    private static final int FOOTER_HEIGHT = 36;
 
     private final Screen parentScreen;
     private final List<Path> files = new ArrayList<>();
     private int scrollIndex = 0;
+    private int itemsPerPage = 1;
     private final List<GuiEventListener> dynamicWidgets = new ArrayList<>();
 
     public ImportWorldScreen(Screen parentScreen) {
@@ -42,22 +50,20 @@ public class ImportWorldScreen extends Screen {
     @Override
     protected void init() {
         this.files.clear();
-        this.files.addAll(WaypointRenderer.listOtherWorldFiles());
-        this.scrollIndex = 0;
+        this.files.addAll(WaypointStore.listOtherWorldFiles());
+        this.itemsPerPage = Math.max(1, (this.height - LIST_TOP - FOOTER_HEIGHT) / ROW_STEP);
+        this.scrollIndex = Math.max(0, Math.min(this.scrollIndex, this.files.size() - this.itemsPerPage));
 
-        int centerX = this.width / 2;
-        int centerY = this.height / 2;
-        this.addRenderableWidget(
-            ModernButton.modernBuilder(I18nHelper.getComponent("menu.back"), btn -> {
-                if (parentScreen != null) {
-                    ClientCompat.setScreen(this.minecraft, parentScreen);
-                } else {
-                    this.onClose();
-                }
-            }).pos(centerX - 90, centerY + 85).size(180, 20).build()
-        );
+        this.addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, btn -> this.onClose())
+                .bounds(this.width / 2 - 100, this.height - 27, 200, 20)
+                .build());
 
         refreshItemWidgets();
+    }
+
+    @Override
+    public void onClose() {
+        ClientCompat.setScreen(this.minecraft, this.parentScreen);
     }
 
     private void refreshItemWidgets() {
@@ -66,67 +72,45 @@ public class ImportWorldScreen extends Screen {
         }
         dynamicWidgets.clear();
 
-        int centerX = this.width / 2;
-        int centerY = this.height / 2;
-        int startIndex = scrollIndex;
-        int endIndex = Math.min(startIndex + ITEMS_PER_PAGE, files.size());
+        int rowX = this.width / 2 - ROW_WIDTH / 2;
+        int endIndex = Math.min(scrollIndex + itemsPerPage, files.size());
 
-        for (int i = startIndex; i < endIndex; i++) {
+        for (int i = scrollIndex; i < endIndex; i++) {
             Path file = files.get(i);
-            int itemY = centerY - 88 + (i - startIndex) * ROW_STEP;
-            int count = WaypointRenderer.countWaypointsIn(file);
-            Component label = I18nHelper.getComponent("import.row", WaypointRenderer.prettyWorldName(file), count);
+            int itemY = LIST_TOP + (i - scrollIndex) * ROW_STEP;
+            Component label = I18nHelper.getComponent("import.row",
+                    WaypointStore.prettyWorldName(file), WaypointStore.countWaypointsIn(file));
 
-            var importBtn = ModernButton.modernBuilder(label, btn -> {
-                List<Waypoint> incoming = WaypointRenderer.loadWaypointsFrom(file);
-                WaypointRenderer.MergeResult result = WaypointRenderer.mergeFrom(incoming);
-                ClientCompat.setOverlayMessage(this.minecraft,
-                        I18nHelper.getComponent("import.result", result.added(), result.skipped()), false);
-            }).pos(centerX - ROW_WIDTH / 2, itemY).size(ROW_WIDTH, ROW_HEIGHT).build();
-            this.addRenderableWidget(importBtn);
-            dynamicWidgets.add(importBtn);
+            Button row = Button.builder(label, btn ->
+                    ClientCompat.setScreen(this.minecraft, new ImportConfirmScreen(this, file)))
+                    .bounds(rowX, itemY, ROW_WIDTH, ROW_HEIGHT)
+                    .build();
+            this.addRenderableWidget(row);
+            dynamicWidgets.add(row);
         }
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        int total = files.size();
-        if (total > ITEMS_PER_PAGE) {
-            if (verticalAmount < 0 && scrollIndex < total - ITEMS_PER_PAGE) {
-                scrollIndex++;
-                refreshItemWidgets();
-                return true;
-            } else if (verticalAmount > 0 && scrollIndex > 0) {
-                scrollIndex--;
-                refreshItemWidgets();
-                return true;
-            }
+        int maxScroll = Math.max(0, files.size() - itemsPerPage);
+        int next = scrollIndex + (verticalAmount < 0 ? 1 : verticalAmount > 0 ? -1 : 0);
+        next = Math.max(0, Math.min(next, maxScroll));
+        if (next != scrollIndex) {
+            scrollIndex = next;
+            refreshItemWidgets();
+            return true;
         }
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
     @Override
     public void extractRenderState(final GuiGraphicsExtractor graphics, final int mouseX, final int mouseY, final float a) {
-        int centerX = this.width / 2;
-        int centerY = this.height / 2;
-
-        int bgW = 290;
-        int bgH = 226;
-        int minX = centerX - bgW / 2;
-        int minY = centerY - bgH / 2;
-
-        graphics.fill(minX, minY, minX + bgW, minY + bgH, UiPalette.MODAL_BG);
-        graphics.fill(minX, minY, minX + bgW, minY + 1, UiPalette.MODAL_BORDER);
-        graphics.fill(minX, minY + bgH - 1, minX + bgW, minY + bgH, UiPalette.MODAL_BORDER);
-        graphics.fill(minX, minY, minX + 1, minY + bgH, UiPalette.MODAL_BORDER);
-        graphics.fill(minX + bgW - 1, minY, minX + bgW, minY + bgH, UiPalette.MODAL_BORDER);
-
-        graphics.centeredText(this.font, this.getTitle(), centerX, minY + 6, UiPalette.TEXT_PRIMARY);
-
         super.extractRenderState(graphics, mouseX, mouseY, a);
+        graphics.centeredText(this.font, this.getTitle(), this.width / 2, TITLE_Y, 0xFFFFFFFF);
 
         if (files.isEmpty()) {
-            graphics.centeredText(this.font, I18nHelper.getComponent("import.no_files"), centerX, centerY - 8, UiPalette.TEXT_SECONDARY);
+            graphics.centeredText(this.font, I18nHelper.getComponent("import.no_files"),
+                    this.width / 2, this.height / 2 - 4, 0xFFA0A0A0);
         }
     }
 

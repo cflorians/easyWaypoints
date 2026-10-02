@@ -135,9 +135,9 @@ public final class XaeroLinkLedger {
     }
 
     /** @return {@code null} while there is no identified world to keep a ledger for (main menu, or
-     *          between loads), matching how {@code WaypointRenderer} skips its own store there. */
+     *          between loads), matching how {@code WaypointStore} skips its own files there. */
     private static Path ledgerFile() {
-        String worldId = WaypointRenderer.getWorldId();
+        String worldId = WaypointStore.getWorldId();
         if (worldId.equals("unknown")) {
             return null;
         }

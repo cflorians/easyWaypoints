@@ -1,5 +1,6 @@
 package com.easywp.client;
 
+import com.easywp.AsyncJsonWriter;
 import com.easywp.EasyWp;
 import com.easywp.JsonStore;
 import com.google.gson.Gson;
@@ -27,6 +28,7 @@ public class ModConfig {
     public Ping ping = new Ping();
     public ListOptions list = new ListOptions();
     public XaeroIntegration xaeroIntegration = new XaeroIntegration();
+    public LookFade lookFade = new LookFade();
 
     public static class DeathWaypoints {
         public boolean enabled = true;
@@ -44,6 +46,18 @@ public class ModConfig {
         public double sizePercent = 100.0;
         /** Marker icon opacity, 0-100. 100 = fully opaque (default). Does not affect label text. */
         public double opacityPercent = 100.0;
+    }
+
+    /**
+     * The fade applied to waypoints the player is not looking at (see WaypointRenderer). A group of
+     * its own rather than fields on WaypointSize: neither default is Gson's zero value, and a field
+     * added to an existing group reads as 0 from a config.json that predates it.
+     */
+    public static class LookFade {
+        /** Opacity, 0-100, of a waypoint the player is not looking at. 100 turns the fade off. */
+        public double unlookedOpacityPercent = 60.0;
+        /** Size of the "looking at it" area around each waypoint, 1-7: 1 smallest, 7 largest. */
+        public int lookAreaSize = 3;
     }
 
     public static class LabelDisplay {
@@ -170,12 +184,17 @@ public class ModConfig {
         if (loaded.xaeroIntegration == null) {
             loaded.xaeroIntegration = new XaeroIntegration();
         }
+        if (loaded.lookFade == null) {
+            loaded.lookFade = new LookFade();
+        }
     }
 
     public static void save() {
         if (instance == null) return;
         try {
-            JsonStore.write(configFile(), GSON.toJson(instance));
+            // Written in the background: sliders save on every step, and each write forces the
+            // file to disk. See AsyncJsonWriter.
+            AsyncJsonWriter.SHARED.write(configFile(), GSON.toJson(instance));
         } catch (Exception e) {
             EasyWp.LOGGER.error("Failed to save mod config", e);
         }

@@ -12,7 +12,6 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.BlockPos;
 import net.minecraft.client.Minecraft;
-import net.minecraft.resources.Identifier;
 import net.minecraft.server.permissions.Permissions;
 
 import java.util.List;
@@ -27,7 +26,7 @@ public class WaypointListScreen extends Screen {
     private final Screen parentScreen;
     private int scrollIndex = 0;
     private static final int ITEMS_PER_PAGE = 6;
-    private String selectedDimension = "minecraft:overworld";
+    private String selectedDimension = DimensionNames.OVERWORLD;
     private WaypointSortMode sortMode = WaypointSortMode.CREATED;
     private EditBox searchField;
     private final List<GuiEventListener> dynamicWidgets = new ArrayList<>();
@@ -50,9 +49,9 @@ public class WaypointListScreen extends Screen {
 
     /** The three vanilla dimensions, always offered so the tab order never shifts under the player. */
     private static final List<String> VANILLA_DIMENSIONS = List.of(
-        "minecraft:overworld",
-        "minecraft:the_nether",
-        "minecraft:the_end"
+        DimensionNames.OVERWORLD,
+        DimensionNames.NETHER,
+        DimensionNames.END
     );
 
     /**
@@ -121,7 +120,7 @@ public class WaypointListScreen extends Screen {
             if (nameComponent == null) {
                 String name = waypoint.getName();
                 if (converted) {
-                    String prefix = waypoint.getDimension().equals("minecraft:overworld") ? "[OW] " : "[N] ";
+                    String prefix = waypoint.dimensionOrOverworld().equals(DimensionNames.OVERWORLD) ? "[OW] " : "[N] ";
                     name = prefix + name;
                 }
                 nameComponent = Component.literal(truncateToWidth(font, name, NAME_MAX_WIDTH));
@@ -172,7 +171,7 @@ public class WaypointListScreen extends Screen {
         if (mc.level != null) {
             this.selectedDimension = mc.level.dimension().identifier().toString();
         } else {
-            this.selectedDimension = "minecraft:overworld";
+            this.selectedDimension = DimensionNames.OVERWORLD;
         }
 
         this.sortMode = WaypointSortMode.fromName(ModConfig.get().list.sortMode);
@@ -180,29 +179,12 @@ public class WaypointListScreen extends Screen {
 
     private List<WaypointEntry> getWaypointsForDimension(String dimension) {
         List<WaypointEntry> result = new ArrayList<>();
-        for (Waypoint wp : WaypointRenderer.waypoints) {
+        for (Waypoint wp : WaypointStore.waypoints) {
             if (wp == null) continue;
-
-            String wpDim = wp.getDimension() != null ? wp.getDimension() : "minecraft:overworld";
-
-            if (wpDim.equals(dimension)) {
-                result.add(new WaypointEntry(wp, wp.getPos(), false));
-            } else if (wp.isShared()) {
-                if (wpDim.equals("minecraft:overworld") && dimension.equals("minecraft:the_nether")) {
-                    BlockPos netherPos = new BlockPos(
-                        (int) Math.round(wp.getPos().getX() / 8.0),
-                        wp.getPos().getY(),
-                        (int) Math.round(wp.getPos().getZ() / 8.0)
-                    );
-                    result.add(new WaypointEntry(wp, netherPos, true));
-                } else if (wpDim.equals("minecraft:the_nether") && dimension.equals("minecraft:overworld")) {
-                    BlockPos overworldPos = new BlockPos(
-                        (int) Math.round(wp.getPos().getX() * 8.0),
-                        wp.getPos().getY(),
-                        (int) Math.round(wp.getPos().getZ() * 8.0)
-                    );
-                    result.add(new WaypointEntry(wp, overworldPos, true));
-                }
+            BlockPos pos = wp.positionIn(dimension);
+            if (pos != null) {
+                // Shown here but belonging elsewhere: a shared waypoint's converted copy.
+                result.add(new WaypointEntry(wp, pos, !wp.dimensionOrOverworld().equals(dimension)));
             }
         }
         return result;
@@ -269,9 +251,9 @@ public class WaypointListScreen extends Screen {
      */
     private void updateDimensionTabs() {
         List<String> extra = new ArrayList<>();
-        for (Waypoint wp : WaypointRenderer.waypoints) {
+        for (Waypoint wp : WaypointStore.waypoints) {
             if (wp == null) continue;
-            String dim = wp.getDimension() != null ? wp.getDimension() : "minecraft:overworld";
+            String dim = wp.dimensionOrOverworld();
             if (!VANILLA_DIMENSIONS.contains(dim) && !extra.contains(dim)) {
                 extra.add(dim);
             }
@@ -335,7 +317,9 @@ public class WaypointListScreen extends Screen {
         this.addRenderableWidget(
             ModernButton.modernBuilder(Component.literal(""), btn -> {
                 ClientCompat.setScreen(this.minecraft, new ModConfigScreen(this));
-            }).pos(CORNER_BUTTON_MARGIN, this.height - 28).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE).build()
+            }).pos(CORNER_BUTTON_MARGIN, this.height - 28).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE)
+                    .icon((g, b, hovered) -> ClientCompat.blitTinted(g, Icons.CONFIG, b.getX() + 1, b.getY() + 1, 18, 18, UiPalette.ICON_IDLE))
+                    .build()
         );
 
         this.showXaeroButtons = ModConfig.get().xaeroIntegration.enabled && XaeroBridge.isModInstalled();
@@ -346,13 +330,17 @@ public class WaypointListScreen extends Screen {
                 // but this screen only rereads it when something tells it to, so the change would
                 // otherwise stay invisible until the next keystroke or dimension switch.
                 refreshItemWidgets();
-            }).pos(xaeroButtonX(1), this.height - 28).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE).build();
+            }).pos(xaeroButtonX(1), this.height - 28).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE)
+                    .icon((g, b, hovered) -> drawImportGlyph(g, b.getX() + b.getWidth() / 2, cornerGlyphY(b), UiPalette.ICON_IDLE))
+                    .build();
             importBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("list.xaero_import")));
             this.addRenderableWidget(importBtn);
 
             var exportBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 reportSync("xaero.exported", XaeroSync.exportNow());
-            }).pos(xaeroButtonX(0), this.height - 28).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE).build();
+            }).pos(xaeroButtonX(0), this.height - 28).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE)
+                    .icon((g, b, hovered) -> drawExportGlyph(g, b.getX() + b.getWidth() / 2, cornerGlyphY(b), UiPalette.ICON_IDLE))
+                    .build();
             exportBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("list.xaero_export")));
             this.addRenderableWidget(exportBtn);
         }
@@ -364,6 +352,11 @@ public class WaypointListScreen extends Screen {
      *  edge: 0 is the outermost (Export), 1 the one beside it (Import). */
     private int xaeroButtonX(int slotFromRight) {
         return this.width - CORNER_BUTTON_MARGIN - CORNER_BUTTON_SIZE - slotFromRight * CORNER_BUTTON_PITCH;
+    }
+
+    /** The Xaero glyphs are 7px tall (4 of triangle, a 2px gap, 1 of bar), centred in the button. */
+    private static int cornerGlyphY(ModernButton button) {
+        return button.getY() + (button.getHeight() - 7) / 2;
     }
 
     /** Reports a sync in the same transient action-bar overlay every other mutating action here uses.
@@ -408,8 +401,8 @@ public class WaypointListScreen extends Screen {
                     ClientCompat.setScreen(this.minecraft, new ConfirmScreen(
                         confirmed -> {
                             if (confirmed) {
-                                WaypointRenderer.waypoints.remove(wp);
-                                WaypointRenderer.saveToFile();
+                                WaypointStore.waypoints.remove(wp);
+                                WaypointStore.saveToFile();
                             }
                             ClientCompat.setScreen(this.minecraft, this);
                         },
@@ -417,20 +410,24 @@ public class WaypointListScreen extends Screen {
                         I18nHelper.getComponent("menu.confirm_delete_text", wp.getName())
                     ));
                 } else {
-                    WaypointRenderer.waypoints.remove(wp);
-                    WaypointRenderer.saveToFile();
+                    WaypointStore.waypoints.remove(wp);
+                    WaypointStore.saveToFile();
                     refreshItemWidgets();
                 }
-            }).pos(buttonX, itemY).size(18, 18).build();
+            }).pos(buttonX, itemY).size(18, 18)
+                    .icon((g, b, hovered) -> ClientCompat.blitTinted(g, Icons.DELETE, b.getX(), b.getY(), 18, 18, UiPalette.ICON_DESTRUCTIVE))
+                    .build();
             this.addRenderableWidget(delBtn);
             dynamicWidgets.add(delBtn);
             buttonX -= 20;
 
             var dimBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 wp.setShared(!wp.isShared());
-                WaypointRenderer.saveToFile();
+                WaypointStore.saveToFile();
                 refreshItemWidgets();
-            }).pos(buttonX, itemY).size(18, 18).build();
+            }).pos(buttonX, itemY).size(18, 18)
+                    .icon((g, b, hovered) -> Icons.drawPortalIcon(g, b.getX(), b.getY(), wp.isShared(), b.active))
+                    .build();
             dimBtn.active = DimensionNames.isConvertible(selectedDimension);
             this.addRenderableWidget(dimBtn);
             dynamicWidgets.add(dimBtn);
@@ -465,14 +462,18 @@ public class WaypointListScreen extends Screen {
                     this.minecraft.player.connection.sendChat(msg);
                     this.onClose();
                 }
-            }).pos(buttonX, itemY).size(18, 18).build();
+            }).pos(buttonX, itemY).size(18, 18)
+                    .icon((g, b, hovered) -> ClientCompat.blitTinted(g, Icons.SHARE, b.getX(), b.getY(), 18, 18, UiPalette.ICON_IDLE))
+                    .build();
             this.addRenderableWidget(shareBtn);
             dynamicWidgets.add(shareBtn);
             buttonX -= 20;
 
             var editBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 ClientCompat.setScreen(this.minecraft, new WaypointCreateScreen(wp));
-            }).pos(buttonX, itemY).size(18, 18).build();
+            }).pos(buttonX, itemY).size(18, 18)
+                    .icon((g, b, hovered) -> ClientCompat.blitTinted(g, Icons.EDIT, b.getX(), b.getY(), 18, 18, UiPalette.ICON_IDLE))
+                    .build();
             this.addRenderableWidget(editBtn);
             dynamicWidgets.add(editBtn);
             buttonX -= 20;
@@ -488,9 +489,15 @@ public class WaypointListScreen extends Screen {
                 } else {
                     wp.setVisible(!wp.isVisible());
                 }
-                WaypointRenderer.saveToFile();
+                WaypointStore.saveToFile();
                 refreshItemWidgets();
-            }).pos(buttonX, itemY).size(18, 18).build();
+            }).pos(buttonX, itemY).size(18, 18)
+                    .icon((g, b, hovered) -> {
+                        boolean shown = this.cachedHasAnyFocused ? (wp.isFocused() || wp.isForceVisible()) : wp.isVisible();
+                        ClientCompat.blitTinted(g, shown ? Icons.SHOW : Icons.HIDE, b.getX(), b.getY(), 18, 18,
+                                shown ? UiPalette.ICON_IDLE : UiPalette.ICON_DISABLED);
+                    })
+                    .build();
             this.addRenderableWidget(visBtn);
             dynamicWidgets.add(visBtn);
 
@@ -499,11 +506,16 @@ public class WaypointListScreen extends Screen {
                 var tpBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                     if (this.minecraft.player != null && this.minecraft.player.connection != null) {
                         String targetDim = wp.isShared() ? selectedDimension : (wp.getDimension() != null ? wp.getDimension() : selectedDimension);
-                        String tpCommand = String.format("execute in %s run tp @s %d %d %d", targetDim, pos.getX(), pos.getY(), pos.getZ());
+                        // Block centre on X/Z (x + 0.5, not "%d.5", which is wrong for negatives),
+                        // so the player lands in the middle of the block rather than on its corner.
+                        String tpCommand = String.format(Locale.ROOT, "execute in %s run tp @s %.1f %d %.1f",
+                                targetDim, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
                         this.minecraft.player.connection.sendCommand(tpCommand);
                         this.onClose();
                     }
-                }).pos(buttonX, itemY).size(18, 18).build();
+                }).pos(buttonX, itemY).size(18, 18)
+                        .icon((g, b, hovered) -> ClientCompat.blitTinted(g, Icons.TP, b.getX(), b.getY(), 18, 18, UiPalette.ICON_ACCENT))
+                        .build();
                 this.addRenderableWidget(tpBtn);
                 dynamicWidgets.add(tpBtn);
             }
@@ -514,7 +526,7 @@ public class WaypointListScreen extends Screen {
                     wp.setFocused(false);
                     wp.setForceVisible(false);
                 } else {
-                    for (Waypoint w : WaypointRenderer.waypoints) {
+                    for (Waypoint w : WaypointStore.waypoints) {
                         if (w != null) {
                             w.setFocused(false);
                             w.setForceVisible(false);
@@ -523,9 +535,18 @@ public class WaypointListScreen extends Screen {
                     wp.setFocused(true);
                     wp.setVisible(true);
                 }
-                WaypointRenderer.saveToFile();
+                WaypointStore.saveToFile();
                 refreshItemWidgets();
-            }).pos(centerX - 138, itemY).size(18, 18).build();
+            }).pos(centerX - 138, itemY).size(18, 18)
+                    .icon((g, b, hovered) -> {
+                        // The marker swatch doubles as the focus toggle: always filled with the
+                        // waypoint's own color, black border normally, gold border while focused.
+                        boolean dimmed = isDimmed(wp);
+                        int fill = dimmed ? dim(wp.getColor()) : wp.getColor();
+                        int outlineBase = wp.isFocused() ? UiPalette.FOCUS_OUTLINE_ON : UiPalette.MARKER_OUTLINE;
+                        Icons.drawMarkerIcon(g, b.getX(), b.getY(), fill, dimmed ? dim(outlineBase) : outlineBase, wp.isDeath());
+                    })
+                    .build();
             this.addRenderableWidget(focusBtn);
             dynamicWidgets.add(focusBtn);
         }
@@ -537,7 +558,15 @@ public class WaypointListScreen extends Screen {
             ModConfig.save();
             this.scrollIndex = 0;
             refreshItemWidgets();
-        }).pos(centerX - 130 + SEARCH_WIDTH + 4, centerY - 90).size(SORT_BUTTON_WIDTH, 16).build();
+        }).pos(centerX - 130 + SEARCH_WIDTH + 4, centerY - 90).size(SORT_BUTTON_WIDTH, 16)
+                .icon((g, b, hovered) -> {
+                    // Sort glyph just left of the button's own centred label, following its
+                    // hover colour, rather than baked into the label text.
+                    int labelLeft = b.getX() + b.getWidth() / 2 - this.font.width(b.getMessage()) / 2;
+                    drawSortIcon(g, labelLeft - SORT_ICON_GAP - SORT_ICON_WIDTH, b.getY() + 5,
+                            hovered ? UiPalette.BTN_TEXT_HOVER : UiPalette.BTN_TEXT);
+                })
+                .build();
         this.addRenderableWidget(sortBtn);
         dynamicWidgets.add(sortBtn);
 
@@ -696,33 +725,8 @@ public class WaypointListScreen extends Screen {
 
         super.extractRenderState(graphics, mouseX, mouseY, a);
 
-        ClientCompat.blitTinted(graphics, Icons.CONFIG, CORNER_BUTTON_MARGIN + 1, this.height - 27, 18, 18, UiPalette.ICON_IDLE);
-
-        if (this.showXaeroButtons) {
-            // The glyph is 7px tall (4 of triangle, a 2px gap, 1 of bar), so centering it in the
-            // 20px button puts its top 6px down from the button's own top edge.
-            int glyphY = this.height - 28 + (CORNER_BUTTON_SIZE - 7) / 2;
-            drawImportGlyph(graphics, xaeroButtonX(1) + CORNER_BUTTON_SIZE / 2, glyphY, UiPalette.ICON_IDLE);
-            drawExportGlyph(graphics, xaeroButtonX(0) + CORNER_BUTTON_SIZE / 2, glyphY, UiPalette.ICON_IDLE);
-        }
-
-        // Sort icon: drawn to the left of the button's own centered label instead of being baked
-        // into ModernButton, so the label keeps its normal hover-reactive colour and the icon
-        // just follows it. Position mirrors the sortBtn built in refreshItemWidgets().
-        int sortBtnX = centerX - 130 + SEARCH_WIDTH + 4;
-        int sortBtnY = centerY - 90;
-        boolean sortHovered = mouseX >= sortBtnX && mouseX < sortBtnX + SORT_BUTTON_WIDTH
-                && mouseY >= sortBtnY && mouseY < sortBtnY + 16;
-        int sortIconColor = sortHovered ? UiPalette.BTN_TEXT_HOVER : UiPalette.BTN_TEXT;
-        int sortLabelWidth = this.font.width(I18nHelper.getComponent(sortMode.getTranslationKey()));
-        int sortTextLeftX = sortBtnX + SORT_BUTTON_WIDTH / 2 - sortLabelWidth / 2;
-        drawSortIcon(graphics, sortTextLeftX - SORT_ICON_GAP - SORT_ICON_WIDTH, sortBtnY + 5, sortIconColor);
-
         int startIndex = scrollIndex;
         int endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalWaypoints);
-
-        boolean hasAnyFocused = this.cachedHasAnyFocused;
-        boolean showTP = this.cachedShowTP;
 
         if (totalWaypoints == 0) {
             graphics.centeredText(this.font, I18nHelper.getComponent("menu.no_waypoints"), centerX, centerY + 5, UiPalette.TEXT_SECONDARY);
@@ -743,15 +747,7 @@ public class WaypointListScreen extends Screen {
                 int offsetIndex = i - startIndex;
                 int itemY = centerY - 60 + offsetIndex * 22;
 
-                boolean isDimmed = !wp.isVisible() || (hasAnyFocused && !wp.isFocused() && !wp.isForceVisible());
-                boolean focused = wp.isFocused();
-
-                // Marker swatch doubles as the focus toggle: always filled with the waypoint's own
-                // color, black border normally, gold border while focused.
-                int swatchFill = isDimmed ? dim(wp.getColor()) : wp.getColor();
-                int swatchOutlineBase = focused ? UiPalette.FOCUS_OUTLINE_ON : UiPalette.MARKER_OUTLINE;
-                int swatchOutline = isDimmed ? dim(swatchOutlineBase) : swatchOutlineBase;
-                Icons.drawMarkerIcon(graphics, centerX - 138, itemY, swatchFill, swatchOutline, wp.isDeath());
+                boolean isDimmed = isDimmed(wp);
 
                 int nameColor = isDimmed ? UiPalette.TEXT_DIM : (entry.converted ? UiPalette.TEXT_CONVERTED : UiPalette.TEXT_PRIMARY);
                 graphics.text(this.font, entry.name(this.font), centerX - 117, itemY + 1, nameColor);
@@ -766,26 +762,6 @@ public class WaypointListScreen extends Screen {
                     int copiedX = centerX - 117 + this.font.width(coordsComponent) + 4;
                     graphics.text(this.font, I18nHelper.getComponent("list.coords_copied"), copiedX, itemY + 10, UiPalette.TEXT_SUCCESS);
                 }
-
-                if (showTP) {
-                    ClientCompat.blitTinted(graphics, Icons.TP, centerX + 20, itemY, 18, 18, UiPalette.ICON_ACCENT);
-                }
-
-                boolean isVisible = wp.isVisible();
-                if (hasAnyFocused) {
-                    isVisible = wp.isFocused() || wp.isForceVisible();
-                }
-                Identifier visIcon = isVisible ? Icons.SHOW : Icons.HIDE;
-                int visColor = isVisible ? UiPalette.ICON_IDLE : UiPalette.ICON_DISABLED;
-                ClientCompat.blitTinted(graphics, visIcon, centerX + 40, itemY, 18, 18, visColor);
-
-                ClientCompat.blitTinted(graphics, Icons.EDIT, centerX + 60, itemY, 18, 18, UiPalette.ICON_IDLE);
-                ClientCompat.blitTinted(graphics, Icons.SHARE, centerX + 80, itemY, 18, 18, UiPalette.ICON_IDLE);
-
-                Icons.drawPortalIcon(graphics, centerX + 100, itemY,
-                        wp.isShared(), DimensionNames.isConvertible(selectedDimension));
-
-                ClientCompat.blitTinted(graphics, Icons.DELETE, centerX + 120, itemY, 18, 18, UiPalette.ICON_DESTRUCTIVE);
             }
 
             if (totalWaypoints > ITEMS_PER_PAGE) {
@@ -813,6 +789,11 @@ public class WaypointListScreen extends Screen {
             return true;
         }
         return super.keyPressed(event);
+    }
+
+    /** Whether a row is shown dimmed: hidden, or filtered out by another waypoint's focus. */
+    private boolean isDimmed(Waypoint wp) {
+        return !wp.isVisible() || (this.cachedHasAnyFocused && !wp.isFocused() && !wp.isForceVisible());
     }
 
     /** Darkens an ARGB color for rows hidden or filtered out by an active focus. */

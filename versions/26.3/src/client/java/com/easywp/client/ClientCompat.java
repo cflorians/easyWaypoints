@@ -5,6 +5,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
@@ -16,8 +17,10 @@ import net.minecraft.resources.Identifier;
  * each carried the rename inline, which kept them off {@code checkSharedSources}' list and left
  * them unguarded against a real divergence: {@code DeathWaypointManager}, {@code ModConfigScreen},
  * {@code ModKeyBindings} and {@code WaypointListScreen} differed from their 26.2 twins by nothing
- * but these calls. Routing through here makes those four identical and therefore checkable, and
- * narrows {@code WaypointCreateScreen}'s remaining difference down to a single javadoc paragraph.
+ * but these calls. Routing through here makes those four identical and therefore checkable. Since
+ * the waypoints moved to the HUD it is also the last per-version file left: the renderer, the
+ * client entrypoint and the create screen are shared too, their differences reduced to the
+ * {@link #isHudHidden} and {@link #cameraRenderState} accessors below.
  *
  * <p>Deliberately not moved to {@code common/}: it names {@code net.minecraft} types, which that
  * module cannot compile against (see CLAUDE.md). It stays duplicated, and it stays the one file
@@ -25,8 +28,8 @@ import net.minecraft.resources.Identifier;
  *
  * <p>Add to it only for renames of this shape - same semantics, different vanilla name. Anything
  * where the versions genuinely do different work belongs in the caller, where the difference can
- * be explained: {@code EasyWpClient}'s {@code END_MAIN} vs {@code COLLECT_SUBMITS} hook and the
- * three renderers are that case, not this one.
+ * be explained - or, better, lifted out of the version difference altogether, the way moving the
+ * waypoints from three per-version world renderers to one HUD renderer did.
  *
  * <p>26.3 widened what "rename" covers. It moved {@code RenderPipeline} out of
  * {@code com.mojang.blaze3d.pipeline} into {@code com.mojang.renderpearl.api.pipeline}, and it
@@ -79,5 +82,19 @@ public final class ClientCompat {
     public static void blitTinted(GuiGraphicsExtractor graphics, Identifier texture, int x, int y,
                                   int width, int height, int color) {
         graphics.blit(RenderPipelines.GUI_TEXTURED, texture, x, y, 0.0f, 0.0f, width, height, width, height, color);
+    }
+
+    /** Whether the player hid the HUD (F1). 26.1 kept it on {@code Options.hideGui}; 26.2 moved it to {@code Hud.isHidden()}. */
+    public static boolean isHudHidden(Minecraft client) {
+        return client.gui.hud.isHidden();
+    }
+
+    /**
+     * The camera state of the frame being extracted - filled before the GUI is, so the HUD reads
+     * the same camera the world is drawn with.
+     * 26.1 named the accessor {@code getGameRenderState()}; 26.2 renamed it {@code gameRenderState()}.
+     */
+    public static CameraRenderState cameraRenderState(Minecraft client) {
+        return client.gameRenderer.gameRenderState().levelRenderState.cameraRenderState;
     }
 }

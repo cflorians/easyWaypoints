@@ -57,9 +57,8 @@ import java.util.Set;
  *
  * <p>A {@code shared} easyWp waypoint (mirrored between Overworld and Nether at the renderer's own
  * 1:8 ratio) is exported once per dimension it bridges, at each dimension's own converted position -
- * {@link #forEachTarget} is the one place that projection is repeated a third time in this codebase
- * (CLAUDE.md already tracks the other two, in {@code WaypointRenderer} and {@code WaypointListScreen}
- * - a fourth site to update if that ratio ever changes). Both {@link #identitiesOf} and
+ * {@link Waypoint#forEachPosition}, the same single definition of that projection the renderer and
+ * the list screen use. Both {@link #identitiesOf} and
  * {@link #alreadyHasSimilar} have to know about the same projection; see their javadoc for what goes
  * wrong otherwise.
  */
@@ -112,7 +111,7 @@ public final class XaeroSync {
                 if (alreadyHasSimilar(dimension, pos, rw.name())) {
                     continue;
                 }
-                WaypointRenderer.waypoints.add(new Waypoint(rw.name(), pos,
+                WaypointStore.waypoints.add(new Waypoint(rw.name(), pos,
                         XaeroWaypointFormat.rgbForColorOrdinal(rw.colorOrdinal()), dimension, false));
                 added++;
             }
@@ -124,15 +123,15 @@ public final class XaeroSync {
         }
 
         List<Waypoint> doomed = new ArrayList<>();
-        for (Waypoint wp : WaypointRenderer.waypoints) {
+        for (Waypoint wp : WaypointStore.waypoints) {
             if (wp != null && deletedOnXaerosSide(wp, ledger, presentByDimension)) {
                 doomed.add(wp);
             }
         }
-        WaypointRenderer.waypoints.removeAll(doomed);
+        WaypointStore.waypoints.removeAll(doomed);
 
         if (added > 0 || !doomed.isEmpty()) {
-            WaypointRenderer.saveToFile();
+            WaypointStore.saveToFile();
         }
 
         // easyWp now holds every Xaero waypoint in every dimension that could be read, so those
@@ -337,7 +336,7 @@ public final class XaeroSync {
      *  waypoint's Nether image looks like a waypoint easyWp never had. */
     private static List<String> identitiesOf(Waypoint wp) {
         List<String> keys = new ArrayList<>(2);
-        forEachTarget(wp, (dimension, pos) -> keys.add(XaeroLinkLedger.keyFor(dimension, pos.getX(), pos.getZ(), wp.getName())));
+        wp.forEachPosition((dimension, pos) -> keys.add(XaeroLinkLedger.keyFor(dimension, pos.getX(), pos.getZ(), wp.getName())));
         return keys;
     }
 
@@ -355,7 +354,7 @@ public final class XaeroSync {
      * <p>Compares against every <em>projected</em> target of every existing waypoint, not just its
      * native position, and that is load-bearing rather than thorough-for-its-own-sake: exporting a
      * {@code shared} Overworld waypoint writes it into the Nether too, at the 1:8 converted position
-     * (see {@link #forEachTarget}). A later Import reads that Nether copy back, and matching only
+     * (see {@link Waypoint#forEachPosition}). A later Import reads that Nether copy back, and matching only
      * native positions would not recognise it as the Overworld waypoint it came from - so every
      * export/import round trip would add a spurious Nether duplicate of every shared waypoint.
      *
@@ -364,7 +363,7 @@ public final class XaeroSync {
      */
     private static boolean alreadyHasSimilar(String dimension, BlockPos pos, String name) {
         String wanted = XaeroLinkLedger.keyFor(dimension, pos.getX(), pos.getZ(), name);
-        for (Waypoint wp : WaypointRenderer.waypoints) {
+        for (Waypoint wp : WaypointStore.waypoints) {
             if (wp == null || !name.equals(wp.getName())) {
                 continue;
             }
@@ -384,42 +383,13 @@ public final class XaeroSync {
      *  waypoint, two (native + converted) for a {@code shared} one bridging Overworld/Nether. */
     private static Map<String, List<Target>> groupByTargetDimension() {
         Map<String, List<Target>> result = new HashMap<>();
-        for (Waypoint wp : WaypointRenderer.waypoints) {
+        for (Waypoint wp : WaypointStore.waypoints) {
             if (wp == null) {
                 continue;
             }
-            forEachTarget(wp, (dimension, pos) -> result.computeIfAbsent(dimension, d -> new ArrayList<>()).add(new Target(wp, pos)));
+            wp.forEachPosition((dimension, pos) -> result.computeIfAbsent(dimension, d -> new ArrayList<>()).add(new Target(wp, pos)));
         }
         return result;
-    }
-
-    private interface TargetConsumer {
-        void accept(String dimension, BlockPos pos);
-    }
-
-    /** Mirrors {@code WaypointRenderer.render()}'s own dimension filter and 1:8 shared-position
-     *  conversion (see its javadoc) - kept in sync with that logic, not derived from it, since
-     *  {@code WaypointRenderer.java} differs genuinely between 26.1 and 26.2 and isn't shared. */
-    private static void forEachTarget(Waypoint wp, TargetConsumer consumer) {
-        String nativeDim = wp.getDimension() != null ? wp.getDimension() : "minecraft:overworld";
-        consumer.accept(nativeDim, wp.getPos());
-
-        if (!wp.isShared()) {
-            return;
-        }
-        if (nativeDim.equals("minecraft:overworld")) {
-            consumer.accept("minecraft:the_nether", new BlockPos(
-                    (int) Math.round(wp.getPos().getX() / 8.0),
-                    wp.getPos().getY(),
-                    (int) Math.round(wp.getPos().getZ() / 8.0)
-            ));
-        } else if (nativeDim.equals("minecraft:the_nether")) {
-            consumer.accept("minecraft:overworld", new BlockPos(
-                    (int) Math.round(wp.getPos().getX() * 8.0),
-                    wp.getPos().getY(),
-                    (int) Math.round(wp.getPos().getZ() * 8.0)
-            ));
-        }
     }
 
     // ---- best-effort path guessing (only used when the live bridge is unavailable) ------------
@@ -428,8 +398,8 @@ public final class XaeroSync {
      *  anything easyWp already knows about, plus wherever the player currently is - the same
      *  reasoning {@code WaypointListScreen.updateDimensionTabs()} uses for its own tab list. */
     private static List<String> knownDimensions(Minecraft client) {
-        List<String> dims = new ArrayList<>(List.of("minecraft:overworld", "minecraft:the_nether", "minecraft:the_end"));
-        for (Waypoint wp : WaypointRenderer.waypoints) {
+        List<String> dims = new ArrayList<>(List.of(DimensionNames.OVERWORLD, DimensionNames.NETHER, DimensionNames.END));
+        for (Waypoint wp : WaypointStore.waypoints) {
             if (wp != null && wp.getDimension() != null && !dims.contains(wp.getDimension())) {
                 dims.add(wp.getDimension());
             }

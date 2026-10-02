@@ -26,7 +26,6 @@ def sharedClientSources = [
 	'ModMenuIntegration.java',
 	'UiPalette.java',
 	'Icons.java',
-	'ShaderDetector.java',
 	'DeathWaypointManager.java',
 	'ModConfigScreen.java',
 	'ModKeyBindings.java',
@@ -37,7 +36,12 @@ def sharedClientSources = [
 	'XaeroSync.java',
 	'XaeroLinkLedger.java',
 	'WaypointColors.java',
-	'ImportWorldScreen.java'
+	'ImportWorldScreen.java',
+	'EasyWpClient.java',
+	'WaypointRenderer.java',
+	'WaypointStore.java',
+	'WaypointCreateScreen.java',
+	'ImportConfirmScreen.java'
 ]
 
 /**
@@ -48,9 +52,8 @@ def sharedClientSources = [
  * ships unnoticed - which is what happened to ModMenuIntegration.java. This is the escape hatch for
  * a file that matches everywhere by coincidence and is expected to diverge; it is empty on purpose.
  *
- * A file identical in only SOME versions is not flagged and does not belong here: EasyWpClient.java
- * is the same in 26.2 and 26.3 (both hook COLLECT_SUBMITS) and different in 26.1 (END_MAIN), which
- * is the intended state, not an unguarded one.
+ * A file identical in only SOME versions is not flagged and does not belong here: that is a
+ * deliberate per-version split, not an unguarded share.
  */
 def intentionallyUnsharedSources = []
 

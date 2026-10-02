@@ -34,16 +34,13 @@ public class WaypointCreateScreen extends Screen {
     private static final int SHADE_SWATCH_W = PICKER_WIDTH / WaypointColors.SHADE_COUNT;
     /**
      * Marker height in the preview, sized to match the real in-game ratio between the marker and its
-     * label text rather than an arbitrary GUI size. In WaypointRenderer the marker and the label are
-     * projected to different fixed distances, but each one's own apparent size is shrunk by exactly
-     * the distance it is pulled in by (a perspective projection divides by distance, so the two
-     * cancel), leaving both proportional to the same {@code baseSize / clampDist} regardless of
-     * which projection distance either one uses. Working that through, the label's apparent text
-     * height still comes out to {@code 9 * (0.035 * labelSize / 0.7) = 0.45 * markerSize} in terms
-     * of what each would render at if projected to the same distance. Our label is drawn at the
-     * standard unscaled 9px GUI line height, so the marker that keeps the same ratio is
+     * label text rather than an arbitrary GUI size. WaypointRenderer draws one label font pixel as
+     * {@code 0.05 * markerHeight} (LABEL_GLYPH_PER_MARKER), so the 9px label line is
+     * {@code 0.45 * markerHeight}. Our label is drawn at the standard unscaled 9px GUI line height,
+     * so the marker that keeps the same ratio is
      * {@code 9 / 0.45 = 20} px tall — this is that fixed point, not a look-good guess.
      */
+
     private static final float PREVIEW_MARKER_H = 20.0f;
 
     private EditBox nameField;
@@ -102,7 +99,15 @@ public class WaypointCreateScreen extends Screen {
         if (this.editingWaypoint != null) {
             this.nameField.setValue(this.editingWaypoint.getName());
         } else {
-            this.nameField.setValue(I18nHelper.getComponent("create.default_name", String.valueOf(WaypointRenderer.waypoints.size() + 1)).getString());
+            // A new waypoint starts with an empty name and shows the default one as a grey
+            // suggestion instead, so typing replaces it outright with nothing to delete first. An
+            // empty name still saves as that default (resolveWaypointName()). EditBox's hint would
+            // be the obvious widget for this, but vanilla hides it while the box is focused - and
+            // this one always is - whereas the suggestion is drawn regardless, and only while the
+            // value is empty since the responder clears it the moment anything is typed.
+            String defaultName = I18nHelper.getComponent("create.default_name", String.valueOf(WaypointStore.waypoints.size() + 1)).getString();
+            this.nameField.setSuggestion(defaultName);
+            this.nameField.setResponder(value -> this.nameField.setSuggestion(value.isEmpty() ? defaultName : null));
         }
         this.addRenderableWidget(this.nameField);
 
@@ -110,14 +115,14 @@ public class WaypointCreateScreen extends Screen {
             this.dimShared = !this.dimShared;
         }).pos(shareIconX, centerY - 82).size(18, 18).build();
 
-        String currentDimension = "minecraft:overworld";
+        String currentDimension = DimensionNames.OVERWORLD;
         if (this.minecraft.level != null) {
             currentDimension = this.minecraft.level.dimension().identifier().toString();
         }
         if (this.editingWaypoint != null && this.editingWaypoint.getDimension() != null) {
             currentDimension = this.editingWaypoint.getDimension();
         }
-        boolean isConvertibleDim = currentDimension.equals("minecraft:overworld") || currentDimension.equals("minecraft:the_nether");
+        boolean isConvertibleDim = DimensionNames.isConvertible(currentDimension);
         shareToggleBtn.active = isConvertibleDim;
         this.addRenderableWidget(shareToggleBtn);
 
@@ -298,7 +303,7 @@ public class WaypointCreateScreen extends Screen {
         graphics.pose().pushMatrix();
         graphics.pose().translate(markerX, markerY);
         graphics.pose().scale(markerScale, markerScale);
-        ClientCompat.blitTinted(graphics, WaypointRenderTypes.MARKER_TEXTURE, 0, 0, 5, 7, markerTint);
+        ClientCompat.blitTinted(graphics, Icons.WAYPOINT_MARKER, 0, 0, 5, 7, markerTint);
         graphics.pose().popMatrix();
     }
 
@@ -344,11 +349,25 @@ public class WaypointCreateScreen extends Screen {
         return false;
     }
 
+    /**
+     * Focuses the name field on open, so the name can be typed straight away without clicking it.
+     *
+     * <p>An override, not a {@code setInitialFocus(nameField)} call inside {@code init()}: vanilla
+     * calls this no-argument version right <em>after</em> {@code init()}, and when the screen was
+     * opened from the keyboard (the N/H keys always are) its default tab-navigates one step on
+     * from whatever is focused - moving the focus off the name field that {@code init()} had just
+     * given it.
+     */
+    @Override
+    protected void setInitialFocus() {
+        this.setInitialFocus(this.nameField);
+    }
+
     /** Resolves the name that would actually be saved right now: the typed value, or the same fallback saveWaypoint() uses when it's empty. */
     private String resolveWaypointName() {
         String name = this.nameField.getValue();
         if (name.isEmpty()) {
-            name = this.editingWaypoint != null ? this.editingWaypoint.getName() : I18nHelper.getComponent("create.default_name", String.valueOf(WaypointRenderer.waypoints.size() + 1)).getString();
+            name = this.editingWaypoint != null ? this.editingWaypoint.getName() : I18nHelper.getComponent("create.default_name", String.valueOf(WaypointStore.waypoints.size() + 1)).getString();
         }
         return name;
     }
@@ -371,7 +390,7 @@ public class WaypointCreateScreen extends Screen {
         } catch (NumberFormatException ignored) {}
 
         BlockPos newPos = BlockPos.containing(x, y, z);
-        String dimension = this.editingWaypoint != null ? this.editingWaypoint.getDimension() : "minecraft:overworld";
+        String dimension = this.editingWaypoint != null ? this.editingWaypoint.getDimension() : DimensionNames.OVERWORLD;
         if (this.editingWaypoint == null && this.minecraft.level != null) {
             dimension = this.minecraft.level.dimension().identifier().toString();
         }
@@ -400,7 +419,7 @@ public class WaypointCreateScreen extends Screen {
                 ).withStyle(ChatFormatting.GRAY), true);
             }
         } else {
-            WaypointRenderer.waypoints.add(new Waypoint(name, newPos, this.selectedColor, dimension, this.dimShared));
+            WaypointStore.waypoints.add(new Waypoint(name, newPos, this.selectedColor, dimension, this.dimShared));
 
             if (this.minecraft.player != null) {
                 // Same reasoning as the edited-feedback message above.
@@ -410,7 +429,7 @@ public class WaypointCreateScreen extends Screen {
             }
         }
 
-        WaypointRenderer.saveToFile();
+        WaypointStore.saveToFile();
 
         if (ModKeyBindings.displayMode == WaypointDisplayMode.DISABLED) {
             ModKeyBindings.displayMode = WaypointDisplayMode.WORLD_MARKERS;

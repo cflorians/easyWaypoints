@@ -12,6 +12,7 @@ import net.minecraft.client.gui.screens.options.OptionsSubScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 
+import java.util.List;
 import java.util.function.DoubleConsumer;
 
 /**
@@ -28,6 +29,8 @@ import java.util.function.DoubleConsumer;
 public class ModConfigScreen extends OptionsSubScreen {
     private static final int CONTROL_WIDTH = 150;
     private static final int RESET_WIDTH = 90;
+    /** OptionsList's own row width (getRowWidth()), for a widget that spans the whole row. */
+    private static final int BIG_BUTTON_WIDTH = 310;
     private static final int ROW_HEIGHT = 20;
 
     // OptionsList.getRowWidth() is hardcoded to 310 by vanilla and the scrollbar is placed at
@@ -47,6 +50,9 @@ public class ModConfigScreen extends OptionsSubScreen {
 
     private static final double OPACITY_FLOOR = 0.0;
     private static final double OPACITY_CEIL = 100.0;
+
+    private static final double LOOK_AREA_FLOOR = 1.0;
+    private static final double LOOK_AREA_CEIL = 7.0;
 
     private static final double MAX_DEATH_FLOOR = 1.0;
     private static final double MAX_DEATH_CEIL = 10.0;
@@ -74,6 +80,16 @@ public class ModConfigScreen extends OptionsSubScreen {
     protected void addOptions() {
         ModConfig cfg = ModConfig.get();
 
+        // Cross-world import first, as one full-width vanilla button - the way vanilla's own options
+        // screens lead with their sub-screen buttons. addSmall(List) rather than addBig: 26.1's
+        // OptionsList has no single-widget addBig overload, but on every version addSmall lays its
+        // widgets out from the row's left edge, so one widget BIG_BUTTON_WIDTH wide spans the row.
+        this.list.addSmall(List.of(
+                Button.builder(I18nHelper.getComponent("config.import_button"), btn ->
+                        ClientCompat.setScreen(this.minecraft, new ImportWorldScreen(this))
+                ).width(BIG_BUTTON_WIDTH).build()
+        ));
+
         this.list.addHeader(I18nHelper.getComponent("config.section.appearance"));
         this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, SIZE_PERCENT_FLOOR, SIZE_PERCENT_CEIL, 1.0,
@@ -84,6 +100,17 @@ public class ModConfigScreen extends OptionsSubScreen {
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, OPACITY_FLOOR, OPACITY_CEIL, 1.0,
                         cfg.waypointSize.opacityPercent, "config.opacity_row", 0, this::applyOpacityPercent),
                 resetButton(this::resetOpacityPercent)
+        );
+        this.list.addSmall(
+                new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, OPACITY_FLOOR, OPACITY_CEIL, 5.0,
+                        cfg.lookFade.unlookedOpacityPercent, "config.unlooked_opacity_row", 0, this::applyUnlookedOpacity),
+                resetButton(this::resetUnlookedOpacity)
+        );
+        // Discrete: step 1 over 1-7, so the slider snaps to seven sizes.
+        this.list.addSmall(
+                new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, LOOK_AREA_FLOOR, LOOK_AREA_CEIL, 1.0,
+                        cfg.lookFade.lookAreaSize, "config.look_area_row", 0, this::applyLookAreaSize),
+                resetButton(this::resetLookAreaSize)
         );
         this.list.addSmall(
                 CycleButton.onOffBuilder(cfg.labelDisplay.showDistance)
@@ -207,32 +234,9 @@ public class ModConfigScreen extends OptionsSubScreen {
         // No Xaero Import/Export action row here: those two live in WaypointListScreen's
         // bottom-right corner, next to the list they act on, and duplicating them here would mean
         // two places to click for the same thing with no way to tell which one the player will
-        // reach for. The cross-world import below is a different feature entirely - it has no
+        // reach for. The cross-world import at the top is a different feature entirely - it has no
         // second home to duplicate, and no list to sit next to, since it acts on a file the
         // current world's list has never seen.
-
-        this.list.addHeader(I18nHelper.getComponent("config.section.import"));
-        // addSmall(widget, widget), not addBig(AbstractWidget): 26.1's OptionsList never grew the
-        // single-widget addBig overload that 26.2/26.3 did - only addBig(OptionInstance<?>), which
-        // this button is not one of. addSmall's two-widget overload exists on all three, so the
-        // button rides the label column at the row's usual CONTROL_WIDTH, with an invisible,
-        // inactive placeholder standing in for the reset button this row has no use for.
-        this.list.addSmall(
-                ModernButton.modernBuilder(I18nHelper.getComponent("config.import_button"), btn ->
-                        ClientCompat.setScreen(this.minecraft, new ImportWorldScreen(this))
-                ).size(CONTROL_WIDTH, ROW_HEIGHT).build(),
-                emptyPlaceholder()
-        );
-    }
-
-    /** Stands in for the reset-button slot on a row that has nothing to reset - see the import
-     *  button's row above. */
-    private AbstractWidget emptyPlaceholder() {
-        ModernButton placeholder = ModernButton.modernBuilder(Component.literal(""), btn -> { })
-                .size(RESET_WIDTH, ROW_HEIGHT).build();
-        placeholder.visible = false;
-        placeholder.active = false;
-        return placeholder;
     }
 
     /** Disables {@code widget} unless {@code available}, and explains why on hover. Returns the same
@@ -282,6 +286,16 @@ public class ModConfigScreen extends OptionsSubScreen {
         ModConfig.save();
     }
 
+    private void applyUnlookedOpacity(double v) {
+        ModConfig.get().lookFade.unlookedOpacityPercent = clamp(v, OPACITY_FLOOR, OPACITY_CEIL);
+        ModConfig.save();
+    }
+
+    private void applyLookAreaSize(double v) {
+        ModConfig.get().lookFade.lookAreaSize = (int) Math.round(clamp(v, LOOK_AREA_FLOOR, LOOK_AREA_CEIL));
+        ModConfig.save();
+    }
+
     private void applyMaxDeathCount(double v) {
         ModConfig cfg = ModConfig.get();
         cfg.deathWaypoints.maxCount = (int) Math.round(clamp(v, MAX_DEATH_FLOOR, MAX_DEATH_CEIL));
@@ -314,6 +328,18 @@ public class ModConfigScreen extends OptionsSubScreen {
 
     private void resetOpacityPercent() {
         ModConfig.get().waypointSize.opacityPercent = new ModConfig.WaypointSize().opacityPercent;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetUnlookedOpacity() {
+        ModConfig.get().lookFade.unlookedOpacityPercent = new ModConfig.LookFade().unlookedOpacityPercent;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetLookAreaSize() {
+        ModConfig.get().lookFade.lookAreaSize = new ModConfig.LookFade().lookAreaSize;
         ModConfig.save();
         reopen();
     }

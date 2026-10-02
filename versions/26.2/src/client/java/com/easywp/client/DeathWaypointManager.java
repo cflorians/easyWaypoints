@@ -1,7 +1,9 @@
 package com.easywp.client;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -10,20 +12,44 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
- * Detects the player's death by watching health across client ticks (no mixin
- * needed - the death location doesn't change until the respawn packet arrives,
- * so it's still valid to sample at the tick health first reaches 0) and manages
- * the lifecycle of death waypoints: created on death (evicting the oldest once
- * {@code maxCount} is exceeded), and auto-deleted once the player has stood next
- * to one for {@code graceSeconds} straight.
+ * Detects the player's deaths (no mixin needed) and manages the lifecycle of death waypoints:
+ * created on death (evicting the oldest once {@code maxCount} is exceeded), and auto-deleted once
+ * the player has stood next to one for {@code graceSeconds} straight.
+ *
+ * <p>Two signals, because neither covers every case on its own:
+ * <ul>
+ * <li><b>The alive→dead edge</b> of {@code isDeadOrDying()}, sampled each client tick. It fires
+ *     the moment the death screen appears - and while it is up, so a player who disconnects from
+ *     the death screen still gets the waypoint - at the dead player's own position, which does
+ *     not move until the respawn packet arrives.</li>
+ * <li><b>{@code Player.getLastDeathLocation()} changing.</b> The server sends the exact death
+ *     position and dimension in every respawn (and login) packet - it is what the recovery
+ *     compass points at. With the {@code doImmediateRespawn} gamerule the player dies and
+ *     respawns inside one server tick, before the health drop is ever synced, so the client never
+ *     sees it dead and the edge above never fires; this is the one signal that still arrives.</li>
+ * </ul>
+ * A death seen by the edge is flagged so the location change its respawn brings is not recorded a
+ * second time. The first location seen after joining is only a baseline: it is a death from a
+ * previous session (or one already recorded by the edge before disconnecting), never a new one.
  */
 public class DeathWaypointManager {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
     private static final int DEATH_COLOR = 0xFF000000;
 
-    private static boolean wasAlive = true;
+    /** The player instance seen last tick. A new instance means a join, a respawn or a dimension change. */
+    private static LocalPlayer lastPlayer = null;
+
+    /** Whether the dead state the current player instance is in has already been handled. */
+    private static boolean deathHandled = false;
+
+    /** Whether the edge recorded a death whose respawn (and its new death location) has not arrived yet. */
+    private static boolean edgeRecordedPendingRespawn = false;
+
+    /** The last death location seen; {@code null} until a baseline is taken after joining. */
+    private static Optional<GlobalPos> knownDeathLocation = null;
 
     /** Per-waypoint dwell start time, since more than one death waypoint can be in range at once when maxCount > 1. */
     private static final Map<Waypoint, Long> dwellStart = new HashMap<>();
@@ -34,28 +60,58 @@ public class DeathWaypointManager {
 
     public static void tick(Minecraft client) {
         if (client.player == null || client.level == null) {
-            wasAlive = true;
+            lastPlayer = null;
+            knownDeathLocation = null;
+            edgeRecordedPendingRespawn = false;
             dwellStart.clear();
             return;
         }
 
         // Keeps the current world's waypoint list fresh even if the renderer is in
-        // DISABLED mode, since WaypointRenderer.render() skips the reload in that case.
-        WaypointRenderer.checkAndLoadWorldWaypoints();
+        // DISABLED mode, since the HUD renderer (which also reloads) draws nothing in that mode.
+        WaypointStore.checkAndLoadWorldWaypoints();
 
         ModConfig.DeathWaypoints cfg = ModConfig.get().deathWaypoints;
-        boolean aliveNow = client.player.getHealth() > 0.0f;
+        LocalPlayer player = client.player;
+        boolean aliveNow = !player.isDeadOrDying();
+
+        // Death location first: on a normal respawn the new player instance and the new location
+        // arrive in the same tick, and the edge flag must still be set when the location is judged.
+        Optional<GlobalPos> deathLocation = player.getLastDeathLocation();
+        if (knownDeathLocation == null) {
+            knownDeathLocation = deathLocation;
+        } else if (!deathLocation.equals(knownDeathLocation)) {
+            knownDeathLocation = deathLocation;
+            if (deathLocation.isPresent() && !edgeRecordedPendingRespawn && cfg.enabled) {
+                GlobalPos at = deathLocation.get();
+                createDeathWaypoint(client, at.pos(), at.dimension().identifier().toString());
+            }
+            edgeRecordedPendingRespawn = false;
+        }
+
+        if (player != lastPlayer) {
+            // A player already dead the moment it appears (joining a world on the death screen)
+            // died before this session was watching, so the edge must not record it.
+            deathHandled = !aliveNow;
+            // A new instance with an unchanged location (dying twice on the same block) still
+            // ends the pending respawn the edge was waiting for.
+            if (lastPlayer != null) {
+                edgeRecordedPendingRespawn = false;
+            }
+            lastPlayer = player;
+        }
 
         if (!cfg.enabled) {
-            wasAlive = aliveNow;
+            deathHandled = !aliveNow;
             dwellStart.clear();
             return;
         }
 
-        if (!aliveNow && wasAlive) {
-            createDeathWaypoint(client);
+        if (!aliveNow && !deathHandled) {
+            createDeathWaypoint(client, player.blockPosition(), player.level().dimension().identifier().toString());
+            edgeRecordedPendingRespawn = true;
         }
-        wasAlive = aliveNow;
+        deathHandled = !aliveNow;
 
         // Skipped while dead: the player doesn't control movement on the death screen, so
         // sitting at the death spot before respawning must never count as "arriving".
@@ -66,7 +122,7 @@ public class DeathWaypointManager {
         }
     }
 
-    private static void createDeathWaypoint(Minecraft client) {
+    private static void createDeathWaypoint(Minecraft client, BlockPos pos, String dimension) {
         dwellStart.clear();
 
         // Keep at most (maxCount - 1) existing deaths so the new one fits within the configured cap;
@@ -74,30 +130,28 @@ public class DeathWaypointManager {
         // death survives" behavior.
         int maxCount = Math.max(1, ModConfig.get().deathWaypoints.maxCount);
         List<Waypoint> deaths = new ArrayList<>();
-        for (Waypoint wp : WaypointRenderer.waypoints) {
+        for (Waypoint wp : WaypointStore.waypoints) {
             if (wp != null && wp.isDeath()) {
                 deaths.add(wp);
             }
         }
         deaths.sort(Comparator.comparingLong(Waypoint::getCreatedAtMillis));
         while (deaths.size() >= maxCount) {
-            WaypointRenderer.waypoints.remove(deaths.remove(0));
+            WaypointStore.waypoints.remove(deaths.remove(0));
         }
 
-        BlockPos pos = client.player.blockPosition();
-        String dimension = WaypointRenderer.getCurrentDimension();
         String name = I18nHelper.getComponent("death.name", LocalTime.now().format(TIME_FORMAT)).getString();
 
         Waypoint wp = new Waypoint(name, pos, DEATH_COLOR, dimension, false, true, false, true, System.currentTimeMillis());
-        WaypointRenderer.waypoints.add(wp);
-        WaypointRenderer.saveToFile();
+        WaypointStore.waypoints.add(wp);
+        WaypointStore.saveToFile();
 
         ClientCompat.setOverlayMessage(client, I18nHelper.getComponent("death.created"), true);
     }
 
     private static void checkArrival(Minecraft client, ModConfig.DeathWaypoints cfg) {
         deathsScratch.clear();
-        for (Waypoint wp : WaypointRenderer.waypoints) {
+        for (Waypoint wp : WaypointStore.waypoints) {
             if (wp != null && wp.isDeath()) {
                 deathsScratch.add(wp);
             }
@@ -110,14 +164,14 @@ public class DeathWaypointManager {
             return;
         }
 
-        String currentDimension = WaypointRenderer.getCurrentDimension();
+        String currentDimension = WaypointStore.getCurrentDimension();
         BlockPos playerPos = client.player.blockPosition();
         long now = System.currentTimeMillis();
 
         // Each death waypoint dwells independently, so with maxCount > 1 the player can walk
         // through several at once and each is deleted on its own schedule.
         for (Waypoint deathWp : deathsScratch) {
-            String wpDim = deathWp.getDimension() != null ? deathWp.getDimension() : "minecraft:overworld";
+            String wpDim = deathWp.dimensionOrOverworld();
 
             double dx = playerPos.getX() - deathWp.getPos().getX();
             double dy = playerPos.getY() - deathWp.getPos().getY();
@@ -139,8 +193,8 @@ public class DeathWaypointManager {
             }
 
             if ((now - start) >= (long) (cfg.graceSeconds * 1000.0)) {
-                WaypointRenderer.waypoints.remove(deathWp);
-                WaypointRenderer.saveToFile();
+                WaypointStore.waypoints.remove(deathWp);
+                WaypointStore.saveToFile();
                 ClientCompat.setOverlayMessage(client, I18nHelper.getComponent("death.reached"), true);
                 dwellStart.remove(deathWp);
             }

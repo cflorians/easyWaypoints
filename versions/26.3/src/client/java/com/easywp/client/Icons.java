@@ -7,6 +7,9 @@ import net.minecraft.resources.Identifier;
 public final class Icons {
     private Icons() {}
 
+    /** The in-world waypoint marker, a 5x7 white mask tinted with the waypoint colour. */
+    public static final Identifier WAYPOINT_MARKER = Identifier.fromNamespaceAndPath("easywp", "textures/waypoint_marker.png");
+
     public static final Identifier MARKER_FILL    = Identifier.fromNamespaceAndPath("easywp", "textures/gui/marker_fill.png");
     public static final Identifier MARKER_OUTLINE = Identifier.fromNamespaceAndPath("easywp", "textures/gui/marker_outline.png");
     public static final Identifier MARKER_SKULL   = Identifier.fromNamespaceAndPath("easywp", "textures/gui/marker_skull.png");

@@ -35,7 +35,7 @@ public final class UiPalette {
     // Icono de portal (compartir dimensión): obsidiana/morado fijos, no dependen del tema.
     public static final int PORTAL_FRAME = 0xFF1D1626;
 
-    // Vista previa del waypoint (mismo valor que WaypointRenderer.LABEL_BACKDROP en el mundo 3D, no cambia con el tema)
+    // Fondo de la etiqueta del waypoint: el HUD (WaypointRenderer) y la vista previa (no cambia con el tema)
     public static final int LABEL_BACKDROP = 0x40000000;
 
     // Texto
