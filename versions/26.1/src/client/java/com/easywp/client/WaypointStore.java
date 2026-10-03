@@ -153,6 +153,45 @@ public final class WaypointStore {
         }
     }
 
+    /**
+     * Lets go of the world just left: its level, its waypoint list and its id. Called every client
+     * tick with no level, so it returns at once once there is nothing left to drop.
+     *
+     * <p>{@link #lastCheckedLevel} used to keep the old {@code ClientLevel} - every loaded chunk
+     * and entity - reachable from the main menu until another world was joined, and the list stayed
+     * in memory with it, which is what let the import picker (reachable from the title screen
+     * through Mod Menu) merge a file into a world that was no longer open. Rejoining reloads from
+     * disk, and {@link #readWaypointData} flushes pending saves first, so nothing written is lost.
+     *
+     * <p>Only reached on an actual exit (or a server reconfiguring, e.g. a proxy moving the player
+     * to another backend): a dimension change swaps the level without ever passing through null.
+     */
+    public static void forgetWorld() {
+        if (lastCheckedLevel == null && lastWorldId.isEmpty() && waypoints.isEmpty()) return;
+        lastCheckedLevel = null;
+        lastWorldId = "";
+        cachedDimension = DimensionNames.OVERWORLD;
+        waypoints.clear();
+    }
+
+    /** Whether there is a world open for the waypoints to belong to - {@link #getWorldId()} is
+     *  {@code "unknown"} exactly when there is not, and nothing can be saved then. */
+    public static boolean isInWorld() {
+        return Minecraft.getInstance().level != null;
+    }
+
+    /** Whether any waypoint of the current world is focused, in any dimension. A focus anywhere
+     *  hides every waypoint that is neither focused nor kept visible beside it, in every dimension -
+     *  see {@link Waypoint#isShown}. */
+    public static boolean hasAnyFocused() {
+        for (Waypoint wp : waypoints) {
+            if (wp != null && wp.isFocused()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** The current dimension id, cached alongside {@link #checkAndLoadWorldWaypoints()}. Callers
      *  that already trigger that check first (the HUD renderer, DeathWaypointManager.tick()) always see a
      *  value fresh for the current frame/tick. */

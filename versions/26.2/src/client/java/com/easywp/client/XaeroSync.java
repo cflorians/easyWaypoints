@@ -59,7 +59,7 @@ import java.util.Set;
  * 1:8 ratio) is exported once per dimension it bridges, at each dimension's own converted position -
  * {@link Waypoint#forEachPosition}, the same single definition of that projection the renderer and
  * the list screen use. Both {@link #identitiesOf} and
- * {@link #alreadyHasSimilar} have to know about the same projection; see their javadoc for what goes
+ * {@link #existingIdentities} have to know about the same projection; see their javadoc for what goes
  * wrong otherwise.
  */
 public final class XaeroSync {
@@ -104,13 +104,16 @@ public final class XaeroSync {
         }
 
         int added = 0;
+        Set<String> existing = existingIdentities();
         for (Map.Entry<String, List<XaeroBridge.RealWaypoint>> entry : readable.entrySet()) {
             String dimension = entry.getKey();
             for (XaeroBridge.RealWaypoint rw : entry.getValue()) {
-                BlockPos pos = new BlockPos(rw.x(), rw.y(), rw.z());
-                if (alreadyHasSimilar(dimension, pos, rw.name())) {
+                // Added as it goes, the way the list itself grows, so a name repeated at the same
+                // spot in Xaero is still imported only once.
+                if (!existing.add(keyOf(dimension, rw))) {
                     continue;
                 }
+                BlockPos pos = new BlockPos(rw.x(), rw.y(), rw.z());
                 WaypointStore.waypoints.add(new Waypoint(rw.name(), pos,
                         XaeroWaypointFormat.rgbForColorOrdinal(rw.colorOrdinal()), dimension, false));
                 added++;
@@ -349,29 +352,30 @@ public final class XaeroSync {
     }
 
     /**
-     * Whether easyWp already shows a waypoint of this name at this position in this dimension.
+     * Every identity easyWp already shows a waypoint under - name, dimension, X and Z - which an
+     * Import checks each Xaero waypoint against before adding it. Built once per Import rather than
+     * rescanning the whole list (and rebuilding each waypoint's identities) for every Xaero
+     * waypoint, which made an Import cost easyWp's count times Xaero's.
      *
-     * <p>Compares against every <em>projected</em> target of every existing waypoint, not just its
-     * native position, and that is load-bearing rather than thorough-for-its-own-sake: exporting a
+     * <p>Holds every <em>projected</em> identity of every existing waypoint, not just its native
+     * one, and that is load-bearing rather than thorough-for-its-own-sake: exporting a
      * {@code shared} Overworld waypoint writes it into the Nether too, at the 1:8 converted position
      * (see {@link Waypoint#forEachPosition}). A later Import reads that Nether copy back, and matching only
      * native positions would not recognise it as the Overworld waypoint it came from - so every
      * export/import round trip would add a spurious Nether duplicate of every shared waypoint.
      *
-     * <p>Y is deliberately not compared: Xaero reports a synthetic {@code y = 64} for a waypoint saved
-     * without one, which would otherwise never match.
+     * <p>Y is deliberately not part of it: Xaero reports a synthetic {@code y = 64} for a waypoint
+     * saved without one, which would otherwise never match. A waypoint with no name is left out, as
+     * it could never equal a Xaero waypoint's name.
      */
-    private static boolean alreadyHasSimilar(String dimension, BlockPos pos, String name) {
-        String wanted = XaeroLinkLedger.keyFor(dimension, pos.getX(), pos.getZ(), name);
+    private static Set<String> existingIdentities() {
+        Set<String> keys = new HashSet<>();
         for (Waypoint wp : WaypointStore.waypoints) {
-            if (wp == null || !name.equals(wp.getName())) {
-                continue;
-            }
-            if (identitiesOf(wp).contains(wanted)) {
-                return true;
+            if (wp != null && wp.getName() != null) {
+                keys.addAll(identitiesOf(wp));
             }
         }
-        return false;
+        return keys;
     }
 
     // ---- shared target projection ------------------------------------------------------------

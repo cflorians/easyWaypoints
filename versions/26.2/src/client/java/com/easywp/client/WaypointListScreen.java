@@ -284,13 +284,10 @@ public class WaypointListScreen extends Screen {
     private void updateWaypointsCache() {
         updateDimensionTabs();
         this.cachedFilteredWaypoints = getFilteredWaypoints();
-        this.cachedHasAnyFocused = false;
-        for (WaypointEntry entry : cachedFilteredWaypoints) {
-            if (entry != null && entry.waypoint != null && entry.waypoint.isFocused()) {
-                this.cachedHasAnyFocused = true;
-                break;
-            }
-        }
+        // Over every waypoint, as the renderer counts it - not just the rows on this tab or matching
+        // the search: a focus in another dimension, or filtered out by the search, still hides
+        // these rows' waypoints in the world, so the rows have to show them hidden too.
+        this.cachedHasAnyFocused = WaypointStore.hasAnyFocused();
         this.cachedShowTP = this.minecraft != null && this.minecraft.player != null &&
                             this.minecraft.player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
     }
@@ -380,6 +377,13 @@ public class WaypointListScreen extends Screen {
 
         List<WaypointEntry> waypoints = this.cachedFilteredWaypoints;
         int totalWaypoints = waypoints.size();
+        // The list can shrink under the current scroll position (a delete on the last page, a Xaero
+        // import removing rows): without this the page would start past the new end, hiding rows
+        // above it that mouseScrolled could no longer reach once the total dropped to one page.
+        scrollIndex = Math.max(0, Math.min(scrollIndex, totalWaypoints - ITEMS_PER_PAGE));
+        // Same reason: a half-finished double-click names its row by index, which may now be a
+        // different waypoint's.
+        lastCoordsClickIndex = -1;
         int startIndex = scrollIndex;
         int endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalWaypoints);
 
@@ -493,7 +497,9 @@ public class WaypointListScreen extends Screen {
                 refreshItemWidgets();
             }).pos(buttonX, itemY).size(18, 18)
                     .icon((g, b, hovered) -> {
-                        boolean shown = this.cachedHasAnyFocused ? (wp.isFocused() || wp.isForceVisible()) : wp.isVisible();
+                        // The renderer's own rule: a hidden focused waypoint used to keep an open
+                        // eye here, since with a focus active only focused/forceVisible was checked.
+                        boolean shown = wp.isShown(this.cachedHasAnyFocused);
                         ClientCompat.blitTinted(g, shown ? Icons.SHOW : Icons.HIDE, b.getX(), b.getY(), 18, 18,
                                 shown ? UiPalette.ICON_IDLE : UiPalette.ICON_DISABLED);
                     })
@@ -644,7 +650,9 @@ public class WaypointListScreen extends Screen {
     /** How long the inline "Copied!" feedback (drawn beside the coordinates, see
      *  {@code extractRenderState}) stays up after a successful copy. */
     private static final long COPIED_FEEDBACK_MS = 1000;
-    private int copiedFeedbackIndex = -1;
+    /** The waypoint whose row shows the feedback - the waypoint, not its row index, which would
+     *  point at another row if the list changed meanwhile (a delete within that second). */
+    private Waypoint copiedFeedbackWaypoint = null;
     private long copiedFeedbackUntilMillis = 0L;
 
     /**
@@ -662,12 +670,13 @@ public class WaypointListScreen extends Screen {
             if (hitIndex >= 0) {
                 long now = System.currentTimeMillis();
                 if (hitIndex == lastCoordsClickIndex && now - lastCoordsClickTime <= COORDS_DOUBLE_CLICK_MS) {
-                    BlockPos displayPos = this.cachedFilteredWaypoints.get(hitIndex).displayPos;
+                    WaypointEntry hit = this.cachedFilteredWaypoints.get(hitIndex);
+                    BlockPos displayPos = hit.displayPos;
                     String coords = String.format("%d, %d, %d", displayPos.getX(), displayPos.getY(), displayPos.getZ());
                     this.minecraft.keyboardHandler.setClipboard(coords);
                     // Inline feedback beside the coordinates themselves, not a HUD overlay message -
                     // see extractRenderState, which draws it for exactly COPIED_FEEDBACK_MS.
-                    copiedFeedbackIndex = hitIndex;
+                    copiedFeedbackWaypoint = hit.waypoint;
                     copiedFeedbackUntilMillis = now + COPIED_FEEDBACK_MS;
                     lastCoordsClickTime = 0L;
                     lastCoordsClickIndex = -1;
@@ -758,7 +767,7 @@ public class WaypointListScreen extends Screen {
 
                 // Inline "Copied!" feedback right after the coordinates text, for exactly
                 // COPIED_FEEDBACK_MS after a double-click copy - see mouseClicked/nameOrCoordsRowAt.
-                if (i == copiedFeedbackIndex && System.currentTimeMillis() < copiedFeedbackUntilMillis) {
+                if (wp == copiedFeedbackWaypoint && System.currentTimeMillis() < copiedFeedbackUntilMillis) {
                     int copiedX = centerX - 117 + this.font.width(coordsComponent) + 4;
                     graphics.text(this.font, I18nHelper.getComponent("list.coords_copied"), copiedX, itemY + 10, UiPalette.TEXT_SUCCESS);
                 }
@@ -782,18 +791,24 @@ public class WaypointListScreen extends Screen {
         }
     }
 
+    /**
+     * The list key closes the list again - except while a text field has the focus, where it is
+     * just a letter being typed. Checking the key first, as this used to, made the search box
+     * unable to take that letter at all: typing "jungle" with the default J closed the screen.
+     */
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (ModKeyBindings.listWaypointsKey.matches(event)) {
+        if (!(this.getFocused() instanceof EditBox) && ModKeyBindings.listWaypointsKey.matches(event)) {
             this.onClose();
             return true;
         }
         return super.keyPressed(event);
     }
 
-    /** Whether a row is shown dimmed: hidden, or filtered out by another waypoint's focus. */
+    /** Whether a row is shown dimmed: its waypoint is not drawn in the world - hidden, or filtered
+     *  out by another waypoint's focus. */
     private boolean isDimmed(Waypoint wp) {
-        return !wp.isVisible() || (this.cachedHasAnyFocused && !wp.isFocused() && !wp.isForceVisible());
+        return !wp.isShown(this.cachedHasAnyFocused);
     }
 
     /** Darkens an ARGB color for rows hidden or filtered out by an active focus. */

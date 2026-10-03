@@ -14,6 +14,8 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
@@ -110,8 +112,10 @@ public class WaypointRenderer {
     private static final Vector4f clipPos = new Vector4f();
     private static final PoseStack bobStack = new PoseStack();
 
-    private static Method bobHurt;
-    private static Method bobView;
+    // Method handles rather than Method.invoke: called every frame, and invoke boxed its arguments
+    // into a fresh array and went through the reflective access check on each call.
+    private static MethodHandle bobHurt;
+    private static MethodHandle bobView;
     private static boolean bobLookupDone;
 
     private static class WaypointHolder {
@@ -177,13 +181,7 @@ public class WaypointRenderer {
         // by a point's depth (clip w) this is the perspective scale at that point.
         float unitHeight = cameraState.projectionMatrix.m11() * guiHeight * 0.5f;
 
-        boolean hasAnyFocused = false;
-        for (Waypoint wp : WaypointStore.waypoints) {
-            if (wp != null && wp.isFocused()) {
-                hasAnyFocused = true;
-                break;
-            }
-        }
+        boolean hasAnyFocused = WaypointStore.hasAnyFocused();
 
         float sizeScale = (float) (ModConfig.get().waypointSize.sizePercent / 100.0);
         double maxRenderDist = Math.max(32.0, client.options.getEffectiveRenderDistance() * 16.0 - 16.0);
@@ -192,8 +190,7 @@ public class WaypointRenderer {
         int poolIndex = 0;
 
         for (Waypoint wp : WaypointStore.waypoints) {
-            if (wp == null || !wp.isVisible()) continue;
-            if (hasAnyFocused && !wp.isFocused() && !wp.isForceVisible()) continue;
+            if (wp == null || !wp.isShown(hasAnyFocused)) continue;
 
             BlockPos wpPos = wp.positionIn(currentDimension);
             if (wpPos == null) continue;
@@ -398,10 +395,8 @@ public class WaypointRenderer {
         if (!bobLookupDone) {
             bobLookupDone = true;
             try {
-                bobHurt = GameRenderer.class.getDeclaredMethod("bobHurt", CameraRenderState.class, PoseStack.class);
-                bobView = GameRenderer.class.getDeclaredMethod("bobView", CameraRenderState.class, PoseStack.class);
-                bobHurt.setAccessible(true);
-                bobView.setAccessible(true);
+                bobHurt = privateHandle("bobHurt");
+                bobView = privateHandle("bobView");
             } catch (ReflectiveOperationException | RuntimeException e) {
                 bobHurt = null;
                 bobView = null;
@@ -411,15 +406,29 @@ public class WaypointRenderer {
         if (bobHurt == null || cameraState.entityRenderState == null) return;
 
         try {
-            bobHurt.invoke(gameRenderer, cameraState, bobStack);
+            // invokeExact: the static argument types here are exactly the handles' own
+            // (GameRenderer, CameraRenderState, PoseStack)void, so nothing is boxed or adapted.
+            bobHurt.invokeExact(gameRenderer, cameraState, bobStack);
             if (bobViewEnabled) {
-                bobView.invoke(gameRenderer, cameraState, bobStack);
+                bobView.invokeExact(gameRenderer, cameraState, bobStack);
             }
-        } catch (ReflectiveOperationException | RuntimeException e) {
+        } catch (Throwable e) {
+            // Throwable, as Method.invoke effectively caught before: it wrapped anything the target
+            // threw, Errors included, in an InvocationTargetException.
             bobHurt = null;
             bobView = null;
             bobStack.setIdentity();
             EasyWp.LOGGER.warn("GameRenderer's view bob failed; waypoints are projected without it from now on", e);
         }
+    }
+
+    /** A handle on one of GameRenderer's private {@code (CameraRenderState, PoseStack)} bob
+     *  methods. Looked up through reflection and {@code setAccessible}, exactly as before, and only
+     *  then turned into a handle - {@code unreflect} honours the accessibility override, so this
+     *  works wherever the reflective lookup did. */
+    private static MethodHandle privateHandle(String name) throws ReflectiveOperationException {
+        Method method = GameRenderer.class.getDeclaredMethod(name, CameraRenderState.class, PoseStack.class);
+        method.setAccessible(true);
+        return MethodHandles.lookup().unreflect(method);
     }
 }

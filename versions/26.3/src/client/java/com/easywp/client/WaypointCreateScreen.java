@@ -57,6 +57,13 @@ public class WaypointCreateScreen extends Screen {
     private final BlockPos originalPos;
     private final Waypoint editingWaypoint;
     private boolean dimShared = false;
+    /**
+     * The name a new waypoint saves under if the field is left empty - the grey suggestion in the
+     * name field. Resolved once per {@link #init()} rather than on every frame, which translated it
+     * again each time only for the live preview; and it is now the very string the suggestion
+     * shows, so preview, suggestion and saved name cannot disagree. Unused when editing.
+     */
+    private String defaultName = "";
 
     private static class ColorSampleButton extends Button {
         public ColorSampleButton(int x, int y, int width, int height, OnPress onPress) {
@@ -105,9 +112,9 @@ public class WaypointCreateScreen extends Screen {
             // be the obvious widget for this, but vanilla hides it while the box is focused - and
             // this one always is - whereas the suggestion is drawn regardless, and only while the
             // value is empty since the responder clears it the moment anything is typed.
-            String defaultName = I18nHelper.getComponent("create.default_name", String.valueOf(WaypointStore.waypoints.size() + 1)).getString();
-            this.nameField.setSuggestion(defaultName);
-            this.nameField.setResponder(value -> this.nameField.setSuggestion(value.isEmpty() ? defaultName : null));
+            this.defaultName = I18nHelper.getComponent("create.default_name", String.valueOf(WaypointStore.waypoints.size() + 1)).getString();
+            this.nameField.setSuggestion(this.defaultName);
+            this.nameField.setResponder(value -> this.nameField.setSuggestion(value.isEmpty() ? this.defaultName : null));
         }
         this.addRenderableWidget(this.nameField);
 
@@ -367,7 +374,7 @@ public class WaypointCreateScreen extends Screen {
     private String resolveWaypointName() {
         String name = this.nameField.getValue();
         if (name.isEmpty()) {
-            name = this.editingWaypoint != null ? this.editingWaypoint.getName() : I18nHelper.getComponent("create.default_name", String.valueOf(WaypointStore.waypoints.size() + 1)).getString();
+            name = this.editingWaypoint != null ? this.editingWaypoint.getName() : this.defaultName;
         }
         return name;
     }

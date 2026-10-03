@@ -31,7 +31,9 @@ import java.util.concurrent.Executors;
  * the writer thread is a daemon and would otherwise be cut off mid-queue.
  *
  * <p>Write failures are reported to the error handler and do not stop the queue; the next save of
- * the same file simply tries again with its newer document.
+ * the same file simply tries again with its newer document. Nothing - not an {@link Error} from
+ * the disk code, not a drain that could not be scheduled - can leave {@link #flush()} waiting
+ * forever: that used to be possible, and it froze the game on joining a world or on exit.
  */
 public final class AsyncJsonWriter {
     /** The disk operation, injectable so tests can observe and stall it. */
@@ -83,7 +85,15 @@ public final class AsyncJsonWriter {
             pending.put(target, document);
             if (!draining) {
                 draining = true;
-                executor.execute(this::drain);
+                try {
+                    executor.execute(this::drain);
+                } catch (RuntimeException | Error e) {
+                    // No drain was scheduled (a rejected task, or no thread to run it on), so
+                    // nothing will ever clear the flag: left set, every later flush() would wait
+                    // for it forever. The document stays queued for the next save to schedule.
+                    draining = false;
+                    throw e;
+                }
             }
         }
     }
@@ -108,28 +118,51 @@ public final class AsyncJsonWriter {
         }
     }
 
+    /**
+     * Writes until the queue is empty. The flag is cleared in a {@code finally}, not only on the
+     * empty-queue path: an {@link Error} thrown by the sink (not caught below, on purpose - it is
+     * not a write failure the queue can carry on from) would otherwise leave {@code draining} set
+     * with no thread left to clear it, and every later {@link #flush()} - joining a world, closing
+     * the game - would wait for it forever. Anything still queued at that point is scheduled again
+     * by the next {@link #write}, the same way a failed write is retried by the next save.
+     *
+     * <p>The normal exit still clears the flag inside the same lock hold that found the queue
+     * empty, not in the {@code finally}: releasing the lock in between would let a {@link #write}
+     * see {@code draining} still set, skip scheduling, and leave its document stranded.
+     */
     private void drain() {
-        while (true) {
-            Path target;
-            String document;
-            synchronized (lock) {
-                Iterator<Map.Entry<Path, String>> next = pending.entrySet().iterator();
-                if (!next.hasNext()) {
+        boolean emptied = false;
+        try {
+            while (true) {
+                Path target;
+                String document;
+                synchronized (lock) {
+                    Iterator<Map.Entry<Path, String>> next = pending.entrySet().iterator();
+                    if (!next.hasNext()) {
+                        draining = false;
+                        lock.notifyAll();
+                        emptied = true;
+                        return;
+                    }
+                    Map.Entry<Path, String> entry = next.next();
+                    target = entry.getKey();
+                    document = entry.getValue();
+                    next.remove();
+                }
+                try {
+                    sink.write(target, document);
+                } catch (IOException e) {
+                    errorHandler.onError(target, e);
+                } catch (RuntimeException e) {
+                    errorHandler.onError(target, new IOException(e));
+                }
+            }
+        } finally {
+            if (!emptied) {
+                synchronized (lock) {
                     draining = false;
                     lock.notifyAll();
-                    return;
                 }
-                Map.Entry<Path, String> entry = next.next();
-                target = entry.getKey();
-                document = entry.getValue();
-                next.remove();
-            }
-            try {
-                sink.write(target, document);
-            } catch (IOException e) {
-                errorHandler.onError(target, e);
-            } catch (RuntimeException e) {
-                errorHandler.onError(target, new IOException(e));
             }
         }
     }

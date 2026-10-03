@@ -80,5 +80,6 @@
   "easywp.config.xaero_enabled_toggle": "Activar",
   "easywp.config.xaero_chat_format": "Formato de chat de Xaero",
   "easywp.config.xaero_missing": "Requiere Xaero's Minimap",
-  "easywp.config.import_button": "Importar waypoints..."
+  "easywp.config.import_button": "Importar waypoints...",
+  "easywp.config.import_needs_world": "Entra primero a un mundo: los waypoints se importan al mundo en el que estás"
 }

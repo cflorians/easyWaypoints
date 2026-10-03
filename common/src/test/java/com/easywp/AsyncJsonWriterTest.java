@@ -8,15 +8,21 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(10)
@@ -150,6 +156,54 @@ class AsyncJsonWriterTest {
         writer.write(dir.resolve("a.json"), "good");
         scheduled.forEach(Runnable::run);
         assertEquals(List.of("b1", "good"), written);
+    }
+
+    @Test
+    void anErrorFromTheSinkDoesNotLeaveFlushWaitingForever() {
+        List<String> written = Collections.synchronizedList(new ArrayList<>());
+        AsyncJsonWriter.Sink sink = (target, document) -> {
+            if (document.equals("boom")) {
+                // An Error, not an exception: the queue does not catch it, so only the drain's own
+                // finally stands between it and a draining flag that never clears.
+                throw new StackOverflowError("simulated");
+            }
+            written.add(document);
+        };
+        List<Runnable> scheduled = new ArrayList<>();
+        AsyncJsonWriter writer = new AsyncJsonWriter(sink, (t, e) -> { }, scheduled::add);
+
+        writer.write(dir.resolve("a.json"), "boom");
+        assertThrows(StackOverflowError.class, () -> scheduled.forEach(Runnable::run));
+
+        // flush() runs on this very thread; if it waits for the dead drain it never returns.
+        assertTimeoutPreemptively(Duration.ofSeconds(2), writer::flush);
+
+        // And the queue is still alive: the next save is scheduled and written.
+        scheduled.clear();
+        writer.write(dir.resolve("b.json"), "b1");
+        scheduled.forEach(Runnable::run);
+        assertEquals(List.of("b1"), written);
+    }
+
+    @Test
+    void aDrainThatCannotBeScheduledDoesNotLeaveFlushWaitingForever() {
+        List<String> written = Collections.synchronizedList(new ArrayList<>());
+        // Rejects the first task (a pool that is shut down, or no thread to start), runs the rest.
+        AtomicInteger calls = new AtomicInteger();
+        Executor rejectingOnce = task -> {
+            if (calls.getAndIncrement() == 0) {
+                throw new RejectedExecutionException("simulated");
+            }
+            task.run();
+        };
+        AsyncJsonWriter writer = new AsyncJsonWriter((t, d) -> written.add(d), (t, e) -> { }, rejectingOnce);
+
+        assertThrows(RejectedExecutionException.class, () -> writer.write(dir.resolve("a.json"), "a1"));
+        assertTimeoutPreemptively(Duration.ofSeconds(2), writer::flush);
+
+        // The rejected document stayed queued, so the next save writes both.
+        writer.write(dir.resolve("b.json"), "b1");
+        assertEquals(List.of("a1", "b1"), written);
     }
 
     @Test

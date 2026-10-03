@@ -3,6 +3,7 @@ package com.easywp.client;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
@@ -60,12 +61,21 @@ public class ImportConfirmScreen extends Screen {
 
         int buttonY = contentTop() + contentHeight() + 12;
         int centerX = this.width / 2;
-        this.addRenderableWidget(Button.builder(I18nHelper.getComponent("import.confirm_button"), btn -> {
-            WaypointStore.MergeResult result = WaypointStore.mergeFrom(incoming);
-            ClientCompat.setOverlayMessage(this.minecraft,
-                    I18nHelper.getComponent("import.result", result.added(), result.skipped()), false);
+        Button importButton = Button.builder(I18nHelper.getComponent("import.confirm_button"), btn -> {
+            // Second barrier behind ModConfigScreen's greyed-out button: with no world open there is
+            // no list to merge into and nowhere to save it, so nothing is imported or reported.
+            if (WaypointStore.isInWorld()) {
+                WaypointStore.MergeResult result = WaypointStore.mergeFrom(incoming);
+                ClientCompat.setOverlayMessage(this.minecraft,
+                        I18nHelper.getComponent("import.result", result.added(), result.skipped()), false);
+            }
             this.onClose();
-        }).bounds(centerX - BUTTON_WIDTH - 4, buttonY, BUTTON_WIDTH, 20).build());
+        }).bounds(centerX - BUTTON_WIDTH - 4, buttonY, BUTTON_WIDTH, 20).build();
+        if (!WaypointStore.isInWorld()) {
+            importButton.active = false;
+            importButton.setTooltip(Tooltip.create(I18nHelper.getComponent("config.import_needs_world")));
+        }
+        this.addRenderableWidget(importButton);
         this.addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, btn -> this.onClose())
                 .bounds(centerX + 4, buttonY, BUTTON_WIDTH, 20).build());
     }

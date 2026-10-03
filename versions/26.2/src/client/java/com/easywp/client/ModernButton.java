@@ -22,8 +22,28 @@ public class ModernButton extends Button {
 
     private IconPainter icon;
 
+    /**
+     * Whether the message has any text to draw. Kept rather than asked of the message every frame:
+     * most of these buttons are icon-only with an empty literal, and resolving the message to a
+     * string just to find that out cost a string build per button per frame. Emptiness cannot
+     * change without {@link #setMessage} - a translated message with a missing key falls back to
+     * the key itself, never to nothing.
+     */
+    private boolean hasLabel;
+
     public ModernButton(int x, int y, int width, int height, Component message, OnPress onPress) {
         super(x, y, width, height, message, onPress, DEFAULT_NARRATION);
+        this.hasLabel = hasText(message);
+    }
+
+    @Override
+    public void setMessage(Component message) {
+        super.setMessage(message);
+        this.hasLabel = hasText(message);
+    }
+
+    private static boolean hasText(Component message) {
+        return message != null && !message.getString().isEmpty();
     }
 
     public static ModernBuilder modernBuilder(Component message, OnPress onPress) {
@@ -96,7 +116,7 @@ public class ModernButton extends Button {
         graphics.fill(this.getX(), this.getY(), this.getX() + this.width, this.getY() + this.height, borderColor);
         graphics.fill(this.getX() + 1, this.getY() + 1, this.getX() + this.width - 1, this.getY() + this.height - 1, bgColor);
 
-        if (this.getMessage() != null && !this.getMessage().getString().isEmpty()) {
+        if (this.hasLabel) {
             Minecraft mc = Minecraft.getInstance();
             int textX = this.getX() + this.width / 2;
             int textY = this.getY() + (this.height - 8) / 2;

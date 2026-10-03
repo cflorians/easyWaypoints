@@ -9,7 +9,9 @@ import net.minecraft.network.chat.Component;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Cross-world waypoint import picker, reached from {@code ModConfigScreen}'s own "Import" section -
@@ -41,6 +43,15 @@ public class ImportWorldScreen extends Screen {
     private int scrollIndex = 0;
     private int itemsPerPage = 1;
     private final List<GuiEventListener> dynamicWidgets = new ArrayList<>();
+
+    /**
+     * Each file's waypoint count, read the first time its row is shown and kept for as long as this
+     * screen is. Counting means flushing pending saves and parsing the whole file, and the rows are
+     * rebuilt on every scroll step and every return from {@link ImportConfirmScreen}. Nothing can
+     * change these files meanwhile: the one file an import writes to is the current world's own,
+     * which is never listed here.
+     */
+    private final Map<Path, Integer> waypointCounts = new HashMap<>();
 
     public ImportWorldScreen(Screen parentScreen) {
         super(I18nHelper.getComponent("import.title"));
@@ -79,7 +90,8 @@ public class ImportWorldScreen extends Screen {
             Path file = files.get(i);
             int itemY = LIST_TOP + (i - scrollIndex) * ROW_STEP;
             Component label = I18nHelper.getComponent("import.row",
-                    WaypointStore.prettyWorldName(file), WaypointStore.countWaypointsIn(file));
+                    WaypointStore.prettyWorldName(file),
+                    waypointCounts.computeIfAbsent(file, WaypointStore::countWaypointsIn));
 
             Button row = Button.builder(label, btn ->
                     ClientCompat.setScreen(this.minecraft, new ImportConfirmScreen(this, file)))

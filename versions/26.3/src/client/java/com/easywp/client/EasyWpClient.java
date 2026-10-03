@@ -23,6 +23,14 @@ public class EasyWpClient implements ClientModInitializer {
 
 		ClientTickEvents.END_CLIENT_TICK.register(DeathWaypointManager::tick);
 
+		// Out of a world, drop it: see WaypointStore.forgetWorld. A tick rather than a disconnect
+		// event because it runs on the client thread, the only one that touches the waypoint list.
+		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			if (client.level == null) {
+				WaypointStore.forgetWorld();
+			}
+		});
+
 		// Saves are written on a daemon thread (AsyncJsonWriter); let the queue finish before the
 		// game exits so the last change is never cut off.
 		ClientLifecycleEvents.CLIENT_STOPPING.register(client -> AsyncJsonWriter.SHARED.flush());

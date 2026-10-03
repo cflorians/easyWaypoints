@@ -84,11 +84,18 @@ public class ModConfigScreen extends OptionsSubScreen {
         // screens lead with their sub-screen buttons. addSmall(List) rather than addBig: 26.1's
         // OptionsList has no single-widget addBig overload, but on every version addSmall lays its
         // widgets out from the row's left edge, so one widget BIG_BUTTON_WIDTH wide spans the row.
-        this.list.addSmall(List.of(
-                Button.builder(I18nHelper.getComponent("config.import_button"), btn ->
-                        ClientCompat.setScreen(this.minecraft, new ImportWorldScreen(this))
-                ).width(BIG_BUTTON_WIDTH).build()
-        ));
+        // Greyed out from the title screen (Mod Menu reaches this screen there too): an import
+        // merges into the open world's list, and with no world open there is none to merge into -
+        // it used to land in whatever list the last world left in memory, unsaved, while still
+        // reporting the waypoints as imported.
+        Button importButton = Button.builder(I18nHelper.getComponent("config.import_button"), btn ->
+                ClientCompat.setScreen(this.minecraft, new ImportWorldScreen(this))
+        ).width(BIG_BUTTON_WIDTH).build();
+        if (!WaypointStore.isInWorld()) {
+            importButton.active = false;
+            importButton.setTooltip(Tooltip.create(I18nHelper.getComponent("config.import_needs_world")));
+        }
+        this.list.addSmall(List.of(importButton));
 
         this.list.addHeader(I18nHelper.getComponent("config.section.appearance"));
         this.list.addSmall(

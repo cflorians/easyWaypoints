@@ -47,8 +47,15 @@ public class Waypoint {
         this(name, pos, color, dimension, shared, true, false);
     }
 
+    /**
+     * Every shorter constructor ends here, and each one is used only to create a waypoint that did
+     * not exist before - the create screen, Fast Ping, a Xaero import - so it is stamped with the
+     * current time. They used to leave it at 0, which made every waypoint but a death one look
+     * created at the epoch. A waypoint rebuilt from a save file or copied from another world keeps
+     * its original time through the full constructor below.
+     */
     public Waypoint(String name, BlockPos pos, int color, String dimension, boolean shared, boolean visible, boolean focused) {
-        this(name, pos, color, dimension, shared, visible, focused, false, 0L);
+        this(name, pos, color, dimension, shared, visible, focused, false, System.currentTimeMillis());
     }
 
     public Waypoint(String name, BlockPos pos, int color, String dimension, boolean shared, boolean visible, boolean focused, boolean death, long createdAtMillis) {
@@ -177,6 +184,19 @@ public class Waypoint {
         return forceVisible;
     }
 
+    /**
+     * Whether this waypoint is drawn in the world: it is visible, and either nothing is focused or
+     * it is the focused one or one kept visible beside it. The single definition of that rule -
+     * the renderer draws by it and the list's eye icon and dimmed rows show it, which used to be
+     * two copies that disagreed (a hidden focused waypoint still showed an open eye).
+     *
+     * @param anyFocused whether any waypoint of the world is focused, wherever it is - see
+     *                   {@link WaypointStore#hasAnyFocused()}.
+     */
+    public boolean isShown(boolean anyFocused) {
+        return visible && (!anyFocused || focused || forceVisible);
+    }
+
     public void setForceVisible(boolean forceVisible) {
         this.forceVisible = forceVisible;
     }
@@ -197,7 +217,8 @@ public class Waypoint {
         this.fastPing = fastPing;
     }
 
-    /** Set once at construction; nothing reassigns it, so there is deliberately no setter. */
+    /** Set once at construction; nothing reassigns it, so there is deliberately no setter. 0 for a
+     *  waypoint created before 1.4.0, whose real creation time was never recorded. */
     public long getCreatedAtMillis() {
         return createdAtMillis;
     }
