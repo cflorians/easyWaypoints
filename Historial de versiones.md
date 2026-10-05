@@ -37,7 +37,8 @@ confirmarla, commit `v1.4.0-alpha.5` y publicación (la hace el usuario). Despu�
 
 **Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.5` (la 1.3.5 nunca se publicará). Se
 cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los jars salen como
-`easywp-1.4.0-alpha.1+26.1.x.jar`.
+`easywp-1.4.0-alpha.1+26.1.x.jar`. **En la rama del experimento** (ver más abajo) son dos:
+`easywp-<versión>+26.1-26.2.jar` y `easywp-<versión>+26.3.jar`.
 
 **Git:** todo el trabajo va en la rama `release/1.4.0`, con un commit por cada alpha/beta. Se
 fusiona a `main` con la versión final.
@@ -67,6 +68,16 @@ Pedido por el usuario: probarlo aparte y, si funciona perfectamente, unirlo a la
 - **Para unirlo:** cuando la alpha.5 tenga su commit en `release/1.4.0`, traer solo el commit del
   experimento (cherry-pick); el primero de la rama es una base temporal con la alpha.5 sin
   confirmar.
+- **Qué cambia al publicar:** dos archivos por entrega en vez de tres. En Modrinth y CurseForge,
+  el `+26.1-26.2` se sube **una vez** marcado con 26.1, 26.1.1, 26.1.2 y 26.2, y el `+26.3` con
+  26.3. El changelog no cambia.
+- **Qué cambia al trabajar:** el código de cliente se sigue editando en 26.1 y copiando a 26.2 y
+  26.3; `ClientCompat` se copia de 26.1 a 26.2 (ya no difieren) y solo el de 26.3 es propio. Un
+  renombre nuevo entre 26.1 y 26.2 va a `ClientCompat` como búsqueda por nombre al arrancar, nunca
+  en una copia distinta (si no, `checkMergedSources` falla).
+- **Pruebas en el juego (pendientes):** con el jar publicado en instancias reales de 26.1 y 26.2,
+  más comprobar que Fabric rechaza cada jar en la versión que no le toca. La lista exacta está en
+  la guía entregada al usuario el 2026-10-05 y en "Pruebas de regresión 1.4.0" (experimento).
 
 ### Forma de trabajo por alpha
 
@@ -99,7 +110,9 @@ nombres con espacios/acentos/símbolos, teclas reasignadas, Overworld/Nether/End
 servidor, con y sin Xaero, config de 1.3.x) y qué podría haberse roto. **Organizada por versión**:
 26.1 completa; para 26.2 y 26.3 poner "(igual que 26.1)" y avisar solo de lo que varía (26.2 tiene
 Xaero en `run/mods` y renombra cambio de pantalla y HUD; 26.3 usa SDL para el teclado). Al final,
-la prueba de compatibilidad con 1.3.4 y la regresión acumulada.
+la prueba de compatibilidad con 1.3.4 y la regresión acumulada. **Si se une el experimento del jar
+único:** 26.2 se prueba con el mismo jar que 26.1 (`+26.1-26.2`), y la guía añade comprobar que
+cada jar se niega a cargar en una versión que no le toca.
 
 ### Reglas que aplican a toda la versión
 
@@ -928,3 +941,11 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
 - F11 — Al recibir una línea compartida (chat o `/msg`), aparece debajo "[+] Guardar waypoint «X»";
   clic abre el formulario relleno. Los mensajes propios no lo reciben.
 - F11 (Xaero) — Sin Xaero instalado, una línea `xaero-waypoint:` recibe `[+]`; con Xaero, no.
+
+**Experimento jar único 26.1+26.2** (rama `experimento/jar-26.1-26.2`, se repasa en cada entrega si
+se une)
+- Jar `+26.1-26.2` en 26.1 y en 26.2: abrir y cerrar lista, formulario y configuración; mensaje
+  del HUD al crear un waypoint; `[+]` en el chat; F1 oculta el HUD y los waypoints siguen; los
+  waypoints siguen la cámara al caminar.
+- Jar `+26.1-26.2` en 26.3 y jar `+26.3` en 26.2: Fabric se niega a cargarlos con un mensaje, sin
+  crash.
