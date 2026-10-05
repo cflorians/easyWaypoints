@@ -5,6 +5,7 @@ import com.easywp.EasyWp;
 import com.easywp.JsonStore;
 import com.easywp.PairedCoordinates;
 import com.easywp.PendingRemovals;
+import com.easywp.WaypointGroups;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -19,6 +20,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -57,6 +59,13 @@ public final class WaypointStore {
      */
     private static final PendingRemovals<Waypoint> pendingRemovals =
             new PendingRemovals<>(UNDO_LIFETIME_MS, System::currentTimeMillis);
+
+    /**
+     * The groups of the current world hidden from the list's eye, by exact name: hidden in the world
+     * too ({@link Waypoint#isShown}). Saved apart from the waypoints, in
+     * {@code groups_<worldId>.json}, so the waypoints file keeps the shape older versions read.
+     */
+    private static Set<String> hiddenGroups = new LinkedHashSet<>();
 
     /** Bumped whenever waypoints leave the list without the list having asked - a pending deletion
      *  running out, or all of them being made final - so an open list knows to rebuild its rows. */
@@ -192,6 +201,7 @@ public final class WaypointStore {
         cachedDimension = DimensionNames.OVERWORLD;
         waypoints.clear();
         pendingRemovals.takeAll();
+        hiddenGroups = new LinkedHashSet<>();
     }
 
     /**
@@ -341,6 +351,39 @@ public final class WaypointStore {
         saveToFile();
     }
 
+    /**
+     * Every group the current world has: the union of its waypoints' groups, sorted. A group lives
+     * only as long as some waypoint carries it. Waypoints pending deletion still count, so undoing
+     * the deletion of a group's last waypoint brings the group back as it was.
+     */
+    public static List<String> allGroups() {
+        List<List<String>> each = new ArrayList<>(waypoints.size());
+        for (Waypoint wp : waypoints) {
+            if (wp != null) {
+                each.add(wp.getGroups());
+            }
+        }
+        return WaypointGroups.union(each);
+    }
+
+    public static boolean isGroupHidden(String group) {
+        return hiddenGroups.contains(group);
+    }
+
+    /** Hides or shows a whole group, in the list and in the world, and saves that. */
+    public static void setGroupHidden(String group, boolean hidden) {
+        boolean changed = hidden ? hiddenGroups.add(group) : hiddenGroups.remove(group);
+        if (changed) {
+            saveGroups();
+        }
+    }
+
+    /** Whether one of {@code wp}'s groups is hidden. Called for every waypoint every frame, so the
+     *  usual case - nothing hidden - returns at once. */
+    static boolean isInHiddenGroup(Waypoint wp) {
+        return !hiddenGroups.isEmpty() && WaypointGroups.anyHidden(wp.getGroups(), hiddenGroups);
+    }
+
     /** Whether any waypoint of the current world is focused, in any dimension. A focus anywhere
      *  hides every waypoint that is neither focused nor kept visible beside it, in every dimension -
      *  see {@link Waypoint#isShown}. */
@@ -394,6 +437,56 @@ public final class WaypointStore {
         } catch (Exception e) {
             EasyWp.LOGGER.error("Failed to save waypoints", e);
         }
+
+        // A hidden group whose last waypoint just went (deleted, regrouped) is forgotten with it.
+        if (!hiddenGroups.isEmpty()) {
+            Set<String> kept = WaypointGroups.prune(hiddenGroups, allGroups());
+            if (kept.size() != hiddenGroups.size()) {
+                hiddenGroups = kept;
+                saveGroups();
+            }
+        }
+    }
+
+    /** Writes the hidden groups to {@code groups_<worldId>.json}, the same durable way as the
+     *  waypoints. A world with none hidden writes an empty list rather than deleting the file. */
+    private static void saveGroups() {
+        String worldId = getWorldId();
+        if (worldId.equals("unknown")) return;
+        GroupsData data = new GroupsData();
+        data.hidden = new ArrayList<>(WaypointGroups.prune(hiddenGroups, allGroups()));
+        AsyncJsonWriter.SHARED.write(groupsFile(worldId), GSON.toJson(data));
+    }
+
+    /** The hidden groups of {@code worldId}, or none if the file is missing or unreadable - which
+     *  only shows a group, never hides one. Reads after a flush, like the waypoints. */
+    private static Set<String> loadHiddenGroups(String worldId) {
+        AsyncJsonWriter.SHARED.flush();
+        Path file = groupsFile(worldId);
+        GroupsData data = parseGroups(JsonStore.read(file));
+        if (data == null) {
+            data = parseGroups(JsonStore.read(JsonStore.backupOf(file)));
+        }
+        Set<String> hidden = new LinkedHashSet<>();
+        if (data != null && data.hidden != null) {
+            for (String group : data.hidden) {
+                if (group != null) hidden.add(group);
+            }
+        }
+        return hidden;
+    }
+
+    private static GroupsData parseGroups(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            return GSON.fromJson(json, GroupsData.class);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static Path groupsFile(String worldId) {
+        return new File(Minecraft.getInstance().gameDirectory, "config/easywp/groups_" + worldId + ".json").toPath();
     }
 
     public static void loadFromFile() {
@@ -403,6 +496,7 @@ public final class WaypointStore {
         Path configFile = waypointsFile(worldId);
         waypoints.clear();
         pendingRemovals.takeAll();
+        hiddenGroups = loadHiddenGroups(worldId);
 
         List<WaypointData> dataList = readWaypointData(configFile, worldId);
         if (dataList != null) {
@@ -463,6 +557,7 @@ public final class WaypointStore {
                     wp.isVisible(), false, false, wp.getCreatedAtMillis());
             copy.setForceVisible(wp.isFocused() || wp.isForceVisible());
             copy.setFavorite(wp.isFavorite());
+            copy.setGroups(wp.getGroups());
             if (identities.add(identityOf(copy))) {
                 result.add(copy);
                 split++;
@@ -605,6 +700,9 @@ public final class WaypointStore {
             // Unlike focus, a favorite is the player's own mark on the waypoint itself, not state
             // tied to the world it came from.
             copy.setFavorite(candidate.isFavorite());
+            // Groups are the player's own labels too, and come along; whether one is hidden is
+            // this world's choice, kept in this world's own groups file.
+            copy.setGroups(candidate.getGroups());
             waypoints.add(copy);
             added++;
         }
@@ -703,6 +801,12 @@ public final class WaypointStore {
         }
     }
 
+    /** {@code groups_<worldId>.json}: the hidden groups of a world. An object, not a bare array,
+     *  so anything else about groups can be added later without changing its shape. */
+    private static class GroupsData {
+        List<String> hidden;
+    }
+
     private static class WaypointData {
         String name;
         int x;
@@ -725,6 +829,9 @@ public final class WaypointStore {
         Boolean forceVisible;
         /** Since 1.4.0. Optional, like the rest: absent reads as not a favorite. */
         Boolean favorite;
+        /** Since 1.4.0: the waypoint's groups. Written only when it has any (null otherwise,
+         *  which Gson skips), so a waypoint in no group saves exactly as before. */
+        List<String> groups;
 
         public WaypointData(Waypoint wp, boolean anyFocused) {
             this.name = wp.getName();
@@ -740,6 +847,7 @@ public final class WaypointStore {
             this.fastPing = wp.isFastPing();
             this.forceVisible = anyFocused && wp.isForceVisible();
             this.favorite = wp.isFavorite();
+            this.groups = wp.getGroups().isEmpty() ? null : new ArrayList<>(wp.getGroups());
         }
 
         public Waypoint toWaypoint() {
@@ -756,6 +864,18 @@ public final class WaypointStore {
             wp.setFastPing(fastPing != null && fastPing);
             wp.setForceVisible(forceVisible != null && forceVisible);
             wp.setFavorite(favorite != null && favorite);
+            if (groups != null) {
+                // Cleaned as the form would have, so a hand-edited file cannot put a blank or
+                // duplicate group on a waypoint.
+                List<String> clean = new ArrayList<>();
+                for (String group : groups) {
+                    String name = WaypointGroups.normalize(group);
+                    if (name != null && WaypointGroups.canAdd(clean, name)) {
+                        clean.add(name);
+                    }
+                }
+                wp.setGroups(clean);
+            }
             return wp;
         }
     }

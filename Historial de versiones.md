@@ -33,10 +33,12 @@ confirmada el 2026-10-05 (commit `v1.4.0-alpha.4`), junto con el ajuste de F6 de
 la hace el usuario. El mismo día se unió a `release/1.4.0` el **jar único para 26.1 y 26.2** (ver la
 sección siguiente), probado en el juego y confirmado: desde aquí cada entrega son **dos jars**.
 
-**Siguiente paso:** `alpha.6` — grupos (F12). Al empezar, subir `mod_version` a `1.4.0-alpha.6` y
-seguir la "Forma de trabajo por alpha" de abajo.
+`alpha.6` (F12, grupos) implementada, probada y confirmada el 2026-10-05 (commit
+`v1.4.0-alpha.6`), con el arreglo del clic izquierdo en 26.3.
 
-**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.5` (la 1.3.5 nunca se publicará). Se
+**Siguiente paso:** `alpha.7` — mensaje de bienvenida (F13), la última alpha antes de la `beta.1`.
+
+**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.6` (la 1.3.5 nunca se publicará). Se
 cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los jars salen como
 `easywp-1.4.0-alpha.1+26.1.x.jar` hasta la alpha.4; desde la alpha.5 son dos:
 `easywp-<versión>+26.1-26.2.jar` (Minecraft 26.1.x y 26.2) y `easywp-<versión>+26.3.jar`.
@@ -802,7 +804,7 @@ Todas sin cambio visible para el jugador (regla 1).
   - La dimensión se resuelve al recibir el mensaje; una línea de Xaero sin Y abre el formulario con
     la Y del jugador (`~`).
 
-**F12 — Grupos** · PENDIENTE · alpha.6
+**F12 — Grupos** · HECHO en alpha.6
 - **Un waypoint puede estar en varios grupos** (son etiquetas). Por defecto, en ninguno.
 - **Asignar:** en la página "Más opciones" (U5), un desplegable que deja elegir un grupo que ya
   existe en este mundo o crear uno nuevo escribiendo su nombre (texto libre). Los grupos asignados
@@ -824,6 +826,52 @@ Todas sin cambio visible para el jugador (regla 1).
   copiar), no se exportan a los sets de Xaero, y `/easywp add` no los recibe.
 - Archivos: `Waypoint`, `WaypointStore`, `WaypointCreateScreen`, `WaypointListScreen`,
   `WaypointRenderer.render`, idiomas.
+- Hecho: `WaypointGroups` en `common/` (nombres, grupos del mundo, filtro, ocultos, límites,
+  sugerencias), con `WaypointGroupsTest` (comprobado contra siete roturas deliberadas). Campo
+  `groups` en `Waypoint` y en `waypoints_*.json`; `groups_<worldId>.json` con `{"hidden": [...]}`.
+  `PopupMenu`, clase compartida nueva: el menú dibujado a mano que ya usaba "Más opciones" de la
+  lista, sacado de ella para usarlo también en el filtro de grupos y en las sugerencias del
+  formulario. `Waypoint.isShown` tiene en cuenta los grupos ocultos, así que el mundo y la lista lo
+  aplican sin más cambios.
+- **Decisiones nuevas:**
+  - **Nombres:** se recortan los espacios de los extremos y se juntan los repetidos; **máximo 16
+    caracteres** y **máximo 4 grupos por waypoint** (lo que cabe en dos filas de etiquetas). Al
+    escribir, "minas" se une a un "Minas" que ya exista en vez de crear otro; fuera de eso se
+    comparan exactos.
+  - **El desplegable:** es un campo de texto con "+". Mientras tiene el foco, debajo sale un menú
+    con los grupos del mundo que coinciden con lo escrito (y que el waypoint no tiene aún),
+    encabezado por "Crear el grupo «X»" si lo escrito es nuevo. Con 4 grupos dice "Máximo 4
+    grupos". Enter en el campo añade el grupo en vez de guardar el formulario; si al guardar queda
+    un nombre escrito sin añadir, se añade.
+  - **Etiquetas:** una por grupo, con "×"; clic en ella lo quita. **Cambio pedido por el usuario
+    (2026-10-05):** van **encima** del campo, para que el menú que se abre debajo no las tape; el
+    favorito y "Guardar y duplicar" suben un poco para hacer sitio, y el menú muestra 3 grupos a la
+    vez (se desplaza con la rueda) para no salirse del modal.
+  - **Cabecera de la lista:** buscador (más corto: 102 px), filtro de grupos, el ojo del grupo
+    elegido y el botón de orden. Sin un grupo concreto elegido no hay ojo y el filtro ocupa su
+    hueco, así que el buscador y el orden no se mueven.
+  - **El filtro** abre un menú (Todos, Sin grupo, cada grupo; los ocultos con "(oculto)"; marca en
+    el elegido; se desplaza con la rueda a partir de 8). Se aplica dentro de la pestaña de
+    dimensión y antes de la búsqueda. **No se guarda**: la lista se abre siempre en "Todos". Si el
+    grupo elegido deja de existir, vuelve a "Todos".
+  - **Ocultar:** el ojo de un waypoint sigue cambiando solo su propia visibilidad; no puede hacer
+    visible un waypoint de un grupo oculto. Lo mantenido visible junto al enfocado
+    (`forceVisible`) también se oculta si su grupo está oculto: solo el enfocado se salva.
+  - **Un borrado pendiente sigue contando** para los grupos que existen, así que deshacer el borrado
+    del último waypoint de un grupo devuelve el grupo tal cual (oculto incluido, si lo estaba).
+  - **"Guardar y duplicar" no copia los grupos** (F6 ya decidió que la copia lleva solo nombre y
+    color). Fast Ping, los de muerte, Xaero, `/easywp add` y el portapapeles tampoco llevan grupos.
+- **Bug encontrado al probar en 26.3 (2026-10-05):** en 26.3 no se podía hacer clic en ninguna
+  opción de los menús (grupos y "Más opciones" de la lista). Causa: SDL numera los botones del ratón
+  distinto que GLFW (izquierdo = 1 en 26.3, 0 en 26.1/26.2) y el código comparaba con un 0 fijo.
+  Arreglado con `ClientCompat.MOUSE_LEFT`. Mismo patrón buscado en todo el código (regla 4): el
+  doble clic para copiar coordenadas de la lista tenía el mismo fallo en 26.3 desde la alpha.1 y
+  queda arreglado igual. Comprobado en el bytecode: el jar `+26.3` compara con 1 y el `+26.1-26.2`
+  con 0.
+- Claves nuevas: `list.group_filter_tooltip`, `list.group_all`, `list.group_none`,
+  `list.group_hidden_suffix`, `list.group_hide`, `list.group_show`, `create.group_label`,
+  `create.group_hint`, `create.group_add`, `create.group_remove`, `create.group_full`,
+  `create.group_create`.
 
 **F13 — Mensaje de bienvenida con teclas y novedades** · PENDIENTE · alpha.7
 - Al entrar al primer mundo tras instalar o actualizar, un mensaje local en el chat con:
@@ -941,6 +989,17 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
 - F11 — Al recibir una línea compartida (chat o `/msg`), aparece debajo "[+] Guardar waypoint «X»";
   clic abre el formulario relleno. Los mensajes propios no lo reciben.
 - F11 (Xaero) — Sin Xaero instalado, una línea `xaero-waypoint:` recibe `[+]`; con Xaero, no.
+
+**alpha.6**
+- F12 — En "Más opciones", escribir `Minas` y pulsar "+": aparece la etiqueta `Minas ×`; guardar.
+  En otro waypoint, al enfocar el campo, el menú ofrece `Minas`; elegirlo lo añade.
+- F12 (filtro) — En la lista, el filtro "Todos" → `Minas` deja solo esos waypoints; "Sin grupo",
+  los que no tienen ninguno.
+- F12 (ocultar) — Con `Minas` elegido, el ojo de al lado los oculta en la lista (atenuados) y en el
+  mundo; el enfocado se sigue viendo. Salir y volver a entrar: siguen ocultos.
+- F12 (desaparece) — Quitar `Minas` de todos sus waypoints: el grupo ya no sale en el filtro.
+- Clic izquierdo en 26.3 — Los menús (`⋯` de la lista, filtro de grupos, sugerencias de grupos)
+  responden al clic, y el doble clic en una fila copia sus coordenadas.
 
 **Jar único 26.1+26.2** (desde la alpha.5, se repasa en cada entrega)
 - Jar `+26.1-26.2` en 26.1 y en 26.2: abrir y cerrar lista, formulario y configuración; mensaje

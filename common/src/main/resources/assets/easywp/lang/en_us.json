@@ -135,5 +135,17 @@
   "easywp.share.search_hint": "Search player",
   "easywp.chat.add_button": "[+]",
   "easywp.chat.add_text": " Save waypoint \"%s\"",
-  "easywp.chat.add_hover": "Open the form to save \"%s\" (%s %s %s %s)"
+  "easywp.chat.add_hover": "Open the form to save \"%s\" (%s %s %s %s)",
+  "easywp.list.group_filter_tooltip": "Filter by group",
+  "easywp.list.group_all": "All",
+  "easywp.list.group_none": "No group",
+  "easywp.list.group_hidden_suffix": " (hidden)",
+  "easywp.list.group_hide": "Hide the group \"%s\" (in the world too)",
+  "easywp.list.group_show": "Show the group \"%s\"",
+  "easywp.create.group_label": "Groups",
+  "easywp.create.group_hint": "Add to a group...",
+  "easywp.create.group_add": "Add to this group",
+  "easywp.create.group_remove": "Remove from \"%s\"",
+  "easywp.create.group_full": "At most %s groups",
+  "easywp.create.group_create": "Create the group \"%s\""
 }

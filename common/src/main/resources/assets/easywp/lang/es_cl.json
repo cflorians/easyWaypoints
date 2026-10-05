@@ -135,5 +135,17 @@
   "easywp.share.search_hint": "Buscar jugador",
   "easywp.chat.add_button": "[+]",
   "easywp.chat.add_text": " Guardar waypoint «%s»",
-  "easywp.chat.add_hover": "Abrir el formulario para guardar «%s» (%s %s %s %s)"
+  "easywp.chat.add_hover": "Abrir el formulario para guardar «%s» (%s %s %s %s)",
+  "easywp.list.group_filter_tooltip": "Filtrar por grupo",
+  "easywp.list.group_all": "Todos",
+  "easywp.list.group_none": "Sin grupo",
+  "easywp.list.group_hidden_suffix": " (oculto)",
+  "easywp.list.group_hide": "Ocultar el grupo «%s» (también en el mundo)",
+  "easywp.list.group_show": "Mostrar el grupo «%s»",
+  "easywp.create.group_label": "Grupos",
+  "easywp.create.group_hint": "Añadir a un grupo...",
+  "easywp.create.group_add": "Añadir a este grupo",
+  "easywp.create.group_remove": "Quitar de «%s»",
+  "easywp.create.group_full": "Máximo %s grupos",
+  "easywp.create.group_create": "Crear el grupo «%s»"
 }

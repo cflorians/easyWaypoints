@@ -78,6 +78,13 @@ public final class ClientCompat {
     public static final int KEY_KP_ENTER = InputConstants.KEY_NUMPADENTER;
 
     /**
+     * The left mouse button as {@code MouseButtonEvent.button()} reports it. GLFW numbered it 0;
+     * SDL, which 26.3 switched to, numbers it 1 (and right is 3, not 1). Comparing against a literal
+     * 0 made every hand-handled click - the menus, the list's double-click copy - dead on 26.3.
+     */
+    public static final int MOUSE_LEFT = InputConstants.MOUSE_BUTTON_LEFT;
+
+    /**
      * A GUI blit through the textured pipeline, tinted multiplicatively (result = texture x color).
      *
      * <p>Callers used to hold a {@code RenderPipeline} of their own and pass it in, which named a

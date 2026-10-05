@@ -2,6 +2,7 @@ package com.easywp.client;
 
 import com.easywp.NameNumbering;
 import com.easywp.RelativeCoordinate;
+import com.easywp.WaypointGroups;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -10,11 +11,15 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.core.BlockPos;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.OptionalDouble;
 import java.util.Set;
@@ -33,6 +38,12 @@ public class WaypointCreateScreen extends Screen {
     private static final int NAME_FIELD_W = 204;
     /** Width of the "More options" page's buttons. */
     private static final int MORE_BUTTON_W = 220;
+    /** The group field and its "+" button share {@code MORE_BUTTON_W}, with a 4px gap. */
+    private static final int GROUP_FIELD_W = MORE_BUTTON_W - 20 - 4;
+    /** Chips: their height, the gap between them, and how many suggestions the menu shows. */
+    private static final int CHIP_H = 14;
+    private static final int CHIP_GAP = 4;
+    private static final int GROUP_MENU_ROWS = 3;
     // Color picker geometry: WaypointColors.FAMILY_BAR (14 colors) as one touching row, then
     // WaypointColors's active family (WaypointColors.SHADE_COUNT = 15 shades, dark to light) as a
     // second touching row below it. PICKER_WIDTH divides evenly by both counts (210 / 14 = 15,
@@ -99,6 +110,16 @@ public class WaypointCreateScreen extends Screen {
     private boolean morePage = false;
     /** Saved as {@code Waypoint.favorite}; toggled on the "More options" page. */
     private boolean favorite = false;
+    /** Saved as {@code Waypoint.groups}; edited on the "More options" page. */
+    private final List<String> groups = new ArrayList<>();
+    /** The "More options" page's group name field: type to pick an existing group from the menu
+     *  below it, or to name a new one. Created once with the other fields. */
+    private EditBox groupField;
+    /** The assigned groups' chips, rebuilt on their own when one is added or removed, so the field
+     *  keeps the focus (and its menu stays open) while several are added in a row. */
+    private final List<GuiEventListener> groupChips = new ArrayList<>();
+    private ModernButton addGroupButton;
+    private int groupMenuScroll = 0;
 
     private static class ColorSampleButton extends Button {
         public ColorSampleButton(int x, int y, int width, int height, OnPress onPress) {
@@ -152,6 +173,7 @@ public class WaypointCreateScreen extends Screen {
         this.initialName = null;
         this.selectedColor = waypointToEdit.getColor();
         this.favorite = waypointToEdit.isFavorite();
+        this.groups.addAll(waypointToEdit.getGroups());
     }
 
     /** Back to the list it came from, or to the game - for save, cancel and Esc alike. */
@@ -238,6 +260,14 @@ public class WaypointCreateScreen extends Screen {
 
         // See the field javadoc on activeBaseIndex.
         this.activeBaseIndex = WaypointColors.nearestMatch(this.selectedColor)[0];
+
+        this.groupField = new EditBox(this.font, 0, 0, GROUP_FIELD_W, 18, I18nHelper.getComponent("create.group_label"));
+        this.groupField.setMaxLength(WaypointGroups.MAX_NAME_LENGTH);
+        this.groupField.setHint(I18nHelper.getComponent("create.group_hint").withStyle(ChatFormatting.DARK_GRAY));
+        this.groupField.setResponder(value -> {
+            this.groupMenuScroll = 0;
+            updateAddGroupButton();
+        });
     }
 
     /** Name, coordinates and the colour picker. */
@@ -300,7 +330,7 @@ public class WaypointCreateScreen extends Screen {
         ModernButton favoriteBtn = ModernButton.modernBuilder(favoriteLabel(), btn -> {
             this.favorite = !this.favorite;
             btn.setMessage(favoriteLabel());
-        }).pos(centerX - MORE_BUTTON_W / 2, centerY - 50).size(MORE_BUTTON_W, 20)
+        }).pos(centerX - MORE_BUTTON_W / 2, centerY - 68).size(MORE_BUTTON_W, 20)
                 .icon((g, b, hovered) -> Icons.drawStar(g, b.getX() + 6, b.getY() + 5,
                         this.favorite ? UiPalette.FAVORITE_STAR : UiPalette.ICON_DISABLED))
                 .build();
@@ -322,7 +352,7 @@ public class WaypointCreateScreen extends Screen {
             // already sit in the other dimension).
             announceDuplicate(this.minecraft, saved, WaypointStore.duplicateIntoPairedDimension(saved));
             this.onClose();
-        }).pos(centerX - MORE_BUTTON_W / 2, centerY - 20).size(MORE_BUTTON_W, 20).build();
+        }).pos(centerX - MORE_BUTTON_W / 2, centerY - 44).size(MORE_BUTTON_W, 20).build();
         // Outside the Overworld/Nether pair there is no conversion to place a copy with; and a
         // waypoint that already has its copy there gets no second one.
         if (paired == null) {
@@ -335,6 +365,126 @@ public class WaypointCreateScreen extends Screen {
             duplicateBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("create.duplicate_tooltip")));
         }
         this.addRenderableWidget(duplicateBtn);
+
+        // Groups: the waypoint's own groups first, one chip each to remove it, and below them a field
+        // to type a group's name (the menu under it offers the world's groups that match) with "+"
+        // to add what was typed. Chips above the field, so the menu never covers them.
+        this.groupField.setPosition(centerX - MORE_BUTTON_W / 2, centerY + 36);
+        this.addRenderableWidget(this.groupField);
+        this.addGroupButton = ModernButton.modernBuilder(Component.literal("+"), btn -> addTypedGroup())
+                .pos(centerX + MORE_BUTTON_W / 2 - 20, centerY + 35).size(20, 20).build();
+        this.addGroupButton.setTooltip(Tooltip.create(I18nHelper.getComponent("create.group_add")));
+        this.addRenderableWidget(this.addGroupButton);
+        updateAddGroupButton();
+        refreshGroupChips();
+    }
+
+    /** "+" is live only while the field names a group this waypoint can still take. */
+    private void updateAddGroupButton() {
+        if (this.addGroupButton == null) return;
+        String name = WaypointGroups.resolve(WaypointStore.allGroups(), this.groupField.getValue());
+        this.addGroupButton.active = name != null && WaypointGroups.canAdd(this.groups, name);
+    }
+
+    /** Adds the group the field names (an existing one if it matches ignoring case) and clears it. */
+    private void addTypedGroup() {
+        addGroup(WaypointGroups.resolve(WaypointStore.allGroups(), this.groupField.getValue()));
+    }
+
+    private void addGroup(String name) {
+        if (!WaypointGroups.canAdd(this.groups, name)) return;
+        this.groups.add(name);
+        this.groupField.setValue("");
+        refreshGroupChips();
+    }
+
+    /**
+     * One chip per assigned group above the field, wrapping onto a second row; clicking a chip
+     * takes the waypoint out of that group. {@link WaypointGroups#MAX_NAME_LENGTH} and
+     * {@link WaypointGroups#MAX_PER_WAYPOINT} are chosen so every chip fits in two rows.
+     */
+    private void refreshGroupChips() {
+        for (GuiEventListener chip : this.groupChips) {
+            this.removeWidget(chip);
+        }
+        this.groupChips.clear();
+        if (!this.morePage) return;
+
+        int left = this.width / 2 - MORE_BUTTON_W / 2;
+        int right = left + MORE_BUTTON_W;
+        int x = left;
+        int y = this.height / 2 - 2;
+        for (String group : List.copyOf(this.groups)) {
+            Component label = Component.literal(group + "  \u00D7");
+            int w = this.font.width(label) + 10;
+            if (x > left && x + w > right) {
+                x = left;
+                y += CHIP_H + CHIP_GAP;
+            }
+            ModernButton chip = ModernButton.modernBuilder(label, btn -> {
+                this.groups.remove(group);
+                refreshGroupChips();
+                updateAddGroupButton();
+            }).pos(x, y).size(w, CHIP_H).build();
+            chip.setTooltip(Tooltip.create(I18nHelper.getComponent("create.group_remove", group)));
+            this.addRenderableWidget(chip);
+            this.groupChips.add(chip);
+            x += w + CHIP_GAP;
+        }
+        updateAddGroupButton();
+    }
+
+    /**
+     * The menu under the group field while it has the focus: the world's groups matching what is
+     * typed that this waypoint does not have yet, led by "Create ..." when the text names a new
+     * one. With no room left for another group it says so instead. {@code null} when the field is
+     * not focused or there is nothing to offer.
+     */
+    private PopupMenu groupMenu() {
+        if (!this.morePage || this.getFocused() != this.groupField) return null;
+        List<PopupMenu.Item> items = new ArrayList<>();
+        if (this.groups.size() >= WaypointGroups.MAX_PER_WAYPOINT) {
+            items.add(PopupMenu.Item.disabled(I18nHelper.getComponent("create.group_full",
+                    String.valueOf(WaypointGroups.MAX_PER_WAYPOINT))));
+        } else {
+            List<String> existing = WaypointStore.allGroups();
+            String typed = WaypointGroups.normalize(this.groupField.getValue());
+            if (typed != null && WaypointGroups.resolve(existing, typed).equals(typed)
+                    && !existing.contains(typed) && WaypointGroups.canAdd(this.groups, typed)) {
+                items.add(PopupMenu.Item.of(I18nHelper.getComponent("create.group_create", typed), () -> addGroup(typed)));
+            }
+            for (String group : WaypointGroups.suggestions(existing, this.groups, this.groupField.getValue())) {
+                items.add(PopupMenu.Item.of(Component.literal(group), () -> addGroup(group)));
+            }
+        }
+        if (items.isEmpty()) return null;
+        PopupMenu menu = new PopupMenu(this.font, items, this.groupMenuScroll, GROUP_MENU_ROWS, GROUP_FIELD_W, MORE_BUTTON_W);
+        this.groupMenuScroll = menu.getScroll();
+        int centerX = this.width / 2;
+        int centerY = this.height / 2;
+        return menu.placeAt(this.groupField.getX(), this.groupField.getY() + 18 + 1,
+                centerX - FORM_WIDTH / 2 + 1, centerY - 112 + 1, centerX + FORM_WIDTH / 2 - 1, centerY + 112 - 1);
+    }
+
+    /** The group menu takes the clicks that land on it; anything else goes on as usual (a click
+     *  elsewhere moves the focus off the field, which closes the menu). */
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        PopupMenu menu = groupMenu();
+        if (menu != null && menu.click(event.x(), event.y(), event.button())) {
+            return true;
+        }
+        return super.mouseClicked(event, doubleClick);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        PopupMenu menu = groupMenu();
+        if (menu != null && menu.contains(mouseX, mouseY)) {
+            this.groupMenuScroll = menu.scrolled(verticalAmount);
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
     private Component favoriteLabel() {
@@ -422,8 +572,13 @@ public class WaypointCreateScreen extends Screen {
         if (this.morePage) {
             graphics.centeredText(this.font, I18nHelper.getComponent("create.more_title"), centerX, minY + 6, UiPalette.TEXT_PRIMARY);
             // Which waypoint these options are for, as it would be saved right now.
-            graphics.centeredText(this.font, Component.literal(resolveWaypointName()), centerX, centerY - 80, UiPalette.TEXT_SECONDARY);
+            graphics.centeredText(this.font, Component.literal(resolveWaypointName()), centerX, centerY - 84, UiPalette.TEXT_SECONDARY);
+            graphics.centeredText(this.font, I18nHelper.getComponent("create.group_label"), centerX, centerY - 14, UiPalette.TEXT_SECONDARY);
             super.extractRenderState(graphics, mouseX, mouseY, a);
+            PopupMenu menu = groupMenu();
+            if (menu != null) {
+                menu.draw(graphics, this.font, mouseX, mouseY);
+            }
             return;
         }
 
@@ -541,6 +696,12 @@ public class WaypointCreateScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        // Enter in the group field adds what was typed; only an empty field lets Enter save.
+        if ((event.key() == ClientCompat.KEY_ENTER || event.key() == ClientCompat.KEY_KP_ENTER)
+                && this.morePage && this.getFocused() == this.groupField && !this.groupField.getValue().isBlank()) {
+            addTypedGroup();
+            return true;
+        }
         if (event.key() == ClientCompat.KEY_ENTER || event.key() == ClientCompat.KEY_KP_ENTER) {
             saveWaypoint();
             this.onClose();
@@ -624,6 +785,17 @@ public class WaypointCreateScreen extends Screen {
         ClientCompat.setOverlayMessage(minecraft, message.withStyle(ChatFormatting.GRAY), true);
     }
 
+    /** The groups to save: the chips, plus a name still typed in the field and never added - the
+     *  player meant it, and saving should not drop it. */
+    private List<String> groupsToSave() {
+        List<String> out = new ArrayList<>(this.groups);
+        String typed = WaypointGroups.resolve(WaypointStore.allGroups(), this.groupField.getValue());
+        if (typed != null && WaypointGroups.canAdd(out, typed)) {
+            out.add(typed);
+        }
+        return out;
+    }
+
     /** The dimension a new waypoint is saved into: the one {@code /easywp open} named, or else
      *  wherever the player is now. */
     private String newWaypointDimension() {
@@ -684,6 +856,7 @@ public class WaypointCreateScreen extends Screen {
             this.editingWaypoint.setDeath(false);
             this.editingWaypoint.setFastPing(false);
             this.editingWaypoint.setFavorite(this.favorite);
+            this.editingWaypoint.setGroups(groupsToSave());
 
             if (this.minecraft.player != null) {
                 // Gray is set as the component's own style instead of being left to the §7 in the
@@ -697,6 +870,7 @@ public class WaypointCreateScreen extends Screen {
         } else {
             Waypoint created = new Waypoint(name, newPos, this.selectedColor, dimension);
             created.setFavorite(this.favorite);
+            created.setGroups(groupsToSave());
             WaypointStore.waypoints.add(created);
             saved = created;
 

@@ -3,6 +3,9 @@ package com.easywp.client;
 import com.easywp.PairedCoordinates;
 import net.minecraft.core.BlockPos;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class Waypoint {
     private String name;
     private BlockPos pos;
@@ -20,6 +23,9 @@ public class Waypoint {
     // Set only by setter too: marked on the create screen's "More options" page (and loaded from
     // disk), never part of creating a waypoint.
     private boolean favorite = false;
+    // Set only by setter too, like favorite: the groups this waypoint belongs to, by name (see
+    // WaypointGroups). Usually empty; never null.
+    private List<String> groups = new ArrayList<>();
     // Never saved: deleted from the list and waiting out the seconds in which that can be undone
     // (see WaypointStore.markForRemoval). Gone from the world and from the file already, still a
     // row in the list.
@@ -171,7 +177,10 @@ public class Waypoint {
      *                   {@link WaypointStore#hasAnyFocused()}.
      */
     public boolean isShown(boolean anyFocused) {
-        return !pendingRemoval && visible && (!anyFocused || focused || forceVisible);
+        return !pendingRemoval && visible && (!anyFocused || focused || forceVisible)
+                // A hidden group hides its waypoints in the world too - except the focused one,
+                // which is the one the player asked to follow.
+                && (focused || !WaypointStore.isInHiddenGroup(this));
     }
 
     /** Whether this waypoint has been deleted from the list and can still be undone - see the field. */
@@ -202,6 +211,16 @@ public class Waypoint {
 
     public void setFavorite(boolean favorite) {
         this.favorite = favorite;
+    }
+
+    /** The groups this waypoint belongs to: a live list, never null, mutated only through
+     *  {@link #setGroups}. */
+    public List<String> getGroups() {
+        return groups;
+    }
+
+    public void setGroups(List<String> groups) {
+        this.groups = groups == null ? new ArrayList<>() : new ArrayList<>(groups);
     }
 
     public boolean isFastPing() {

@@ -11,6 +11,8 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.BlockPos;
 import net.minecraft.client.Minecraft;
+import net.minecraft.ChatFormatting;
+import com.easywp.WaypointGroups;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -47,11 +49,23 @@ public class WaypointListScreen extends Screen {
     /**
      * The waypoint whose "More options" menu is open, or {@code null}. The menu is a small panel
      * beside that row, drawn and clicked by hand on top of everything else rather than built from
-     * widgets (see {@link #menuBox()}), and it follows the waypoint, not a row index: toggling a
+     * widgets (see {@link #openMenu()}), and it follows the waypoint, not a row index: toggling a
      * favorite moves the row to the top and the menu goes with it, and if the row leaves the page
      * the menu closes.
      */
     private Waypoint optionsFor = null;
+
+    /** Whether the group filter's menu is open, below its button. At most one menu is open: opening
+     *  either closes the other. */
+    private boolean groupMenuOpen = false;
+
+    /** The open menu's scroll offset, kept here since the menu is rebuilt every frame. */
+    private int menuScroll = 0;
+
+    /** What the group filter keeps - all waypoints, those in no group, or one group's - and that
+     *  group's name. Not saved: the list opens on "All" every time. */
+    private WaypointGroups.Filter groupFilter = WaypointGroups.Filter.ALL;
+    private String groupFilterName = null;
 
     /** {@link WaypointStore#removalsVersion()} when the rows were last built - see {@link #tick()}. */
     private int seenRemovalsVersion = WaypointStore.removalsVersion();
@@ -121,23 +135,23 @@ public class WaypointListScreen extends Screen {
      */
     private static final int PENDING_BUTTON_W = 57;
 
-    /** The "More options" menu: one item per row of this height, inside this padding. */
-    private static final int MENU_ITEM_H = 16;
-    private static final int MENU_PAD = 2;
-    /** Where an item's text starts, past the space for the favorite star. */
-    private static final int MENU_TEXT_INSET = 17;
-
     /** The modal panel, centred on the screen - see extractRenderState. The row menu stays inside it. */
     private static final int MODAL_WIDTH = 290;
     private static final int MODAL_HEIGHT = 226;
 
     /**
-     * Search box and sort button share the 260px the search box used to occupy on its own, at the
-     * top of the modal: the box keeps the left {@code SEARCH_WIDTH}, the button the right
-     * {@code SORT_BUTTON_WIDTH}, with a 4px gap between them.
+     * The 260px header row at the top of the modal, left to right with 4px gaps: the search box
+     * ({@code SEARCH_WIDTH}), the group filter ({@code GROUP_BUTTON_WIDTH}), the selected group's
+     * show/hide eye ({@code GROUP_EYE_SIZE}) and the sort button ({@code SORT_BUTTON_WIDTH}). With no
+     * single group selected there is no eye, and the filter takes its place, so the search box and
+     * the sort button never move.
      */
     private static final int SORT_BUTTON_WIDTH = 66;
-    private static final int SEARCH_WIDTH = 260 - SORT_BUTTON_WIDTH - 4;
+    private static final int GROUP_BUTTON_WIDTH = 64;
+    private static final int GROUP_EYE_SIZE = 16;
+    private static final int SEARCH_WIDTH = 260 - SORT_BUTTON_WIDTH - GROUP_BUTTON_WIDTH - GROUP_EYE_SIZE - 3 * 4;
+    /** How many groups the filter's menu shows before it scrolls. */
+    private static final int GROUP_MENU_ROWS = 8;
 
     /** Size of the hand-drawn sort glyph and the gap it keeps from the label it sits beside. */
     private static final int SORT_ICON_WIDTH = 3;
@@ -230,7 +244,8 @@ public class WaypointListScreen extends Screen {
     private List<WaypointEntry> getWaypointsForDimension(String dimension) {
         List<WaypointEntry> result = new ArrayList<>();
         for (Waypoint wp : WaypointStore.waypoints) {
-            if (wp != null && wp.dimensionOrOverworld().equals(dimension)) {
+            if (wp != null && wp.dimensionOrOverworld().equals(dimension)
+                    && WaypointGroups.matches(wp.getGroups(), this.groupFilter, this.groupFilterName)) {
                 result.add(new WaypointEntry(wp));
             }
         }
@@ -547,6 +562,7 @@ public class WaypointListScreen extends Screen {
             // this only ever opens one.
             var moreBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 this.optionsFor = wp;
+                this.groupMenuOpen = false;
             }).pos(buttonX, itemY).size(18, 18)
                     .icon((g, b, hovered) -> Icons.drawMoreGlyph(g, b.getX() + b.getWidth() / 2, b.getY() + b.getHeight() / 2,
                             hovered ? UiPalette.BTN_TEXT_HOVER : UiPalette.ICON_IDLE))
@@ -635,7 +651,7 @@ public class WaypointListScreen extends Screen {
             ModConfig.save();
             this.scrollIndex = 0;
             refreshItemWidgets();
-        }).pos(centerX - 130 + SEARCH_WIDTH + 4, centerY - 90).size(SORT_BUTTON_WIDTH, 16)
+        }).pos(centerX + 130 - SORT_BUTTON_WIDTH, centerY - 90).size(SORT_BUTTON_WIDTH, 16)
                 .icon((g, b, hovered) -> {
                     // Sort glyph just left of the button's own centred label, following its
                     // hover colour, rather than baked into the label text.
@@ -646,6 +662,8 @@ public class WaypointListScreen extends Screen {
                 .build();
         this.addRenderableWidget(sortBtn);
         dynamicWidgets.add(sortBtn);
+
+        addGroupFilterWidgets(centerX, centerY);
 
         var prevDimBtn = ModernButton.modernBuilder(Component.literal("<"), btn -> {
             int currentIndex = Math.max(0, dimensions.indexOf(selectedDimension));
@@ -717,12 +735,121 @@ public class WaypointListScreen extends Screen {
         dynamicWidgets.add(swatch);
     }
 
-    /** One entry of the "More options" menu; {@code action} runs only when {@code enabled}. */
-    private record MenuItem(Component label, boolean enabled, boolean star, Runnable action) {
+    /**
+     * The group filter between the search box and the sort button, and - while one group is
+     * selected - the eye beside it that hides or shows that whole group, here and in the world.
+     * Rebuilt with the rows, so the label follows the filter. A group that stopped existing (its
+     * last waypoint deleted or regrouped) drops the filter back to "All".
+     */
+    private void addGroupFilterWidgets(int centerX, int centerY) {
+        if (this.groupFilter == WaypointGroups.Filter.GROUP && !WaypointStore.allGroups().contains(this.groupFilterName)) {
+            this.groupFilter = WaypointGroups.Filter.ALL;
+            this.groupFilterName = null;
+        }
+        boolean oneGroup = this.groupFilter == WaypointGroups.Filter.GROUP;
+        int filterX = groupFilterX();
+        int filterW = groupFilterWidth();
+
+        var filterBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
+            this.groupMenuOpen = true;
+            this.optionsFor = null;
+            this.menuScroll = 0;
+        }).pos(filterX, centerY - 90).size(filterW, 16)
+                .icon((g, b, hovered) -> {
+                    int color = hovered ? UiPalette.BTN_TEXT_HOVER : UiPalette.BTN_TEXT;
+                    int room = b.getWidth() - 6 - 9;
+                    String label = this.font.plainSubstrByWidth(groupFilterLabel().getString(), room);
+                    g.text(this.font, Component.literal(label), b.getX() + 5, b.getY() + 4, color);
+                    drawDropGlyph(g, b.getX() + b.getWidth() - 9, b.getY() + 7, color);
+                })
+                .build();
+        filterBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("list.group_filter_tooltip")));
+        this.addRenderableWidget(filterBtn);
+        dynamicWidgets.add(filterBtn);
+
+        if (oneGroup) {
+            String group = this.groupFilterName;
+            boolean hidden = WaypointStore.isGroupHidden(group);
+            var eyeBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
+                WaypointStore.setGroupHidden(group, !WaypointStore.isGroupHidden(group));
+                refreshItemWidgets();
+            }).pos(filterX + filterW + 4, centerY - 90).size(GROUP_EYE_SIZE, 16)
+                    .icon((g, b, hovered) -> {
+                        boolean isHidden = WaypointStore.isGroupHidden(group);
+                        ClientCompat.blitTinted(g, isHidden ? Icons.HIDE : Icons.SHOW, b.getX(), b.getY(), 16, 16,
+                                isHidden ? UiPalette.ICON_DISABLED : UiPalette.ICON_IDLE);
+                    })
+                    .build();
+            eyeBtn.setTooltip(Tooltip.create(I18nHelper.getComponent(hidden ? "list.group_show" : "list.group_hide", group)));
+            this.addRenderableWidget(eyeBtn);
+            dynamicWidgets.add(eyeBtn);
+        }
     }
 
-    /** Where the open menu is drawn: its box and its items. */
-    private record MenuBox(int x, int y, int width, int height, List<MenuItem> items) {
+    private int groupFilterX() {
+        return this.width / 2 - 130 + SEARCH_WIDTH + 4;
+    }
+
+    /** The filter button's width: its own, or its own plus the eye's slot when there is no eye. */
+    private int groupFilterWidth() {
+        return this.groupFilter == WaypointGroups.Filter.GROUP
+                ? GROUP_BUTTON_WIDTH
+                : GROUP_BUTTON_WIDTH + 4 + GROUP_EYE_SIZE;
+    }
+
+    private Component groupFilterLabel() {
+        return switch (this.groupFilter) {
+            case ALL -> I18nHelper.getComponent("list.group_all");
+            case NONE -> I18nHelper.getComponent("list.group_none");
+            case GROUP -> Component.literal(this.groupFilterName);
+        };
+    }
+
+    /** A small downward triangle, "this opens a menu", 5px wide with its top-left at {@code (x, y)}. */
+    private static void drawDropGlyph(GuiGraphicsExtractor g, int x, int y, int color) {
+        g.fill(x, y, x + 5, y + 1, color);
+        g.fill(x + 1, y + 1, x + 4, y + 2, color);
+        g.fill(x + 2, y + 2, x + 3, y + 3, color);
+    }
+
+    /** The group filter's menu: All, No group, then every group of the world - a hidden one says
+     *  so - with a mark on the current choice. Picking one closes the menu and refilters. */
+    private List<PopupMenu.Item> groupMenuItems() {
+        List<PopupMenu.Item> items = new ArrayList<>();
+        items.add(groupChoice(I18nHelper.getComponent("list.group_all"), WaypointGroups.Filter.ALL, null));
+        items.add(groupChoice(I18nHelper.getComponent("list.group_none"), WaypointGroups.Filter.NONE, null));
+        for (String group : WaypointStore.allGroups()) {
+            Component label = WaypointStore.isGroupHidden(group)
+                    ? Component.literal(group).append(I18nHelper.getComponent("list.group_hidden_suffix").withStyle(ChatFormatting.DARK_GRAY))
+                    : Component.literal(group);
+            items.add(groupChoice(label, WaypointGroups.Filter.GROUP, group));
+        }
+        return items;
+    }
+
+    private PopupMenu.Item groupChoice(Component label, WaypointGroups.Filter filter, String group) {
+        boolean current = this.groupFilter == filter
+                && (filter != WaypointGroups.Filter.GROUP || group.equals(this.groupFilterName));
+        return new PopupMenu.Item(label, true,
+                current ? (g, x, y) -> drawCheckGlyph(g, x + 4, y + 4, UiPalette.TEXT_SUCCESS) : null,
+                () -> {
+                    this.groupFilter = filter;
+                    this.groupFilterName = group;
+                    this.groupMenuOpen = false;
+                    this.scrollIndex = 0;
+                    refreshItemWidgets();
+                });
+    }
+
+    /** A 7x6 tick, the current choice in the group filter's menu, top-left at {@code (x, y)}. */
+    private static void drawCheckGlyph(GuiGraphicsExtractor g, int x, int y, int color) {
+        g.fill(x, y + 3, x + 1, y + 4, color);
+        g.fill(x + 1, y + 4, x + 2, y + 5, color);
+        g.fill(x + 2, y + 5, x + 3, y + 6, color);
+        g.fill(x + 3, y + 4, x + 4, y + 5, color);
+        g.fill(x + 4, y + 3, x + 5, y + 4, color);
+        g.fill(x + 5, y + 2, x + 6, y + 3, color);
+        g.fill(x + 6, y + 1, x + 7, y + 2, color);
     }
 
     /**
@@ -731,10 +858,12 @@ public class WaypointListScreen extends Screen {
      * out, saying why, outside the pair or once the copy exists (WaypointStore's own rule), so a
      * second press cannot leave two copies.
      */
-    private List<MenuItem> menuItems(Waypoint wp) {
-        List<MenuItem> items = new ArrayList<>(5);
-        items.add(new MenuItem(
-                I18nHelper.getComponent(wp.isFavorite() ? "create.favorite_on" : "create.favorite_off"), true, true, () -> {
+    private List<PopupMenu.Item> menuItems(Waypoint wp) {
+        List<PopupMenu.Item> items = new ArrayList<>(5);
+        items.add(new PopupMenu.Item(
+                I18nHelper.getComponent(wp.isFavorite() ? "create.favorite_on" : "create.favorite_off"), true,
+                (g, x, y) -> Icons.drawStar(g, x + 4, y + 3, wp.isFavorite() ? UiPalette.FAVORITE_STAR : UiPalette.ICON_DISABLED),
+                () -> {
                     wp.setFavorite(!wp.isFavorite());
                     WaypointStore.saveToFile();
                     refreshItemWidgets();
@@ -742,11 +871,11 @@ public class WaypointListScreen extends Screen {
 
         String paired = wp.pairedDimension();
         if (paired == null) {
-            items.add(new MenuItem(I18nHelper.getComponent("create.duplicate_unsupported"), false, false, null));
+            items.add(PopupMenu.Item.disabled(I18nHelper.getComponent("create.duplicate_unsupported")));
         } else if (WaypointStore.findCopyInPairedDimension(wp) != null) {
-            items.add(new MenuItem(I18nHelper.getComponent("list.duplicate_exists", DimensionNames.chatName(paired)), false, false, null));
+            items.add(PopupMenu.Item.disabled(I18nHelper.getComponent("list.duplicate_exists", DimensionNames.chatName(paired))));
         } else {
-            items.add(new MenuItem(I18nHelper.getComponent("list.duplicate", DimensionNames.chatName(paired)), true, false, () -> {
+            items.add(PopupMenu.Item.of(I18nHelper.getComponent("list.duplicate", DimensionNames.chatName(paired)), () -> {
                 WaypointCreateScreen.announceDuplicate(this.minecraft, wp, WaypointStore.duplicateIntoPairedDimension(wp));
                 this.optionsFor = null;
                 refreshItemWidgets();
@@ -762,8 +891,8 @@ public class WaypointListScreen extends Screen {
      * offered only when anyone else is - and a copy of the share line to the clipboard. The two that
      * send close the list, as sharing always did; copying stays.
      */
-    private void addShareItems(List<MenuItem> items, Waypoint wp) {
-        items.add(new MenuItem(I18nHelper.getComponent("list.share_public"), true, false, () -> {
+    private void addShareItems(List<PopupMenu.Item> items, Waypoint wp) {
+        items.add(PopupMenu.Item.of(I18nHelper.getComponent("list.share_public"), () -> {
             this.optionsFor = null;
             if (WaypointShare.send(this.minecraft, wp)) {
                 this.onClose();
@@ -771,12 +900,12 @@ public class WaypointListScreen extends Screen {
         }));
         List<String> others = WaypointShare.otherPlayers(this.minecraft);
         if (!others.isEmpty()) {
-            items.add(new MenuItem(I18nHelper.getComponent("list.share_private"), true, false, () -> {
+            items.add(PopupMenu.Item.of(I18nHelper.getComponent("list.share_private"), () -> {
                 this.optionsFor = null;
                 ClientCompat.setScreen(this.minecraft, new PlayerPickScreen(this, wp, others));
             }));
         }
-        items.add(new MenuItem(I18nHelper.getComponent("list.share_copy"), true, false, () -> {
+        items.add(PopupMenu.Item.of(I18nHelper.getComponent("list.share_copy"), () -> {
             this.optionsFor = null;
             WaypointShare.copy(this.minecraft, wp);
             ClientCompat.setOverlayMessage(this.minecraft, I18nHelper.getComponent("list.share_copied", wp.getName()), false);
@@ -784,14 +913,23 @@ public class WaypointListScreen extends Screen {
     }
 
     /**
-     * The open menu's box, inside the modal and over its row's own buttons: its top-right corner on
-     * the delete button's (centerX + 138, the row's top), so it opens right where it was asked for
-     * and lines up with the action strip. Near the bottom of the page it is pushed up to end at the
-     * modal's inner edge, and a translation too wide for the modal starts at its left inner edge -
-     * it never sticks out of the panel. {@code null} - and the menu closed - when no menu is open or
-     * its row is not on the page any more.
+     * The open menu, placed: the group filter's below its button, or a row's "More options" inside
+     * the modal over its row's own buttons, its top-right corner on the delete button's
+     * (centerX + 138, the row's top), so it opens right where it was asked for and lines up with the
+     * action strip. Near the bottom of the page it is pushed up to end at the modal's inner edge,
+     * and a translation too wide for the modal starts at its left inner edge - it never sticks out
+     * of the panel. {@code null} - and the row menu closed - when no menu is open or its row is not
+     * on the page any more.
      */
-    private MenuBox menuBox() {
+    private PopupMenu openMenu() {
+        if (this.groupMenuOpen) {
+            // Below the filter button, at least as wide as it, inside the modal.
+            int top = this.height / 2 - 90 + 16 + 1;
+            PopupMenu menu = new PopupMenu(this.font, groupMenuItems(), this.menuScroll, GROUP_MENU_ROWS,
+                    GROUP_BUTTON_WIDTH + 4 + GROUP_EYE_SIZE, MODAL_WIDTH - 2);
+            this.menuScroll = menu.getScroll();
+            return menu.placeAt(groupFilterX(), top, modalLeft(), modalTop(), modalRight(), modalBottom());
+        }
         if (this.optionsFor == null) return null;
         int row = -1;
         int endIndex = Math.min(scrollIndex + ITEMS_PER_PAGE, this.cachedFilteredWaypoints.size());
@@ -806,48 +944,45 @@ public class WaypointListScreen extends Screen {
             return null;
         }
 
-        List<MenuItem> items = menuItems(this.optionsFor);
-        int textWidth = 0;
-        for (MenuItem item : items) {
-            textWidth = Math.max(textWidth, this.font.width(item.label()));
-        }
-        int width = MENU_TEXT_INSET + textWidth + 6 + MENU_PAD * 2;
-        int height = items.size() * MENU_ITEM_H + MENU_PAD * 2;
         int itemY = this.height / 2 - 60 + row * 22;
-        int modalLeft = this.width / 2 - MODAL_WIDTH / 2 + 1;
-        int modalBottom = this.height / 2 + MODAL_HEIGHT / 2 - 1;
-        int x = Math.max(modalLeft, this.width / 2 + 138 - width);
-        int y = Math.min(itemY, modalBottom - height);
-        return new MenuBox(x, y, width, height, items);
+        PopupMenu menu = new PopupMenu(this.font, menuItems(this.optionsFor), 0, 8, 0, MODAL_WIDTH - 2);
+        return menu.placeAt(this.width / 2 + 138 - menu.getWidth(), itemY,
+                modalLeft(), modalTop(), modalRight(), modalBottom());
     }
 
-    private void drawMenu(GuiGraphicsExtractor graphics, MenuBox box, int mouseX, int mouseY) {
-        // A stratum of its own, so it lands above the rows' text as well as their buttons.
-        graphics.nextStratum();
-        graphics.fill(box.x(), box.y(), box.x() + box.width(), box.y() + box.height(), UiPalette.MODAL_BORDER);
-        graphics.fill(box.x() + 1, box.y() + 1, box.x() + box.width() - 1, box.y() + box.height() - 1, UiPalette.MENU_BG);
-        for (int i = 0; i < box.items().size(); i++) {
-            MenuItem item = box.items().get(i);
-            int ix = box.x() + MENU_PAD;
-            int iy = box.y() + MENU_PAD + i * MENU_ITEM_H;
-            int iw = box.width() - MENU_PAD * 2;
-            boolean hovered = mouseX >= ix && mouseX < ix + iw && mouseY >= iy && mouseY < iy + MENU_ITEM_H;
-            if (hovered && item.enabled()) {
-                graphics.fill(ix, iy, ix + iw, iy + MENU_ITEM_H, UiPalette.BTN_BG_HOVER);
-            }
-            if (item.star()) {
-                Icons.drawStar(graphics, ix + 4, iy + 3,
-                        this.optionsFor.isFavorite() ? UiPalette.FAVORITE_STAR : UiPalette.ICON_DISABLED);
-            }
-            int color = !item.enabled() ? UiPalette.TEXT_DIM : (hovered ? UiPalette.BTN_TEXT_HOVER : UiPalette.BTN_TEXT);
-            graphics.text(this.font, item.label(), ix + MENU_TEXT_INSET, iy + 4, color);
-        }
+    /** Closes whichever menu is open. */
+    private void closeMenus() {
+        this.optionsFor = null;
+        this.groupMenuOpen = false;
+        this.menuScroll = 0;
+    }
+
+    private int modalLeft() {
+        return this.width / 2 - MODAL_WIDTH / 2 + 1;
+    }
+
+    private int modalRight() {
+        return this.width / 2 + MODAL_WIDTH / 2 - 1;
+    }
+
+    private int modalTop() {
+        return this.height / 2 - MODAL_HEIGHT / 2 + 1;
+    }
+
+    private int modalBottom() {
+        return this.height / 2 + MODAL_HEIGHT / 2 - 1;
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        // The rows move under the menu; close it rather than let it point at another row.
-        this.optionsFor = null;
+        // The wheel over an open menu scrolls the menu, when it has more than it shows.
+        PopupMenu menu = openMenu();
+        if (menu != null && menu.contains(mouseX, mouseY)) {
+            this.menuScroll = menu.scrolled(verticalAmount);
+            return true;
+        }
+        // Elsewhere the rows move under the menu; close it rather than let it point at another row.
+        closeMenus();
         List<WaypointEntry> waypoints = this.cachedFilteredWaypoints;
         int total = waypoints.size();
         if (total > ITEMS_PER_PAGE) {
@@ -898,21 +1033,14 @@ public class WaypointListScreen extends Screen {
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         // An open menu takes every click: an item runs (if enabled), anywhere else just closes it,
         // so a click meant to dismiss the menu can never land on a delete button beneath it.
-        MenuBox box = menuBox();
-        if (box != null) {
-            double mx = event.x();
-            double my = event.y();
-            if (mx >= box.x() && mx < box.x() + box.width() && my >= box.y() && my < box.y() + box.height()) {
-                int index = (int) ((my - box.y() - MENU_PAD) / MENU_ITEM_H);
-                if (event.button() == 0 && index >= 0 && index < box.items().size() && box.items().get(index).enabled()) {
-                    box.items().get(index).action().run();
-                }
-            } else {
-                this.optionsFor = null;
+        PopupMenu menu = openMenu();
+        if (menu != null) {
+            if (!menu.click(event.x(), event.y(), event.button())) {
+                closeMenus();
             }
             return true;
         }
-        if (event.button() == 0) {
+        if (event.button() == ClientCompat.MOUSE_LEFT) {
             int hitIndex = nameOrCoordsRowAt(event.x(), event.y());
             if (hitIndex >= 0) {
                 long now = System.currentTimeMillis();
@@ -1050,9 +1178,9 @@ public class WaypointListScreen extends Screen {
             }
         }
 
-        MenuBox box = menuBox();
-        if (box != null) {
-            drawMenu(graphics, box, mouseX, mouseY);
+        PopupMenu menu = openMenu();
+        if (menu != null) {
+            menu.draw(graphics, this.font, mouseX, mouseY);
         }
     }
 
@@ -1063,9 +1191,9 @@ public class WaypointListScreen extends Screen {
      */
     @Override
     public boolean keyPressed(KeyEvent event) {
-        // Esc closes an open "More options" menu first, and only a second Esc the list.
-        if (this.optionsFor != null && event.isEscape()) {
-            this.optionsFor = null;
+        // Esc closes an open menu first, and only a second Esc the list.
+        if ((this.optionsFor != null || this.groupMenuOpen) && event.isEscape()) {
+            closeMenus();
             return true;
         }
         if (!(this.getFocused() instanceof EditBox) && ModKeyBindings.listWaypointsKey.matches(event)) {
