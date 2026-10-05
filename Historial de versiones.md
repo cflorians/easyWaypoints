@@ -28,26 +28,28 @@ commit **sin probar en el juego**: probarlo al principio de la alpha 4. Sigue pe
 el plan de publicación (ver "Publicación"). `alpha.4` (F7 y F8) implementada, probada y
 confirmada el 2026-10-05 (commit `v1.4.0-alpha.4`), junto con el ajuste de F6 de la alpha 3.
 
-`alpha.5` (F9, F10 y F11) implementada el 2026-10-05, **pendiente de probar en el juego**. Es la
-primera que se publica (Modrinth y CurseForge, canal Alpha), confirmado por el usuario.
+`alpha.5` (F9, F10 y F11) implementada, probada y confirmada el 2026-10-05 (commit
+`v1.4.0-alpha.5`). Es la primera que se publica (Modrinth y CurseForge, canal Alpha); la publicación
+la hace el usuario. El mismo día se unió a `release/1.4.0` el **jar único para 26.1 y 26.2** (ver la
+sección siguiente), probado en el juego y confirmado: desde aquí cada entrega son **dos jars**.
 
-**Siguiente paso:** probar la `alpha.5` (con un segundo jugador para F9 privado y F11) y, al
-confirmarla, commit `v1.4.0-alpha.5` y publicación (la hace el usuario). Después, `alpha.6` — grupos
-(F12).
+**Siguiente paso:** `alpha.6` — grupos (F12). Al empezar, subir `mod_version` a `1.4.0-alpha.6` y
+seguir la "Forma de trabajo por alpha" de abajo.
 
 **Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.5` (la 1.3.5 nunca se publicará). Se
 cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los jars salen como
-`easywp-1.4.0-alpha.1+26.1.x.jar`. **En la rama del experimento** (ver más abajo) son dos:
-`easywp-<versión>+26.1-26.2.jar` y `easywp-<versión>+26.3.jar`.
+`easywp-1.4.0-alpha.1+26.1.x.jar` hasta la alpha.4; desde la alpha.5 son dos:
+`easywp-<versión>+26.1-26.2.jar` (Minecraft 26.1.x y 26.2) y `easywp-<versión>+26.3.jar`.
 
 **Git:** todo el trabajo va en la rama `release/1.4.0`, con un commit por cada alpha/beta. Se
 fusiona a `main` con la versión final.
 
-### Experimento: un solo jar para 26.1 y 26.2 (rama `experimento/jar-26.1-26.2`)
+### Un solo jar para 26.1 y 26.2
 
-**Estado:** implementado el 2026-10-05 en la rama `experimento/jar-26.1-26.2` (worktree
-`D:\Proyectos\easyWaypoints-unjar`), **sin probar en el juego** y **sin unir** a `release/1.4.0`.
-Pedido por el usuario: probarlo aparte y, si funciona perfectamente, unirlo a la 1.4.0.
+**Estado:** HECHO el 2026-10-05. Se hizo como experimento en una rama aparte
+(`experimento/jar-26.1-26.2`), el usuario lo probó en el juego (jar publicado en instancias reales
+de 26.1 y 26.2, rechazo de cada jar en la versión que no le toca, 26.3 igual que antes) y se unió a
+`release/1.4.0` justo después del commit de la alpha.5. La rama y su worktree se borraron.
 
 - **Resultado:** dos jars publicables en vez de tres: `+26.1-26.2` (Minecraft 26.1.x y 26.2) y
   `+26.3`.
@@ -65,9 +67,6 @@ Pedido por el usuario: probarlo aparte y, si funciona perfectamente, unirlo a la
   `gradle.properties`: `>=26.1 <26.3-` para el jar común y `~26.3` para el de 26.3. Antes los jars
   de 26.2 y 26.3 declaraban `>=26.2`/`>=26.3`, y Fabric dejaba cargarlos en una versión posterior
   donde fallarían.
-- **Para unirlo:** cuando la alpha.5 tenga su commit en `release/1.4.0`, traer solo el commit del
-  experimento (cherry-pick); el primero de la rama es una base temporal con la alpha.5 sin
-  confirmar.
 - **Qué cambia al publicar:** dos archivos por entrega en vez de tres. En Modrinth y CurseForge,
   el `+26.1-26.2` se sube **una vez** marcado con 26.1, 26.1.1, 26.1.2 y 26.2, y el `+26.3` con
   26.3. El changelog no cambia.
@@ -75,9 +74,9 @@ Pedido por el usuario: probarlo aparte y, si funciona perfectamente, unirlo a la
   26.3; `ClientCompat` se copia de 26.1 a 26.2 (ya no difieren) y solo el de 26.3 es propio. Un
   renombre nuevo entre 26.1 y 26.2 va a `ClientCompat` como búsqueda por nombre al arrancar, nunca
   en una copia distinta (si no, `checkMergedSources` falla).
-- **Pruebas en el juego (pendientes):** con el jar publicado en instancias reales de 26.1 y 26.2,
-  más comprobar que Fabric rechaza cada jar en la versión que no le toca. La lista exacta está en
-  la guía entregada al usuario el 2026-10-05 y en "Pruebas de regresión 1.4.0" (experimento).
+- **Pruebas en el juego:** con el jar publicado en instancias reales de 26.1 y 26.2, más comprobar
+  que Fabric rechaza cada jar en la versión que no le toca. Las líneas que se repasan en cada
+  entrega están en "Pruebas de regresión 1.4.0" (jar único).
 
 ### Forma de trabajo por alpha
 
@@ -110,9 +109,10 @@ nombres con espacios/acentos/símbolos, teclas reasignadas, Overworld/Nether/End
 servidor, con y sin Xaero, config de 1.3.x) y qué podría haberse roto. **Organizada por versión**:
 26.1 completa; para 26.2 y 26.3 poner "(igual que 26.1)" y avisar solo de lo que varía (26.2 tiene
 Xaero en `run/mods` y renombra cambio de pantalla y HUD; 26.3 usa SDL para el teclado). Al final,
-la prueba de compatibilidad con 1.3.4 y la regresión acumulada. **Si se une el experimento del jar
-único:** 26.2 se prueba con el mismo jar que 26.1 (`+26.1-26.2`), y la guía añade comprobar que
-cada jar se niega a cargar en una versión que no le toca.
+la prueba de compatibilidad con 1.3.4 y la regresión acumulada. **Desde la alpha.5 (jar único):**
+26.2 se prueba con el mismo jar que 26.1 (`+26.1-26.2`), mejor en instancias reales que con
+`runClient`, y la guía de cada entrega comprueba también que cada jar se niega a cargar en una
+versión que no le toca.
 
 ### Reglas que aplican a toda la versión
 
@@ -710,7 +710,7 @@ Todas sin cambio visible para el jugador (regla 1).
   `command.focused`, `command.not_found`, `command.ambiguous`, `command.no_permission`,
   `command.empty_name`, `command.name_too_long`, `command.bad_coordinate`, `command.bad_color`.
 
-**F9 — Menú de compartir: público / privado / copiar** · HECHO en alpha.5 (pendiente de probar)
+**F9 — Menú de compartir: público / privado / copiar** · HECHO en alpha.5
 - El botón de compartir de la lista abre un menú pequeño:
   - **Público:** el comportamiento actual, con el formato F7 (o la línea de Xaero si
     `xaeroChatFormat` está activo).
@@ -752,7 +752,7 @@ Todas sin cambio visible para el jugador (regla 1).
   - "Copiar" copia siempre la línea F7, aunque esté activo el formato de Xaero (el plan lo decía
     así); Público y Privado sí respetan esa opción.
 
-**F10 — Exportar e importar por portapapeles** · HECHO en alpha.5 (pendiente de probar)
+**F10 — Exportar e importar por portapapeles** · HECHO en alpha.5
 - Exportar:
   - un waypoint, desde "Copiar" (F9);
   - la pestaña actual o el resultado de la búsqueda, desde un botón nuevo en la **esquina inferior
@@ -773,7 +773,7 @@ Todas sin cambio visible para el jugador (regla 1).
   - Las líneas F7 se buscan **dentro** de cada línea pegada (mismo lector que F11), así que una
     línea copiada del chat con el nombre del jugador delante también vale.
 
-**F11 — `[+]` en el chat** · HECHO en alpha.5 (pendiente de probar)
+**F11 — `[+]` en el chat** · HECHO en alpha.5
 - Escucha `ClientReceiveMessageEvents.CHAT` y `GAME` (los `/msg` y los plugins de chat llegan como
   mensajes de sistema con prefijo), busca una línea F7 **dentro** del mensaje (no solo al inicio) y
   añade debajo un mensaje local con `[+]`.
@@ -942,8 +942,7 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
   clic abre el formulario relleno. Los mensajes propios no lo reciben.
 - F11 (Xaero) — Sin Xaero instalado, una línea `xaero-waypoint:` recibe `[+]`; con Xaero, no.
 
-**Experimento jar único 26.1+26.2** (rama `experimento/jar-26.1-26.2`, se repasa en cada entrega si
-se une)
+**Jar único 26.1+26.2** (desde la alpha.5, se repasa en cada entrega)
 - Jar `+26.1-26.2` en 26.1 y en 26.2: abrir y cerrar lista, formulario y configuración; mensaje
   del HUD al crear un waypoint; `[+]` en el chat; F1 oculta el HUD y los waypoints siguen; los
   waypoints siguen la cámara al caminar.
