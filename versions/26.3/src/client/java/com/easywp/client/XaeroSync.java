@@ -55,12 +55,11 @@ import java.util.Set;
  * exists to dodge: Xaero rewriting its own {@code waypoints.txt} on save and clobbering a concurrent
  * write from this mod.
  *
- * <p>A {@code shared} easyWp waypoint (mirrored between Overworld and Nether at the renderer's own
- * 1:8 ratio) is exported once per dimension it bridges, at each dimension's own converted position -
- * {@link Waypoint#forEachPosition}, the same single definition of that projection the renderer and
- * the list screen use. Both {@link #identitiesOf} and
- * {@link #existingIdentities} have to know about the same projection; see their javadoc for what goes
- * wrong otherwise.
+ * <p>Every easyWp waypoint has exactly one identity on Xaero's side, in its own dimension. Until
+ * 1.4.0 a {@code shared} waypoint was exported into both halves of the Overworld/Nether pair and
+ * had two; loading now splits every such waypoint into the original plus a copy at the converted
+ * position (see {@code WaypointStore}), which carries exactly the identity its second image had -
+ * so what an earlier Export wrote into Xaero, and what the ledger recorded, still match.
  */
 public final class XaeroSync {
 
@@ -89,12 +88,15 @@ public final class XaeroSync {
         if (client.player == null || client.level == null) {
             return new SyncResult(0, 0);
         }
+        // A deletion still waiting out its undo is final for a sync: it is already gone from the
+        // world and the file, and a sync acts on the list as it is about to be.
+        WaypointStore.commitPendingRemovals();
         boolean live = XaeroBridge.isAvailable();
         Set<String> ledger = XaeroLinkLedger.load();
 
-        // Read every dimension first, before mutating anything: the removal pass below has to judge
-        // each easyWp waypoint against the whole picture, including dimensions its shared twin
-        // projects into, and a dimension that could not be read must not count as "empty" anywhere.
+        // Read every dimension first, before mutating anything: the removal pass below judges each
+        // easyWp waypoint against what was read, and a dimension that could not be read must not
+        // count as "empty" anywhere.
         Map<String, List<XaeroBridge.RealWaypoint>> readable = new HashMap<>();
         for (String dimension : knownDimensions(client)) {
             List<XaeroBridge.RealWaypoint> current = currentXaeroWaypoints(client, dimension, live);
@@ -115,7 +117,7 @@ public final class XaeroSync {
                 }
                 BlockPos pos = new BlockPos(rw.x(), rw.y(), rw.z());
                 WaypointStore.waypoints.add(new Waypoint(rw.name(), pos,
-                        XaeroWaypointFormat.rgbForColorOrdinal(rw.colorOrdinal()), dimension, false));
+                        XaeroWaypointFormat.rgbForColorOrdinal(rw.colorOrdinal()), dimension));
                 added++;
             }
         }
@@ -148,31 +150,18 @@ public final class XaeroSync {
     }
 
     /**
-     * Whether {@code wp} should be removed because Xaero no longer has it: it was shared with Xaero at
-     * some point, and none of the positions it occupies on Xaero's side still holds it.
-     *
-     * <p>Every projected position is considered, not just the native one, and <em>all</em> of them have
-     * to be gone - a {@code shared} waypoint is one easyWp waypoint with two images in Xaero, so
-     * deleting just one of those images is an edit to the mirror, not a request to delete the
-     * waypoint. A projection in a dimension that could not be read makes this return false outright:
-     * the waypoint might still be there and simply unseen.
+     * Whether {@code wp} should be removed because Xaero no longer has it: the two had exchanged it
+     * (it is in the ledger), and its dimension was read and no longer holds it. A dimension that
+     * could not be read makes this false outright: the waypoint might still be there and simply
+     * unseen.
      */
     private static boolean deletedOnXaerosSide(Waypoint wp, Set<String> ledger, Map<String, Set<String>> presentByDimension) {
-        boolean wasShared = false;
-        boolean stillSomewhere = false;
-        boolean fullyKnown = true;
-        for (String key : identitiesOf(wp)) {
-            if (ledger.contains(key)) {
-                wasShared = true;
-            }
-            Set<String> present = presentByDimension.get(XaeroLinkLedger.dimensionOf(key));
-            if (present == null) {
-                fullyKnown = false;
-            } else if (present.contains(key)) {
-                stillSomewhere = true;
-            }
+        String key = identityOf(wp);
+        if (!ledger.contains(key)) {
+            return false;
         }
-        return wasShared && fullyKnown && !stillSomewhere;
+        Set<String> present = presentByDimension.get(wp.dimensionOrOverworld());
+        return present != null && !present.contains(key);
     }
 
     /**
@@ -187,15 +176,18 @@ public final class XaeroSync {
             return null;
         }
         Minecraft client = Minecraft.getInstance();
+        // See importNow: pending deletions are final for a sync.
+        WaypointStore.commitPendingRemovals();
         boolean live = XaeroBridge.isAvailable();
         Set<String> ledger = XaeroLinkLedger.load();
 
-        Map<String, List<Target>> byDimension = groupByTargetDimension();
+        Map<String, List<Waypoint>> byDimension = groupByDimension();
 
-        // Every dimension easyWp projects into, plus every dimension the ledger mentions. That second
-        // half matters: after the last easyWp waypoint in a dimension is deleted, that dimension is
-        // absent from byDimension entirely, and visiting only byDimension would leave its shared Xaero
-        // copies behind forever - exactly the deletion the player asked this button to propagate.
+        // Every dimension easyWp has waypoints in, plus every dimension the ledger mentions. That
+        // second half matters: after the last easyWp waypoint in a dimension is deleted, that
+        // dimension is absent from byDimension entirely, and visiting only byDimension would leave its
+        // linked Xaero copies behind forever - exactly the deletion the player asked this button to
+        // propagate.
         Set<String> dimensions = new HashSet<>(byDimension.keySet());
         for (String key : ledger) {
             dimensions.add(XaeroLinkLedger.dimensionOf(key));
@@ -204,12 +196,12 @@ public final class XaeroSync {
         int added = 0;
         int removed = 0;
         for (String dimension : dimensions) {
-            List<Target> targets = byDimension.getOrDefault(dimension, List.of());
             List<XaeroBridge.RealWaypoint> wanted = new ArrayList<>();
-            for (Target t : targets) {
+            for (Waypoint wp : byDimension.getOrDefault(dimension, List.of())) {
+                BlockPos pos = wp.getPos();
                 wanted.add(new XaeroBridge.RealWaypoint(
-                        t.source.getName(), t.pos.getX(), t.pos.getY(), t.pos.getZ(),
-                        XaeroWaypointFormat.nearestColorOrdinal(t.source.getColor())));
+                        wp.getName(), pos.getX(), pos.getY(), pos.getZ(),
+                        XaeroWaypointFormat.nearestColorOrdinal(wp.getColor())));
             }
             Set<String> wantedKeys = identityKeys(dimension, wanted);
 
@@ -334,13 +326,9 @@ public final class XaeroSync {
         return keys;
     }
 
-    /** Every identity one easyWp waypoint occupies on Xaero's side: its own, plus the converted one in
-     *  the dimension it mirrors into when {@code shared}. Both have to be accounted for, or a shared
-     *  waypoint's Nether image looks like a waypoint easyWp never had. */
-    private static List<String> identitiesOf(Waypoint wp) {
-        List<String> keys = new ArrayList<>(2);
-        wp.forEachPosition((dimension, pos) -> keys.add(XaeroLinkLedger.keyFor(dimension, pos.getX(), pos.getZ(), wp.getName())));
-        return keys;
+    /** The identity an easyWp waypoint has on Xaero's side: its dimension, X, Z and name. */
+    private static String identityOf(Waypoint wp) {
+        return XaeroLinkLedger.keyFor(wp.dimensionOrOverworld(), wp.getPos().getX(), wp.getPos().getZ(), wp.getName());
     }
 
     /** Swaps out every ledger entry for {@code dimension}, leaving other dimensions untouched - the
@@ -357,13 +345,6 @@ public final class XaeroSync {
      * rescanning the whole list (and rebuilding each waypoint's identities) for every Xaero
      * waypoint, which made an Import cost easyWp's count times Xaero's.
      *
-     * <p>Holds every <em>projected</em> identity of every existing waypoint, not just its native
-     * one, and that is load-bearing rather than thorough-for-its-own-sake: exporting a
-     * {@code shared} Overworld waypoint writes it into the Nether too, at the 1:8 converted position
-     * (see {@link Waypoint#forEachPosition}). A later Import reads that Nether copy back, and matching only
-     * native positions would not recognise it as the Overworld waypoint it came from - so every
-     * export/import round trip would add a spurious Nether duplicate of every shared waypoint.
-     *
      * <p>Y is deliberately not part of it: Xaero reports a synthetic {@code y = 64} for a waypoint
      * saved without one, which would otherwise never match. A waypoint with no name is left out, as
      * it could never equal a Xaero waypoint's name.
@@ -372,26 +353,19 @@ public final class XaeroSync {
         Set<String> keys = new HashSet<>();
         for (Waypoint wp : WaypointStore.waypoints) {
             if (wp != null && wp.getName() != null) {
-                keys.addAll(identitiesOf(wp));
+                keys.add(identityOf(wp));
             }
         }
         return keys;
     }
 
-    // ---- shared target projection ------------------------------------------------------------
-
-    private record Target(Waypoint source, BlockPos pos) {
-    }
-
-    /** Groups every current waypoint by every dimension it should appear in - one entry for a plain
-     *  waypoint, two (native + converted) for a {@code shared} one bridging Overworld/Nether. */
-    private static Map<String, List<Target>> groupByTargetDimension() {
-        Map<String, List<Target>> result = new HashMap<>();
+    /** Every current waypoint, grouped by its dimension. */
+    private static Map<String, List<Waypoint>> groupByDimension() {
+        Map<String, List<Waypoint>> result = new HashMap<>();
         for (Waypoint wp : WaypointStore.waypoints) {
-            if (wp == null) {
-                continue;
+            if (wp != null) {
+                result.computeIfAbsent(wp.dimensionOrOverworld(), d -> new ArrayList<>()).add(wp);
             }
-            wp.forEachPosition((dimension, pos) -> result.computeIfAbsent(dimension, d -> new ArrayList<>()).add(new Target(wp, pos)));
         }
         return result;
     }

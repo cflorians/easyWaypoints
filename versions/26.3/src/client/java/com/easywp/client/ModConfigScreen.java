@@ -116,6 +116,11 @@ public class ModConfigScreen extends OptionsSubScreen {
                         cfg.lookFade.unlookedOpacityPercent, "config.unlooked_opacity_row", 0, this::applyUnlookedOpacity),
                 resetButton(this::resetUnlookedOpacity)
         );
+        this.list.addSmall(
+                new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, OPACITY_FLOOR, OPACITY_CEIL, 5.0,
+                        cfg.favorites.unlookedOpacityPercent, "config.favorite_unlooked_opacity_row", 0, this::applyFavoriteUnlookedOpacity),
+                resetButton(this::resetFavoriteUnlookedOpacity)
+        );
         // Discrete: step 1 over 1-7, so the slider snaps to seven sizes.
         this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, LOOK_AREA_FLOOR, LOOK_AREA_CEIL, 1.0,
@@ -326,6 +331,11 @@ public class ModConfigScreen extends OptionsSubScreen {
         ModConfig.save();
     }
 
+    private void applyFavoriteUnlookedOpacity(double v) {
+        ModConfig.get().favorites.unlookedOpacityPercent = clamp(v, OPACITY_FLOOR, OPACITY_CEIL);
+        ModConfig.save();
+    }
+
     private void applyLookAreaSize(double v) {
         ModConfig.get().lookFade.lookAreaSize = (int) Math.round(clamp(v, LOOK_AREA_FLOOR, LOOK_AREA_CEIL));
         ModConfig.save();
@@ -374,6 +384,12 @@ public class ModConfigScreen extends OptionsSubScreen {
 
     private void resetUnlookedOpacity() {
         ModConfig.get().lookFade.unlookedOpacityPercent = new ModConfig.LookFade().unlookedOpacityPercent;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetFavoriteUnlookedOpacity() {
+        ModConfig.get().favorites.unlookedOpacityPercent = new ModConfig.Favorites().unlookedOpacityPercent;
         ModConfig.save();
         reopen();
     }

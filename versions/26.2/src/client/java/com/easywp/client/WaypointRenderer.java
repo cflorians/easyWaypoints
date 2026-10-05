@@ -259,6 +259,8 @@ public class WaypointRenderer {
         int markerAlpha = (int) Math.round(255 * Mth.clamp(ModConfig.get().waypointSize.opacityPercent / 100.0, 0.0, 1.0));
         ModConfig.LookFade lookCfg = ModConfig.get().lookFade;
         float unlookedOpacity = (float) Mth.clamp(lookCfg.unlookedOpacityPercent / 100.0, 0.0, 1.0);
+        // Favorites fade less when not looked at - their own setting, not a multiplier on the above.
+        float favoriteUnlookedOpacity = (float) Mth.clamp(ModConfig.get().favorites.unlookedOpacityPercent / 100.0, 0.0, 1.0);
         float lookAreaScale = LOOK_AREA_SCALE[Mth.clamp(lookCfg.lookAreaSize, 1, LOOK_AREA_SCALE.length) - 1];
 
         for (WaypointHolder holder : activeWaypoints) {
@@ -271,7 +273,8 @@ public class WaypointRenderer {
             // fully opaque wherever it is on screen, for as long as it stays focused.
             float opacity = wp.isFocused()
                     ? 1.0f
-                    : lookOpacity(holder, label, textWidth, guiWidth, guiHeight, unlookedOpacity, lookAreaScale);
+                    : lookOpacity(holder, label, textWidth, guiWidth, guiHeight,
+                            wp.isFavorite() ? favoriteUnlookedOpacity : unlookedOpacity, lookAreaScale);
 
             drawMarker(graphics, holder, (Math.round(markerAlpha * opacity) << 24) | (wp.getColor() & 0xFFFFFF));
             drawLabel(graphics, font, label, nameText, textWidth, opacity);

@@ -13,8 +13,6 @@ public final class Icons {
     public static final Identifier MARKER_FILL    = Identifier.fromNamespaceAndPath("easywp", "textures/gui/marker_fill.png");
     public static final Identifier MARKER_OUTLINE = Identifier.fromNamespaceAndPath("easywp", "textures/gui/marker_outline.png");
     public static final Identifier MARKER_SKULL   = Identifier.fromNamespaceAndPath("easywp", "textures/gui/marker_skull.png");
-    public static final Identifier PORTAL_FRAME   = Identifier.fromNamespaceAndPath("easywp", "textures/gui/portal_frame.png");
-    public static final Identifier PORTAL_FILL    = Identifier.fromNamespaceAndPath("easywp", "textures/gui/portal_fill.png");
 
     public static final Identifier CANCEL  = Identifier.fromNamespaceAndPath("easywp", "textures/gui/cancelbutton.png");
     public static final Identifier LIST    = Identifier.fromNamespaceAndPath("easywp", "textures/gui/listbutton.png");
@@ -39,19 +37,29 @@ public final class Icons {
     }
 
     /**
-     * Nether portal icon: obsidian frame whenever the control is usable (matching a real portal's
-     * always-visible stone frame), purple swirl fill only while shared. Only truly blocked states
-     * (e.g. sharing disabled in The End) fall back to a plain gray frame.
+     * Rows of the 9x9 favorite star, as [first column, past-the-last column] pairs per row - drawn
+     * with {@code fill} like the list's other hand-drawn glyphs rather than shipped as a texture,
+     * since it is one small size in one colour.
      */
-    public static void drawPortalIcon(GuiGraphicsExtractor g, int x, int y,
-                                      boolean shared, boolean enabled) {
-        if (!enabled) {
-            ClientCompat.blitTinted(g, PORTAL_FRAME, x, y, 18, 18, UiPalette.ICON_DISABLED);
-            return;
+    private static final int[][] STAR_ROWS = {
+            {4, 5}, {4, 5}, {3, 6}, {0, 9}, {1, 8}, {2, 7}, {2, 4, 5, 7}, {1, 3, 6, 8}, {1, 2, 7, 8}
+    };
+
+    /** The 9x9 favorite star with its top-left corner at {@code x, y}. */
+    public static void drawStar(GuiGraphicsExtractor g, int x, int y, int color) {
+        for (int row = 0; row < STAR_ROWS.length; row++) {
+            int[] runs = STAR_ROWS[row];
+            for (int i = 0; i < runs.length; i += 2) {
+                g.fill(x + runs[i], y + row, x + runs[i + 1], y + row + 1, color);
+            }
         }
-        if (shared) {
-            ClientCompat.blitTinted(g, PORTAL_FILL, x, y, 18, 18, UiPalette.ICON_ACCENT);
+    }
+
+    /** Three dots, the usual "more options" glyph, centred on {@code cx, cy} - the list's row
+     *  button and the create screen's page button. Hand-drawn like the star. */
+    public static void drawMoreGlyph(GuiGraphicsExtractor g, int cx, int cy, int color) {
+        for (int dx = -5; dx <= 3; dx += 4) {
+            g.fill(cx + dx, cy - 1, cx + dx + 2, cy + 1, color);
         }
-        ClientCompat.blitTinted(g, PORTAL_FRAME, x, y, 18, 18, UiPalette.PORTAL_FRAME);
     }
 }

@@ -7,6 +7,8 @@ public final class UiPalette {
     // Chrome del modal: paleta azul semitransparente original (revertida tras probar el negro casi puro)
     public static final int MODAL_BG     = 0xD010141E;
     public static final int MODAL_BORDER = 0xFF3D4966;
+    // Fondo del menú "Más opciones" de la lista: casi opaco, porque flota sobre las filas y sus botones.
+    public static final int MENU_BG      = 0xF210141E;
 
     // Estados de ModernButton: mismos valores azules originales
     public static final int BTN_BG           = 0xB0141A26;
@@ -21,7 +23,7 @@ public final class UiPalette {
 
     // Tintes de icono: retocados con un matiz azulado para acompañar la paleta de arriba.
     // ICON_DESTRUCTIVE y ICON_ACCENT se dejan igual: son colores semánticos (rojo = borrar,
-    // morado = portal) que no dependen del tema.
+    // morado = teletransporte) que no dependen del tema.
     public static final int ICON_IDLE        = 0xFFBCC8DE;
     public static final int ICON_DISABLED    = 0xFF4A5570;
     public static final int ICON_DESTRUCTIVE = 0xFFD45C5C;
@@ -32,15 +34,15 @@ public final class UiPalette {
     public static final int MARKER_SKULL        = 0xFFF0EEE6;
     public static final int FOCUS_OUTLINE_ON    = 0xFFD4AF37;
 
-    // Icono de portal (compartir dimensión): obsidiana/morado fijos, no dependen del tema.
-    public static final int PORTAL_FRAME = 0xFF1D1626;
+    // Estrella de favorito: ámbar, el color universal de "favorito". Distinto del dorado del foco
+    // (FOCUS_OUTLINE_ON), que significa otra cosa; la forma tampoco se parece al borde del foco.
+    public static final int FAVORITE_STAR = 0xFFFFC83D;
 
     // Fondo de la etiqueta del waypoint: el HUD (WaypointRenderer) y la vista previa (no cambia con el tema)
     public static final int LABEL_BACKDROP = 0x40000000;
 
     // Texto
     public static final int TEXT_PRIMARY   = 0xFFFFFFFF;
-    public static final int TEXT_CONVERTED = 0xFFEFE29A;
     public static final int TEXT_SECONDARY = 0xFF7C88A6;
     public static final int TEXT_DIM       = 0xFF4A5570;
     public static final int TEXT_DIM_SOFT  = 0xFF2E3446;

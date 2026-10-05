@@ -86,5 +86,22 @@
   "easywp.config.distance_km_tooltip": "From 1000 blocks on, labels show 1.2km instead of 1234m",
   "easywp.config.max_visible_row": "Max visible: %s",
   "easywp.config.max_visible_unlimited": "Unlimited",
-  "easywp.config.max_visible_tooltip": "Draws only the nearest waypoints on screen. The focused one is always shown."
+  "easywp.config.max_visible_tooltip": "Draws only the nearest waypoints on screen. The focused one is always shown.",
+  "easywp.create.more_options": "More options",
+  "easywp.create.more_title": "More Options",
+  "easywp.create.favorite_on": "Favorite: Yes",
+  "easywp.create.favorite_off": "Favorite: No",
+  "easywp.create.favorite_tooltip": "Favorites go first in the list and fade less when you are not looking at them",
+  "easywp.create.duplicate": "Save and duplicate in the %s",
+  "easywp.create.duplicate_generic": "Save and duplicate",
+  "easywp.create.duplicate_tooltip": "Saves, then adds a separate copy at the converted 1:8 position",
+  "easywp.create.duplicate_unsupported": "Only for the Overworld and the Nether",
+  "easywp.create.feedback_duplicated": "§aWaypoint duplicated! §7(%s) in the %s at X: %s Y: %s Z: %s",
+  "easywp.list.undo": "Undo",
+  "easywp.config.favorite_unlooked_opacity_row": "Unlooked favorites: %s%%",
+  "easywp.list.delete_now": "Delete",
+  "easywp.list.pending_delete": "Deleting in %s s",
+  "easywp.list.duplicate": "Duplicate in the %s",
+  "easywp.list.duplicate_exists": "Already copied to the %s",
+  "easywp.create.duplicate_exists": "There is already a copy in the %s"
 }

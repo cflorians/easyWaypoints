@@ -3,6 +3,8 @@ package com.easywp.client;
 import com.easywp.AsyncJsonWriter;
 import com.easywp.EasyWp;
 import com.easywp.JsonStore;
+import com.easywp.PairedCoordinates;
+import com.easywp.PendingRemovals;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -16,8 +18,10 @@ import java.lang.reflect.Type;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -42,6 +46,21 @@ public final class WaypointStore {
 
     /** Refreshed only alongside {@link #lastCheckedLevel} - see {@link #checkAndLoadWorldWaypoints()}. */
     private static String cachedDimension = DimensionNames.OVERWORLD;
+
+    /** How long a deletion from the list can be undone, each on its own clock. */
+    private static final long UNDO_LIFETIME_MS = 7_000;
+
+    /**
+     * The list's deletions still within their seconds. Kept here, not on the screen, so closing and
+     * reopening the list meanwhile still shows them, and so they run out with the list closed (see
+     * {@link #tickPendingRemovals()}).
+     */
+    private static final PendingRemovals<Waypoint> pendingRemovals =
+            new PendingRemovals<>(UNDO_LIFETIME_MS, System::currentTimeMillis);
+
+    /** Bumped whenever waypoints leave the list without the list having asked - a pending deletion
+     *  running out, or all of them being made final - so an open list knows to rebuild its rows. */
+    private static int removalsVersion = 0;
 
     private WaypointStore() { }
 
@@ -172,6 +191,116 @@ public final class WaypointStore {
         lastWorldId = "";
         cachedDimension = DimensionNames.OVERWORLD;
         waypoints.clear();
+        pendingRemovals.takeAll();
+    }
+
+    /**
+     * Deletes {@code wp} the way the list's delete button does: for {@link #UNDO_LIFETIME_MS} it
+     * stays in the list, dimmed, with Undo and Delete in place of its buttons; it is gone from the
+     * world ({@link Waypoint#isShown}), from any focus count and from the file at once - the save
+     * below already leaves it out, so closing the game meanwhile keeps it deleted, as a deletion
+     * always was. When its time runs out {@link #tickPendingRemovals()} drops it from the list.
+     * Only the list deletes through here; deaths reached, Xaero imports and evictions remove
+     * directly and cannot be undone.
+     */
+    public static void markForRemoval(Waypoint wp) {
+        if (!waypoints.contains(wp)) return;
+        wp.setPendingRemoval(true);
+        pendingRemovals.mark(wp);
+        saveToFile();
+    }
+
+    /** Takes back a pending deletion - the row's Undo. The waypoint never left its place in the
+     *  list, so it is simply back, focus and all. @return whether it was still pending */
+    public static boolean undoRemoval(Waypoint wp) {
+        if (!pendingRemovals.cancel(wp)) return false;
+        wp.setPendingRemoval(false);
+        saveToFile();
+        return true;
+    }
+
+    /** Makes a pending deletion final now instead of after its seconds - the row's Delete. */
+    public static void removeNow(Waypoint wp) {
+        pendingRemovals.cancel(wp);
+        waypoints.remove(wp);
+        saveToFile();
+    }
+
+    /** Drops from the list every pending deletion whose time is up. Every client tick, in a world,
+     *  so it happens with the list closed too. */
+    public static void tickPendingRemovals() {
+        if (pendingRemovals.size() == 0) return;
+        List<Waypoint> expired = pendingRemovals.takeExpired();
+        if (!expired.isEmpty()) {
+            waypoints.removeAll(expired);
+            removalsVersion++;
+        }
+    }
+
+    /** Makes every pending deletion final at once - before a Xaero sync, which must act on the list
+     *  as it is about to be, not on rows that are already gone everywhere else. */
+    public static void commitPendingRemovals() {
+        List<Waypoint> all = pendingRemovals.takeAll();
+        if (!all.isEmpty()) {
+            waypoints.removeAll(all);
+            removalsVersion++;
+        }
+    }
+
+    /** Milliseconds until {@code wp}'s pending deletion becomes final; -1 if it is not pending. */
+    public static long remainingRemovalMillis(Waypoint wp) {
+        return pendingRemovals.remainingMillis(wp);
+    }
+
+    /** See {@link #removalsVersion}. */
+    public static int removalsVersion() {
+        return removalsVersion;
+    }
+
+    /**
+     * The copy {@code wp} already has in the other half of the Overworld/Nether pair, or
+     * {@code null}: a waypoint there with the same name whose X/Z correspond to {@code wp}'s at 1:8
+     * ({@link PairedCoordinates#areCopies}), in whichever direction it was made. Y is not compared,
+     * so a copy whose height the player adjusted to its own dimension is still the copy. A copy
+     * that is itself pending deletion does not count - it is gone as far as the player can tell -
+     * and neither, of course, does one deleted for good: duplicating then makes a new one.
+     */
+    public static Waypoint findCopyInPairedDimension(Waypoint wp) {
+        String paired = wp.pairedDimension();
+        if (paired == null || wp.getName() == null) return null;
+        boolean wpInOverworld = wp.dimensionOrOverworld().equals(DimensionNames.OVERWORLD);
+        for (Waypoint other : waypoints) {
+            if (other == null || other == wp || other.isPendingRemoval()) continue;
+            if (!paired.equals(other.dimensionOrOverworld()) || !wp.getName().equals(other.getName())) continue;
+            BlockPos ow = wpInOverworld ? wp.getPos() : other.getPos();
+            BlockPos nether = wpInOverworld ? other.getPos() : wp.getPos();
+            if (PairedCoordinates.areCopies(ow.getX(), ow.getZ(), nether.getX(), nether.getZ())) {
+                return other;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Adds an independent copy of {@code wp} to the other half of the Overworld/Nether pair: same
+     * name and colour, at {@link Waypoint#convertedPosition()}, with its own creation time - from
+     * then on the two are separate waypoints that can be moved, renamed or deleted apart. Nothing
+     * else is carried over. Used by the list's "More options" menu and the create screen's "Save
+     * and duplicate"; it is what replaced the shared waypoints drawn in both dimensions until 1.4.0.
+     *
+     * @return the copy, or {@code null} if none was made: outside the pair, or because
+     *         {@link #findCopyInPairedDimension} already finds one - duplicating twice never
+     *         leaves two copies
+     */
+    public static Waypoint duplicateIntoPairedDimension(Waypoint wp) {
+        String paired = wp.pairedDimension();
+        BlockPos at = wp.convertedPosition();
+        if (paired == null || at == null || findCopyInPairedDimension(wp) != null) return null;
+
+        Waypoint copy = new Waypoint(wp.getName(), at, wp.getColor(), paired);
+        waypoints.add(copy);
+        saveToFile();
+        return copy;
     }
 
     /** Whether there is a world open for the waypoints to belong to - {@link #getWorldId()} is
@@ -185,7 +314,8 @@ public final class WaypointStore {
      *  see {@link Waypoint#isShown}. */
     public static boolean hasAnyFocused() {
         for (Waypoint wp : waypoints) {
-            if (wp != null && wp.isFocused()) {
+            // A focused waypoint pending deletion is already gone from the world, and so is its focus.
+            if (wp != null && wp.isFocused() && !wp.isPendingRemoval()) {
                 return true;
             }
         }
@@ -219,6 +349,8 @@ public final class WaypointStore {
             boolean anyFocused = hasAnyFocused();
             List<WaypointData> dataList = new ArrayList<>();
             for (Waypoint wp : waypoints) {
+                // Deleted from the list and only waiting out its undo: already deleted on disk.
+                if (wp.isPendingRemoval()) continue;
                 dataList.add(new WaypointData(wp, anyFocused));
             }
 
@@ -238,17 +370,79 @@ public final class WaypointStore {
 
         Path configFile = waypointsFile(worldId);
         waypoints.clear();
+        pendingRemovals.takeAll();
 
         List<WaypointData> dataList = readWaypointData(configFile, worldId);
         if (dataList != null) {
-            for (WaypointData data : dataList) {
-                if (data != null) {
-                    waypoints.add(data.toWaypoint());
-                }
+            Loaded loaded = toWaypoints(dataList);
+            waypoints.addAll(loaded.waypoints());
+            if (loaded.splitShared() > 0) {
+                EasyWp.LOGGER.info("Turned {} shared waypoint(s) of {} into a separate copy in each dimension",
+                        loaded.splitShared(), worldId);
+                // Written straight back, so the file holds the new shape (and the .bak the old
+                // one) and the split is not redone on every join.
+                saveToFile();
             }
         } else {
             warnAboutOrphanedRealmFiles(worldId, configFile);
         }
+    }
+
+    /** What a file turned into: its waypoints, and how many old shared ones were split to get them. */
+    private record Loaded(List<Waypoint> waypoints, int splitShared) {
+    }
+
+    /**
+     * Turns a file's entries into waypoints, splitting every one saved as {@code shared}.
+     *
+     * <p>Until 1.4.0 a shared waypoint lived in one dimension and was also drawn, converted 1:8, in
+     * the other half of the Overworld/Nether pair. That mirroring is gone, replaced by an
+     * independent copy (the create screen's "Save and duplicate"). So an old shared waypoint
+     * becomes exactly that: itself, plus a copy at {@link Waypoint#convertedPosition()} - where its
+     * mirror was drawn - right after it, with the same name, colour, visibility, favorite and
+     * creation time. The player keeps seeing what they saw, and a copy Xaero's Export had already
+     * written into the other dimension keeps matching (same name, X and Z), so the next Export does
+     * not delete it from Xaero.
+     *
+     * <p>The copy is never focused (focus is one waypoint) but is kept visible beside the original's
+     * focus, as the mirror was; it is never a death waypoint or a Fast Ping, whose rules belong to
+     * the one that was really created. It is skipped when the file already holds a waypoint of that
+     * name at that exact spot, or when the shared one was not in the Overworld or the Nether.
+     */
+    private static Loaded toWaypoints(List<WaypointData> dataList) {
+        List<Waypoint> result = new ArrayList<>();
+        Set<String> identities = new HashSet<>();
+        for (WaypointData data : dataList) {
+            if (data != null) {
+                identities.add(identityOf(data.toWaypoint()));
+            }
+        }
+        int split = 0;
+        for (WaypointData data : dataList) {
+            if (data == null) continue;
+            Waypoint wp = data.toWaypoint();
+            result.add(wp);
+            if (!Boolean.TRUE.equals(data.shared)) continue;
+
+            String paired = wp.pairedDimension();
+            BlockPos at = wp.convertedPosition();
+            if (paired == null || at == null) continue;
+            Waypoint copy = new Waypoint(wp.getName(), at, wp.getColor(), paired,
+                    wp.isVisible(), false, false, wp.getCreatedAtMillis());
+            copy.setForceVisible(wp.isFocused() || wp.isForceVisible());
+            copy.setFavorite(wp.isFavorite());
+            if (identities.add(identityOf(copy))) {
+                result.add(copy);
+                split++;
+            }
+        }
+        return new Loaded(result, split);
+    }
+
+    /** Name, exact position and dimension - the same identity {@link #mergeFrom} dedups by. */
+    private static String identityOf(Waypoint wp) {
+        BlockPos pos = wp.getPos();
+        return wp.dimensionOrOverworld() + "|" + pos.getX() + "|" + pos.getY() + "|" + pos.getZ() + "|" + wp.getName();
     }
 
     /**
@@ -289,23 +483,16 @@ public final class WaypointStore {
      * @return the parsed waypoints, or an empty list if {@code file} is absent or unreadable.
      */
     public static List<Waypoint> loadWaypointsFrom(Path file) {
-        List<Waypoint> result = new ArrayList<>();
         List<WaypointData> dataList = readWaypointData(file, null);
-        if (dataList != null) {
-            for (WaypointData data : dataList) {
-                if (data != null) {
-                    result.add(data.toWaypoint());
-                }
-            }
-        }
-        return result;
+        // Old shared waypoints split the same way as in this world's own file - but the other
+        // world's file is only read here, never written back.
+        return dataList == null ? new ArrayList<>() : toWaypoints(dataList).waypoints();
     }
 
-    /** How many waypoints a file holds, for the import picker's per-row count - reads the file
-     *  without materializing full {@link Waypoint} objects. */
+    /** How many waypoints a file holds, for the import picker's per-row count - counted after
+     *  splitting old shared ones, so it matches what the confirmation screen then lists. */
     public static int countWaypointsIn(Path file) {
-        List<WaypointData> dataList = readWaypointData(file, null);
-        return dataList == null ? 0 : dataList.size();
+        return loadWaypointsFrom(file).size();
     }
 
     /**
@@ -378,12 +565,14 @@ public final class WaypointStore {
                     candidate.getPos(),
                     candidate.getColor(),
                     candidate.getDimension(),
-                    candidate.isShared(),
                     candidate.isVisible(),
                     false,
                     false,
                     candidate.getCreatedAtMillis()
             );
+            // Unlike focus, a favorite is the player's own mark on the waypoint itself, not state
+            // tied to the world it came from.
+            copy.setFavorite(candidate.isFavorite());
             waypoints.add(copy);
             added++;
         }
@@ -395,7 +584,8 @@ public final class WaypointStore {
 
     private static boolean hasSameIdentity(Waypoint candidate) {
         for (Waypoint existing : waypoints) {
-            if (existing == null) continue;
+            // One pending deletion is about to be gone: it must not keep its twin from being imported.
+            if (existing == null || existing.isPendingRemoval()) continue;
             if (Objects.equals(existing.getName(), candidate.getName())
                     && existing.getPos().equals(candidate.getPos())
                     && Objects.equals(existing.getDimension(), candidate.getDimension())) {
@@ -488,7 +678,10 @@ public final class WaypointStore {
         int z;
         int color;
         String dimension;
-        boolean shared;
+        /** Read only: until 1.4.0, a waypoint also drawn in the other half of the Overworld/Nether
+         *  pair. Loading splits it into two (see {@link #toWaypoints}); saving leaves it out
+         *  (null, which Gson skips), and versions before 1.4.0 read the missing key as false. */
+        Boolean shared;
         Boolean visible;
         Boolean focused;
         Boolean death;
@@ -498,6 +691,8 @@ public final class WaypointStore {
          *  way the focus itself always did. Optional: a file from before reads it as absent, and
          *  older versions simply ignore it. */
         Boolean forceVisible;
+        /** Since 1.4.0. Optional, like the rest: absent reads as not a favorite. */
+        Boolean favorite;
 
         public WaypointData(Waypoint wp, boolean anyFocused) {
             this.name = wp.getName();
@@ -506,13 +701,13 @@ public final class WaypointStore {
             this.z = wp.getPos().getZ();
             this.color = wp.getColor();
             this.dimension = wp.getDimension();
-            this.shared = wp.isShared();
             this.visible = wp.isVisible();
             this.focused = wp.isFocused();
             this.death = wp.isDeath();
             this.createdAt = wp.getCreatedAtMillis();
             this.fastPing = wp.isFastPing();
             this.forceVisible = anyFocused && wp.isForceVisible();
+            this.favorite = wp.isFavorite();
         }
 
         public Waypoint toWaypoint() {
@@ -521,7 +716,6 @@ public final class WaypointStore {
                 new BlockPos(x, y, z),
                 color,
                 dimension,
-                shared,
                 visible == null ? true : visible,
                 focused == null ? false : focused,
                 death == null ? false : death,
@@ -529,6 +723,7 @@ public final class WaypointStore {
             );
             wp.setFastPing(fastPing != null && fastPing);
             wp.setForceVisible(forceVisible != null && forceVisible);
+            wp.setFavorite(favorite != null && favorite);
             return wp;
         }
     }

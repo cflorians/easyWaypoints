@@ -142,7 +142,7 @@ public class DeathWaypointManager {
 
         String name = I18nHelper.getComponent("death.name", LocalTime.now().format(TIME_FORMAT)).getString();
 
-        Waypoint wp = new Waypoint(name, pos, DEATH_COLOR, dimension, false, true, false, true, System.currentTimeMillis());
+        Waypoint wp = new Waypoint(name, pos, DEATH_COLOR, dimension, true, false, true, System.currentTimeMillis());
         WaypointStore.waypoints.add(wp);
         WaypointStore.saveToFile();
 

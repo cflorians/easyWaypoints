@@ -46,6 +46,18 @@ public class WaypointListScreen extends Screen {
      */
     private boolean showXaeroButtons = false;
 
+    /**
+     * The waypoint whose "More options" menu is open, or {@code null}. The menu is a small panel
+     * beside that row, drawn and clicked by hand on top of everything else rather than built from
+     * widgets (see {@link #menuBox()}), and it follows the waypoint, not a row index: toggling a
+     * favorite moves the row to the top and the menu goes with it, and if the row leaves the page
+     * the menu closes.
+     */
+    private Waypoint optionsFor = null;
+
+    /** {@link WaypointStore#removalsVersion()} when the rows were last built - see {@link #tick()}. */
+    private int seenRemovalsVersion = WaypointStore.removalsVersion();
+
 
     /** The three vanilla dimensions, always offered so the tab order never shifts under the player. */
     private static final List<String> VANILLA_DIMENSIONS = List.of(
@@ -74,6 +86,29 @@ public class WaypointListScreen extends Screen {
      * and shifting the action-button row right (to equalize the left/right modal margins) freed 12 more.
      */
     private static final int NAME_MAX_WIDTH = 133;
+
+    /**
+     * A favorite's name starts after its 9px star and a 2px gap, and gives up that width. Only
+     * favorites move: a list without any looks exactly as it did, rather than every row losing
+     * the space to a star slot that stays empty.
+     */
+    private static final int STAR_SLOT = 11;
+
+    private static int nameIndent(Waypoint wp) {
+        return wp.isFavorite() ? STAR_SLOT : 0;
+    }
+
+    /**
+     * A row pending deletion shows Undo and Delete across the whole action strip, from the TP slot
+     * (centerX + 20) to the delete icon's right edge (centerX + 138): two buttons with a 4px gap.
+     */
+    private static final int PENDING_BUTTON_W = 57;
+
+    /** The "More options" menu: one item per row of this height, inside this padding. */
+    private static final int MENU_ITEM_H = 16;
+    private static final int MENU_PAD = 2;
+    /** Where an item's text starts, past the space for the favorite star. */
+    private static final int MENU_TEXT_INSET = 17;
 
     /**
      * Search box and sort button share the 260px the search box used to occupy on its own, at the
@@ -106,24 +141,17 @@ public class WaypointListScreen extends Screen {
     private static class WaypointEntry {
         final Waypoint waypoint;
         final BlockPos displayPos;
-        final boolean converted;
         private Component nameComponent;
         private Component coordsComponent;
 
-        WaypointEntry(Waypoint waypoint, BlockPos displayPos, boolean converted) {
+        WaypointEntry(Waypoint waypoint) {
             this.waypoint = waypoint;
-            this.displayPos = displayPos;
-            this.converted = converted;
+            this.displayPos = waypoint.getPos();
         }
 
         Component name(net.minecraft.client.gui.Font font) {
             if (nameComponent == null) {
-                String name = waypoint.getName();
-                if (converted) {
-                    String prefix = waypoint.dimensionOrOverworld().equals(DimensionNames.OVERWORLD) ? "[OW] " : "[N] ";
-                    name = prefix + name;
-                }
-                nameComponent = Component.literal(truncateToWidth(font, name, NAME_MAX_WIDTH));
+                nameComponent = Component.literal(truncateToWidth(font, waypoint.getName(), NAME_MAX_WIDTH - nameIndent(waypoint)));
             }
             return nameComponent;
         }
@@ -180,11 +208,8 @@ public class WaypointListScreen extends Screen {
     private List<WaypointEntry> getWaypointsForDimension(String dimension) {
         List<WaypointEntry> result = new ArrayList<>();
         for (Waypoint wp : WaypointStore.waypoints) {
-            if (wp == null) continue;
-            BlockPos pos = wp.positionIn(dimension);
-            if (pos != null) {
-                // Shown here but belonging elsewhere: a shared waypoint's converted copy.
-                result.add(new WaypointEntry(wp, pos, !wp.dimensionOrOverworld().equals(dimension)));
+            if (wp != null && wp.dimensionOrOverworld().equals(dimension)) {
+                result.add(new WaypointEntry(wp));
             }
         }
         return result;
@@ -225,8 +250,6 @@ public class WaypointListScreen extends Screen {
                     entry -> entry.waypoint.getName() == null ? "" : entry.waypoint.getName(),
                     String.CASE_INSENSITIVE_ORDER));
             case DISTANCE -> {
-                // Measured against the coordinates the row actually shows, so a shared waypoint
-                // sorts by where it is in the dimension being viewed, not where it was placed.
                 BlockPos from = this.minecraft != null && this.minecraft.player != null
                         ? this.minecraft.player.blockPosition()
                         : BlockPos.ZERO;
@@ -238,6 +261,9 @@ public class WaypointListScreen extends Screen {
             // another world sorts by when it was originally created, not when it was imported.
             case CREATED -> entries.sort(Comparator.comparingLong(entry -> entry.waypoint.getCreatedAtMillis()));
         }
+        // Favorites first, whatever the order. A second, stable sort, so within each half the
+        // mode's own order stands.
+        entries.sort(Comparator.comparing(entry -> !entry.waypoint.isFavorite()));
     }
 
     private static double squaredDistance(BlockPos a, BlockPos b) {
@@ -348,6 +374,16 @@ public class WaypointListScreen extends Screen {
         refreshItemWidgets();
     }
 
+    /** Rebuilds the rows when deletions ran out (or were all made final) while the list was open:
+     *  those waypoints left the list from outside it, and their rows would otherwise linger. */
+    @Override
+    public void tick() {
+        super.tick();
+        if (this.seenRemovalsVersion != WaypointStore.removalsVersion()) {
+            refreshItemWidgets();
+        }
+    }
+
     /** Left edge of the Xaero corner button {@code slotFromRight} places in from the screen's right
      *  edge: 0 is the outermost (Export), 1 the one beside it (Import). */
     private int xaeroButtonX(int slotFromRight) {
@@ -374,6 +410,7 @@ public class WaypointListScreen extends Screen {
             this.removeWidget(widget);
         }
         dynamicWidgets.clear();
+        this.seenRemovalsVersion = WaypointStore.removalsVersion();
 
         int centerX = this.width / 2;
         int centerY = this.height / 2;
@@ -401,6 +438,11 @@ public class WaypointListScreen extends Screen {
             int offsetIndex = i - startIndex;
             int itemY = centerY - 60 + offsetIndex * 22;
 
+            if (wp.isPendingRemoval()) {
+                addPendingRemovalButtons(wp, centerX, itemY);
+                continue;
+            }
+
             int buttonX = centerX + 120;
 
             var delBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
@@ -408,8 +450,7 @@ public class WaypointListScreen extends Screen {
                     ClientCompat.setScreen(this.minecraft, new ConfirmScreen(
                         confirmed -> {
                             if (confirmed) {
-                                WaypointStore.waypoints.remove(wp);
-                                WaypointStore.saveToFile();
+                                WaypointStore.markForRemoval(wp);
                             }
                             ClientCompat.setScreen(this.minecraft, this);
                         },
@@ -417,8 +458,7 @@ public class WaypointListScreen extends Screen {
                         I18nHelper.getComponent("menu.confirm_delete_text", wp.getName())
                     ));
                 } else {
-                    WaypointStore.waypoints.remove(wp);
-                    WaypointStore.saveToFile();
+                    WaypointStore.markForRemoval(wp);
                     refreshItemWidgets();
                 }
             }).pos(buttonX, itemY).size(18, 18)
@@ -428,16 +468,18 @@ public class WaypointListScreen extends Screen {
             dynamicWidgets.add(delBtn);
             buttonX -= 20;
 
-            var dimBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
-                wp.setShared(!wp.isShared());
-                WaypointStore.saveToFile();
-                refreshItemWidgets();
+            // Opens this row's "More options" menu (favorite, duplicate in the other dimension) without
+            // leaving the list, in the slot the shared-waypoint portal toggle had until 1.4.0. While a
+            // menu is open mouseClicked handles every click itself, so this only ever opens one.
+            var moreBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
+                this.optionsFor = wp;
             }).pos(buttonX, itemY).size(18, 18)
-                    .icon((g, b, hovered) -> Icons.drawPortalIcon(g, b.getX(), b.getY(), wp.isShared(), b.active))
+                    .icon((g, b, hovered) -> Icons.drawMoreGlyph(g, b.getX() + b.getWidth() / 2, b.getY() + b.getHeight() / 2,
+                            hovered ? UiPalette.BTN_TEXT_HOVER : UiPalette.ICON_IDLE))
                     .build();
-            dimBtn.active = DimensionNames.isConvertible(selectedDimension);
-            this.addRenderableWidget(dimBtn);
-            dynamicWidgets.add(dimBtn);
+            moreBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("create.more_options")));
+            this.addRenderableWidget(moreBtn);
+            dynamicWidgets.add(moreBtn);
             buttonX -= 20;
 
             var shareBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
@@ -515,7 +557,7 @@ public class WaypointListScreen extends Screen {
                 buttonX -= 20;
                 var tpBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                     if (this.minecraft.player != null && this.minecraft.player.connection != null) {
-                        String targetDim = wp.isShared() ? selectedDimension : (wp.getDimension() != null ? wp.getDimension() : selectedDimension);
+                        String targetDim = wp.dimensionOrOverworld();
                         // Block centre on X/Z (x + 0.5, not "%d.5", which is wrong for negatives),
                         // so the player lands in the middle of the block rather than on its corner.
                         String tpCommand = String.format(Locale.ROOT, "execute in %s run tp @s %.1f %d %.1f",
@@ -627,8 +669,136 @@ public class WaypointListScreen extends Screen {
         dynamicWidgets.add(nextDimBtn);
     }
 
+    /**
+     * The row of a waypoint deleted and still within its seconds: its swatch stays (dimmed, not
+     * clickable) and its whole action strip becomes Undo and Delete - Undo takes the deletion back,
+     * Delete makes it final now instead of waiting. The waypoint itself is already gone from the
+     * world and from the file; see WaypointStore.markForRemoval.
+     */
+    private void addPendingRemovalButtons(Waypoint wp, int centerX, int itemY) {
+        var undoBtn = ModernButton.modernBuilder(I18nHelper.getComponent("list.undo"), btn -> {
+            WaypointStore.undoRemoval(wp);
+            refreshItemWidgets();
+        }).pos(centerX + 20, itemY).size(PENDING_BUTTON_W, 18).build();
+        this.addRenderableWidget(undoBtn);
+        dynamicWidgets.add(undoBtn);
+
+        var deleteNowBtn = ModernButton.modernBuilder(I18nHelper.getComponent("list.delete_now"), btn -> {
+            WaypointStore.removeNow(wp);
+            refreshItemWidgets();
+        }).pos(centerX + 20 + PENDING_BUTTON_W + 4, itemY).size(PENDING_BUTTON_W, 18).build();
+        this.addRenderableWidget(deleteNowBtn);
+        dynamicWidgets.add(deleteNowBtn);
+
+        var swatch = ModernButton.modernBuilder(Component.literal(""), btn -> { })
+                .pos(centerX - 138, itemY).size(18, 18)
+                .icon((g, b, hovered) -> Icons.drawMarkerIcon(g, b.getX(), b.getY(),
+                        dim(wp.getColor()), dim(UiPalette.MARKER_OUTLINE), wp.isDeath()))
+                .build();
+        swatch.active = false;
+        this.addRenderableWidget(swatch);
+        dynamicWidgets.add(swatch);
+    }
+
+    /** One entry of the "More options" menu; {@code action} runs only when {@code enabled}. */
+    private record MenuItem(Component label, boolean enabled, boolean star, Runnable action) {
+    }
+
+    /** Where the open menu is drawn: its box and its items. */
+    private record MenuBox(int x, int y, int width, int height, List<MenuItem> items) {
+    }
+
+    /**
+     * The open menu's items: the favorite toggle (the menu stays open, and follows the row to the
+     * top of the list), and duplicating into the other half of the Overworld/Nether pair - greyed
+     * out, saying why, outside the pair or once the copy exists (WaypointStore's own rule), so a
+     * second press cannot leave two copies.
+     */
+    private List<MenuItem> menuItems(Waypoint wp) {
+        List<MenuItem> items = new ArrayList<>(2);
+        items.add(new MenuItem(
+                I18nHelper.getComponent(wp.isFavorite() ? "create.favorite_on" : "create.favorite_off"), true, true, () -> {
+                    wp.setFavorite(!wp.isFavorite());
+                    WaypointStore.saveToFile();
+                    refreshItemWidgets();
+                }));
+
+        String paired = wp.pairedDimension();
+        if (paired == null) {
+            items.add(new MenuItem(I18nHelper.getComponent("create.duplicate_unsupported"), false, false, null));
+        } else if (WaypointStore.findCopyInPairedDimension(wp) != null) {
+            items.add(new MenuItem(I18nHelper.getComponent("list.duplicate_exists", DimensionNames.chatName(paired)), false, false, null));
+        } else {
+            items.add(new MenuItem(I18nHelper.getComponent("list.duplicate", DimensionNames.chatName(paired)), true, false, () -> {
+                WaypointCreateScreen.announceDuplicate(this.minecraft, wp, WaypointStore.duplicateIntoPairedDimension(wp));
+                this.optionsFor = null;
+                refreshItemWidgets();
+            }));
+        }
+        return items;
+    }
+
+    /**
+     * The open menu's box, beside its row: just right of the modal, top-aligned with the row, and
+     * pulled back inside the screen where there is no room for it there (on a narrow window it then
+     * covers part of the row's own buttons, as an overlay). {@code null} - and the menu closed -
+     * when no menu is open or its row is not on the page any more.
+     */
+    private MenuBox menuBox() {
+        if (this.optionsFor == null) return null;
+        int row = -1;
+        int endIndex = Math.min(scrollIndex + ITEMS_PER_PAGE, this.cachedFilteredWaypoints.size());
+        for (int i = scrollIndex; i < endIndex; i++) {
+            if (this.cachedFilteredWaypoints.get(i).waypoint == this.optionsFor) {
+                row = i - scrollIndex;
+                break;
+            }
+        }
+        if (row < 0 || this.optionsFor.isPendingRemoval()) {
+            this.optionsFor = null;
+            return null;
+        }
+
+        List<MenuItem> items = menuItems(this.optionsFor);
+        int textWidth = 0;
+        for (MenuItem item : items) {
+            textWidth = Math.max(textWidth, this.font.width(item.label()));
+        }
+        int width = MENU_TEXT_INSET + textWidth + 6 + MENU_PAD * 2;
+        int height = items.size() * MENU_ITEM_H + MENU_PAD * 2;
+        int itemY = this.height / 2 - 60 + row * 22;
+        int x = Math.min(this.width / 2 + 145 + 4, this.width - width - 2);
+        int y = Math.max(2, Math.min(itemY - 1, this.height - height - 2));
+        return new MenuBox(x, y, width, height, items);
+    }
+
+    private void drawMenu(GuiGraphicsExtractor graphics, MenuBox box, int mouseX, int mouseY) {
+        // A stratum of its own, so it lands above the rows' text as well as their buttons.
+        graphics.nextStratum();
+        graphics.fill(box.x(), box.y(), box.x() + box.width(), box.y() + box.height(), UiPalette.MODAL_BORDER);
+        graphics.fill(box.x() + 1, box.y() + 1, box.x() + box.width() - 1, box.y() + box.height() - 1, UiPalette.MENU_BG);
+        for (int i = 0; i < box.items().size(); i++) {
+            MenuItem item = box.items().get(i);
+            int ix = box.x() + MENU_PAD;
+            int iy = box.y() + MENU_PAD + i * MENU_ITEM_H;
+            int iw = box.width() - MENU_PAD * 2;
+            boolean hovered = mouseX >= ix && mouseX < ix + iw && mouseY >= iy && mouseY < iy + MENU_ITEM_H;
+            if (hovered && item.enabled()) {
+                graphics.fill(ix, iy, ix + iw, iy + MENU_ITEM_H, UiPalette.BTN_BG_HOVER);
+            }
+            if (item.star()) {
+                Icons.drawStar(graphics, ix + 4, iy + 3,
+                        this.optionsFor.isFavorite() ? UiPalette.FAVORITE_STAR : UiPalette.ICON_DISABLED);
+            }
+            int color = !item.enabled() ? UiPalette.TEXT_DIM : (hovered ? UiPalette.BTN_TEXT_HOVER : UiPalette.BTN_TEXT);
+            graphics.text(this.font, item.label(), ix + MENU_TEXT_INSET, iy + 4, color);
+        }
+    }
+
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        // The rows move under the menu; close it rather than let it point at another row.
+        this.optionsFor = null;
         List<WaypointEntry> waypoints = this.cachedFilteredWaypoints;
         int total = waypoints.size();
         if (total > ITEMS_PER_PAGE) {
@@ -677,6 +847,22 @@ public class WaypointListScreen extends Screen {
      */
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        // An open menu takes every click: an item runs (if enabled), anywhere else just closes it,
+        // so a click meant to dismiss the menu can never land on a delete button beneath it.
+        MenuBox box = menuBox();
+        if (box != null) {
+            double mx = event.x();
+            double my = event.y();
+            if (mx >= box.x() && mx < box.x() + box.width() && my >= box.y() && my < box.y() + box.height()) {
+                int index = (int) ((my - box.y() - MENU_PAD) / MENU_ITEM_H);
+                if (event.button() == 0 && index >= 0 && index < box.items().size() && box.items().get(index).enabled()) {
+                    box.items().get(index).action().run();
+                }
+            } else {
+                this.optionsFor = null;
+            }
+            return true;
+        }
         if (event.button() == 0) {
             int hitIndex = nameOrCoordsRowAt(event.x(), event.y());
             if (hitIndex >= 0) {
@@ -712,6 +898,8 @@ public class WaypointListScreen extends Screen {
         int startIndex = scrollIndex;
         int endIndex = Math.min(startIndex + ITEMS_PER_PAGE, this.cachedFilteredWaypoints.size());
         for (int i = startIndex; i < endIndex; i++) {
+            // A row pending deletion shows its countdown instead of coordinates: nothing to copy.
+            if (this.cachedFilteredWaypoints.get(i).waypoint.isPendingRemoval()) continue;
             int itemY = centerY - 60 + (i - startIndex) * 22;
             if (mouseX >= centerX - 117 && mouseX < centerX - 117 + NAME_MAX_WIDTH
                     && mouseY >= itemY && mouseY < itemY + 21) {
@@ -770,8 +958,19 @@ public class WaypointListScreen extends Screen {
 
                 boolean isDimmed = isDimmed(wp);
 
-                int nameColor = isDimmed ? UiPalette.TEXT_DIM : (entry.converted ? UiPalette.TEXT_CONVERTED : UiPalette.TEXT_PRIMARY);
-                graphics.text(this.font, entry.name(this.font), centerX - 117, itemY + 1, nameColor);
+                int nameColor = isDimmed ? UiPalette.TEXT_DIM : UiPalette.TEXT_PRIMARY;
+                if (wp.isFavorite()) {
+                    Icons.drawStar(graphics, centerX - 117, itemY, isDimmed ? dim(UiPalette.FAVORITE_STAR) : UiPalette.FAVORITE_STAR);
+                }
+                graphics.text(this.font, entry.name(this.font), centerX - 117 + nameIndent(wp), itemY + 1, nameColor);
+
+                if (wp.isPendingRemoval()) {
+                    // In place of the coordinates: how long until the deletion is final.
+                    long seconds = Math.max(1, (WaypointStore.remainingRemovalMillis(wp) + 999) / 1000);
+                    graphics.text(this.font, I18nHelper.getComponent("list.pending_delete", String.valueOf(seconds)),
+                            centerX - 117, itemY + 10, UiPalette.ICON_DESTRUCTIVE);
+                    continue;
+                }
 
                 int coordsColor = isDimmed ? UiPalette.TEXT_DIM_SOFT : UiPalette.TEXT_SECONDARY;
                 Component coordsComponent = entry.coords();
@@ -801,6 +1000,11 @@ public class WaypointListScreen extends Screen {
                 graphics.fill(scrollbarX, thumbY, scrollbarX + 2, thumbY + thumbHeight, UiPalette.SCROLL_THUMB);
             }
         }
+
+        MenuBox box = menuBox();
+        if (box != null) {
+            drawMenu(graphics, box, mouseX, mouseY);
+        }
     }
 
     /**
@@ -810,6 +1014,11 @@ public class WaypointListScreen extends Screen {
      */
     @Override
     public boolean keyPressed(KeyEvent event) {
+        // Esc closes an open "More options" menu first, and only a second Esc the list.
+        if (this.optionsFor != null && event.isEscape()) {
+            this.optionsFor = null;
+            return true;
+        }
         if (!(this.getFocused() instanceof EditBox) && ModKeyBindings.listWaypointsKey.matches(event)) {
             this.onClose();
             return true;

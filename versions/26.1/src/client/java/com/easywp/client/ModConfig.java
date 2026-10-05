@@ -29,6 +29,7 @@ public class ModConfig {
     public ListOptions list = new ListOptions();
     public XaeroIntegration xaeroIntegration = new XaeroIntegration();
     public LookFade lookFade = new LookFade();
+    public Favorites favorites = new Favorites();
 
     public static class DeathWaypoints {
         public boolean enabled = true;
@@ -60,6 +61,17 @@ public class ModConfig {
         public int lookAreaSize = 3;
     }
 
+    /**
+     * How favorite waypoints are drawn. A group of its own for the same reason as LookFade: the
+     * default is not Gson's zero, and inside lookFade a config.json from before it would read 0% -
+     * every favorite would vanish whenever it was not looked at.
+     */
+    public static class Favorites {
+        /** Opacity, 0-100, of a favorite the player is not looking at, in place of
+         *  {@code lookFade.unlookedOpacityPercent}; between that one's default (60) and no fade. */
+        public double unlookedOpacityPercent = 80.0;
+    }
+
     public static class LabelDisplay {
         /** Renders in-world/HUD waypoint marker labels in all caps when true. */
         public boolean uppercase = false;
@@ -73,8 +85,10 @@ public class ModConfig {
     }
 
     public static class Confirmations {
-        /** Shows the "Are you sure?" dialog before deleting a waypoint when true. */
-        public boolean confirmBeforeDelete = true;
+        /** Shows the "Are you sure?" dialog before deleting a waypoint when true. Off by default
+         *  since 1.4.0, when a list deletion became undoable for a few seconds; a config.json that
+         *  already has the key keeps whatever it saved. */
+        public boolean confirmBeforeDelete = false;
     }
 
     public static class Visibility {
@@ -195,6 +209,9 @@ public class ModConfig {
         }
         if (loaded.lookFade == null) {
             loaded.lookFade = new LookFade();
+        }
+        if (loaded.favorites == null) {
+            loaded.favorites = new Favorites();
         }
     }
 

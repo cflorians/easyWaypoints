@@ -28,6 +28,9 @@ public class EasyWpClient implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			if (client.level == null) {
 				WaypointStore.forgetWorld();
+			} else {
+				// Deletions from the list run out on their own, list open or not.
+				WaypointStore.tickPendingRemovals();
 			}
 		});
 

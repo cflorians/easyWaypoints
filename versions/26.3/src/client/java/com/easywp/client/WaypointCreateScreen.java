@@ -3,12 +3,15 @@ package com.easywp.client;
 import com.easywp.NameNumbering;
 import com.easywp.RelativeCoordinate;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.core.BlockPos;
 
 import java.util.HashSet;
@@ -25,6 +28,11 @@ public class WaypointCreateScreen extends Screen {
      *  15-shade bar for whichever one is active, at {@link #PICKER_WIDTH} (210) it is narrower
      *  than this, and the name field + share icon group is the binding constraint instead. */
     private static final int FORM_WIDTH = 270;
+    /** The name field spans what it used to share with the shared-waypoint portal toggle (180 +
+     *  6 + 18), gone since 1.4.0, so the row keeps its edges. */
+    private static final int NAME_FIELD_W = 204;
+    /** Width of the "More options" page's buttons. */
+    private static final int MORE_BUTTON_W = 220;
     // Color picker geometry: WaypointColors.FAMILY_BAR (14 colors) as one touching row, then
     // WaypointColors's active family (WaypointColors.SHADE_COUNT = 15 shades, dark to light) as a
     // second touching row below it. PICKER_WIDTH divides evenly by both counts (210 / 14 = 15,
@@ -69,7 +77,6 @@ public class WaypointCreateScreen extends Screen {
      * parent, so list, edit, list, edit kept stacking screens.
      */
     private final Screen returnScreen;
-    private boolean dimShared = false;
     /**
      * The name a new waypoint saves under if the field is left empty - the grey suggestion in the
      * name field. Resolved once per {@link #init()} rather than on every frame, which translated it
@@ -77,6 +84,10 @@ public class WaypointCreateScreen extends Screen {
      * shows, so preview, suggestion and saved name cannot disagree. Unused when editing.
      */
     private String defaultName = "";
+    /** Which page is showing: the main form, or "More options" (see {@link #initMorePage}). */
+    private boolean morePage = false;
+    /** Saved as {@code Waypoint.favorite}; toggled on the "More options" page. */
+    private boolean favorite = false;
 
     private static class ColorSampleButton extends Button {
         public ColorSampleButton(int x, int y, int width, int height, OnPress onPress) {
@@ -114,7 +125,7 @@ public class WaypointCreateScreen extends Screen {
         this.editingWaypoint = waypointToEdit;
         this.returnScreen = returnScreen;
         this.selectedColor = waypointToEdit.getColor();
-        this.dimShared = waypointToEdit.isShared();
+        this.favorite = waypointToEdit.isFavorite();
     }
 
     /** Back to the list it came from, or to the game - for save, cancel and Esc alike. */
@@ -132,12 +143,32 @@ public class WaypointCreateScreen extends Screen {
         int centerX = this.width / 2;
         int centerY = this.height / 2;
 
-        int nameFieldW = 180;
-        int nameGroupW = nameFieldW + 6 + 18;
-        int nameFieldX = centerX - nameGroupW / 2;
-        int shareIconX = nameFieldX + nameFieldW + 6;
+        if (this.nameField == null) {
+            createFields();
+        }
+        if (this.editingWaypoint == null) {
+            this.defaultName = nextDefaultName(currentLevelDimension());
+            this.nameField.setSuggestion(this.nameField.getValue().isEmpty() ? this.defaultName : null);
+        }
 
-        this.nameField = new EditBox(this.font, nameFieldX, centerY - 82, nameFieldW, 18, I18nHelper.getComponent("create.name_label"));
+        if (this.morePage) {
+            initMorePage(centerX, centerY);
+        } else {
+            initMainPage(centerX, centerY);
+        }
+        initBottomRow(centerX, centerY);
+    }
+
+    /**
+     * The four text fields, created once per screen and only repositioned by later {@link #init()}
+     * calls, the way {@code WaypointListScreen} keeps its search box. {@code init()} runs again on
+     * every page switch, window resize and return from the list, and fields rebuilt there lost
+     * what had been typed into them; kept, they carry it across. The colour bars' active family is
+     * seeded here for the same reason - re-seeding it on every init could jump the shade bar to
+     * another family than the one being browsed.
+     */
+    private void createFields() {
+        this.nameField = new EditBox(this.font, 0, 0, NAME_FIELD_W, 18, I18nHelper.getComponent("create.name_label"));
         if (this.editingWaypoint != null) {
             this.nameField.setValue(this.editingWaypoint.getName());
         } else {
@@ -147,44 +178,35 @@ public class WaypointCreateScreen extends Screen {
             // be the obvious widget for this, but vanilla hides it while the box is focused - and
             // this one always is - whereas the suggestion is drawn regardless, and only while the
             // value is empty since the responder clears it the moment anything is typed.
-            this.defaultName = nextDefaultName(currentLevelDimension());
-            this.nameField.setSuggestion(this.defaultName);
             this.nameField.setResponder(value -> this.nameField.setSuggestion(value.isEmpty() ? this.defaultName : null));
         }
+
+        this.xField = new EditBox(this.font, 0, 0, 68, 18, Component.literal("X"));
+        this.xField.setValue(String.valueOf(originalPos.getX()));
+        this.yField = new EditBox(this.font, 0, 0, 68, 18, Component.literal("Y"));
+        this.yField.setValue(String.valueOf(originalPos.getY()));
+        this.zField = new EditBox(this.font, 0, 0, 68, 18, Component.literal("Z"));
+        this.zField.setValue(String.valueOf(originalPos.getZ()));
+
+        // See the field javadoc on activeBaseIndex.
+        this.activeBaseIndex = WaypointColors.nearestMatch(this.selectedColor)[0];
+    }
+
+    /** Name, coordinates and the colour picker. */
+    private void initMainPage(int centerX, int centerY) {
+        this.nameField.setPosition(centerX - NAME_FIELD_W / 2, centerY - 82);
         this.addRenderableWidget(this.nameField);
 
-        ModernButton shareToggleBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
-            this.dimShared = !this.dimShared;
-        }).pos(shareIconX, centerY - 82).size(18, 18).build();
-
-        String currentDimension = DimensionNames.OVERWORLD;
-        if (this.minecraft.level != null) {
-            currentDimension = this.minecraft.level.dimension().identifier().toString();
-        }
-        if (this.editingWaypoint != null && this.editingWaypoint.getDimension() != null) {
-            currentDimension = this.editingWaypoint.getDimension();
-        }
-        boolean isConvertibleDim = DimensionNames.isConvertible(currentDimension);
-        shareToggleBtn.active = isConvertibleDim;
-        this.addRenderableWidget(shareToggleBtn);
-
-        this.xField = new EditBox(this.font, centerX - 118, centerY - 5, 68, 18, Component.literal("X"));
-        this.xField.setValue(String.valueOf(originalPos.getX()));
+        this.xField.setPosition(centerX - 118, centerY - 5);
         this.addRenderableWidget(this.xField);
-
-        this.yField = new EditBox(this.font, centerX - 34, centerY - 5, 68, 18, Component.literal("Y"));
-        this.yField.setValue(String.valueOf(originalPos.getY()));
+        this.yField.setPosition(centerX - 34, centerY - 5);
         this.addRenderableWidget(this.yField);
-
-        this.zField = new EditBox(this.font, centerX + 50, centerY - 5, 68, 18, Component.literal("Z"));
-        this.zField.setValue(String.valueOf(originalPos.getZ()));
+        this.zField.setPosition(centerX + 50, centerY - 5);
         this.addRenderableWidget(this.zField);
 
         // Top bar: the 14 family colors, touching (no gap between them). Clicking one selects it
         // outright and switches the bottom bar to that color's own shades - see the field
         // javadoc on activeBaseIndex.
-        this.activeBaseIndex = WaypointColors.nearestMatch(this.selectedColor)[0];
-
         int familyBarX = centerX - PICKER_WIDTH / 2;
         int familyBarY = centerY + 29;
         int shadeBarX = familyBarX;
@@ -217,19 +239,92 @@ public class WaypointCreateScreen extends Screen {
                 })
             );
         }
+    }
 
+    /**
+     * "More options": the favorite toggle, and saving plus a duplicate in the other half of the
+     * Overworld/Nether pair - for a new waypoint as much as for one being edited, so the copy can be
+     * made in the same step as the waypoint itself. A page of its own because the main one has no room left
+     * (the modal is already 224px tall); nothing here is lost by switching pages, since every
+     * value lives in a field of this screen, not in the widgets.
+     */
+    private void initMorePage(int centerX, int centerY) {
+        ModernButton favoriteBtn = ModernButton.modernBuilder(favoriteLabel(), btn -> {
+            this.favorite = !this.favorite;
+            btn.setMessage(favoriteLabel());
+        }).pos(centerX - MORE_BUTTON_W / 2, centerY - 50).size(MORE_BUTTON_W, 20)
+                .icon((g, b, hovered) -> Icons.drawStar(g, b.getX() + 6, b.getY() + 5,
+                        this.favorite ? UiPalette.FAVORITE_STAR : UiPalette.ICON_DISABLED))
+                .build();
+        favoriteBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("create.favorite_tooltip")));
+        this.addRenderableWidget(favoriteBtn);
+
+        // The label names where the copy goes: the Nether for a waypoint in the Overworld, the
+        // Overworld for one in the Nether - a new waypoint's being the player's own dimension.
+        String paired = this.editingWaypoint != null
+                ? this.editingWaypoint.pairedDimension()
+                : DimensionNames.paired(currentLevelDimension());
+        Component label = paired != null
+                ? I18nHelper.getComponent("create.duplicate", DimensionNames.chatName(paired))
+                : I18nHelper.getComponent("create.duplicate_generic");
+        ModernButton duplicateBtn = ModernButton.modernBuilder(label, btn -> {
+            Waypoint saved = saveWaypoint();
+            // Judged again on what was just saved: the copy is recognised by name and position,
+            // and the form may have changed either (or, for a new waypoint, a matching copy may
+            // already sit in the other dimension).
+            announceDuplicate(this.minecraft, saved, WaypointStore.duplicateIntoPairedDimension(saved));
+            this.onClose();
+        }).pos(centerX - MORE_BUTTON_W / 2, centerY - 20).size(MORE_BUTTON_W, 20).build();
+        // Outside the Overworld/Nether pair there is no conversion to place a copy with; and a
+        // waypoint that already has its copy there gets no second one.
+        if (paired == null) {
+            duplicateBtn.active = false;
+            duplicateBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("create.duplicate_unsupported")));
+        } else if (this.editingWaypoint != null && WaypointStore.findCopyInPairedDimension(this.editingWaypoint) != null) {
+            duplicateBtn.active = false;
+            duplicateBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("create.duplicate_exists", DimensionNames.chatName(paired))));
+        } else {
+            duplicateBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("create.duplicate_tooltip")));
+        }
+        this.addRenderableWidget(duplicateBtn);
+    }
+
+    private Component favoriteLabel() {
+        return I18nHelper.getComponent(this.favorite ? "create.favorite_on" : "create.favorite_off");
+    }
+
+    /** Cancel, save, the page switch and the list - the same on both pages, so saving from either
+     *  saves everything the form holds. */
+    private void initBottomRow(int centerX, int centerY) {
         this.addRenderableWidget(
             ModernButton.modernBuilder(Component.literal(""), btn -> {
                 this.onClose();
-            }).pos(centerX - 118, centerY + 85).size(22, 20).build()
+            }).pos(centerX - 118, centerY + 85).size(22, 20)
+                    .icon((g, b, hovered) -> ClientCompat.blitTinted(g, Icons.CANCEL, b.getX() + 2, b.getY() + 1, 18, 18, UiPalette.ICON_DESTRUCTIVE))
+                    .build()
         );
 
         this.addRenderableWidget(
             ModernButton.modernBuilder(I18nHelper.getComponent("create.save"), btn -> {
                 saveWaypoint();
                 this.onClose();
-            }).pos(centerX - 90, centerY + 85).size(180, 20).build()
+            }).pos(centerX - 92, centerY + 85).size(158, 20).build()
         );
+
+        ModernButton pageBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
+            switchPage(!this.morePage);
+        }).pos(centerX + 70, centerY + 85).size(22, 20)
+                .icon((g, b, hovered) -> {
+                    int color = hovered ? UiPalette.BTN_TEXT_HOVER : UiPalette.ICON_IDLE;
+                    if (this.morePage) {
+                        drawBackGlyph(g, b.getX() + b.getWidth() / 2, b.getY() + b.getHeight() / 2, color);
+                    } else {
+                        Icons.drawMoreGlyph(g, b.getX() + b.getWidth() / 2, b.getY() + b.getHeight() / 2, color);
+                    }
+                })
+                .build();
+        pageBtn.setTooltip(Tooltip.create(I18nHelper.getComponent(this.morePage ? "menu.back" : "create.more_options")));
+        this.addRenderableWidget(pageBtn);
 
         this.addRenderableWidget(
             ModernButton.modernBuilder(Component.literal(""), btn -> {
@@ -240,8 +335,23 @@ public class WaypointCreateScreen extends Screen {
                 } else {
                     ClientCompat.setScreen(this.minecraft, new WaypointListScreen(this));
                 }
-            }).pos(centerX + 96, centerY + 85).size(22, 20).build()
+            }).pos(centerX + 96, centerY + 85).size(22, 20)
+                    .icon((g, b, hovered) -> ClientCompat.blitTinted(g, Icons.LIST, b.getX() + 2, b.getY() + 1, 18, 18, UiPalette.ICON_IDLE))
+                    .build()
         );
+    }
+
+    private void switchPage(boolean more) {
+        this.morePage = more;
+        this.rebuildWidgets();
+    }
+
+    /** A left-pointing chevron, "back to the main page", centred on {@code cx, cy}. */
+    private static void drawBackGlyph(GuiGraphicsExtractor g, int cx, int cy, int color) {
+        for (int i = 0; i < 4; i++) {
+            g.fill(cx - 2 + i, cy - 1 - i, cx + i, cy - i, color);
+            g.fill(cx - 2 + i, cy + i, cx + i, cy + i + 1, color);
+        }
     }
 
     @Override
@@ -254,17 +364,20 @@ public class WaypointCreateScreen extends Screen {
         int minX = centerX - bgW / 2;
         int minY = centerY - bgH / 2;
 
-        int nameFieldW = 180;
-        int nameGroupW = nameFieldW + 6 + 18;
-        int nameFieldX = centerX - nameGroupW / 2;
-        int shareIconX = nameFieldX + nameFieldW + 6;
-
         graphics.fill(minX, minY, minX + bgW, minY + bgH, UiPalette.MODAL_BG);
 
         graphics.fill(minX, minY, minX + bgW, minY + 1, UiPalette.MODAL_BORDER);
         graphics.fill(minX, minY + bgH - 1, minX + bgW, minY + bgH, UiPalette.MODAL_BORDER);
         graphics.fill(minX, minY, minX + 1, minY + bgH, UiPalette.MODAL_BORDER);
         graphics.fill(minX + bgW - 1, minY, minX + bgW, minY + bgH, UiPalette.MODAL_BORDER);
+
+        if (this.morePage) {
+            graphics.centeredText(this.font, I18nHelper.getComponent("create.more_title"), centerX, minY + 6, UiPalette.TEXT_PRIMARY);
+            // Which waypoint these options are for, as it would be saved right now.
+            graphics.centeredText(this.font, Component.literal(resolveWaypointName()), centerX, centerY - 80, UiPalette.TEXT_SECONDARY);
+            super.extractRenderState(graphics, mouseX, mouseY, a);
+            return;
+        }
 
         Component titleComp = this.editingWaypoint != null ? I18nHelper.getComponent("create.title.edit") : I18nHelper.getComponent("create.title.new");
         graphics.centeredText(this.font, titleComp, centerX, minY + 6, UiPalette.TEXT_PRIMARY);
@@ -316,10 +429,6 @@ public class WaypointCreateScreen extends Screen {
             drawColorSwatch(graphics, mouseX, mouseY, btnX, shadeBarY, SHADE_SWATCH_W, BAR_HEIGHT, activeFamily[slot]);
         }
 
-        Icons.drawPortalIcon(graphics, shareIconX, centerY - 82, this.dimShared, true);
-
-        ClientCompat.blitTinted(graphics, Icons.CANCEL, centerX - 116, centerY + 86, 18, 18, UiPalette.ICON_DESTRUCTIVE);
-        ClientCompat.blitTinted(graphics, Icons.LIST, centerX + 98, centerY + 86, 18, 18, UiPalette.ICON_IDLE);
 
         // Live preview: how this waypoint will look in the 3D world (real marker sprite, real label rules).
         String previewName = resolveWaypointName();
@@ -389,6 +498,12 @@ public class WaypointCreateScreen extends Screen {
             this.onClose();
             return true;
         }
+        // Esc on "More options" steps back to the main page, the way Esc leaves a vanilla options
+        // sub-screen for its parent, rather than discarding the whole form from a page within it.
+        if (this.morePage && event.isEscape()) {
+            switchPage(false);
+            return true;
+        }
         return super.keyPressed(event);
     }
 
@@ -408,13 +523,17 @@ public class WaypointCreateScreen extends Screen {
      */
     @Override
     protected void setInitialFocus() {
-        this.setInitialFocus(this.nameField);
+        if (this.morePage) {
+            // The name field is not on this page; focusing it would type into a hidden box.
+            super.setInitialFocus();
+        } else {
+            this.setInitialFocus(this.nameField);
+        }
     }
 
     /**
-     * {@code WAYPOINT #N} with the lowest N whose exact name no waypoint in {@code dimension} uses -
-     * its own waypoints and the shared ones projected into it, since those show the same name
-     * there. It used to be the total count of waypoints plus one, across every dimension, which
+     * {@code WAYPOINT #N} with the lowest N whose exact name no waypoint in {@code dimension} uses.
+     * It used to be the total count of waypoints plus one, across every dimension, which
      * repeated a name still in use once an earlier one was deleted and kept climbing for numbers
      * already freed.
      *
@@ -434,6 +553,27 @@ public class WaypointCreateScreen extends Screen {
 
     private static String defaultNameFor(int n) {
         return I18nHelper.getComponent("create.default_name", String.valueOf(n)).getString();
+    }
+
+    /**
+     * The overlay message after a duplicate (see {@link WaypointStore#duplicateIntoPairedDimension}):
+     * where the copy went, or - if {@code copy} is null because one already existed - that it was
+     * there already. Shared by this screen and the list's "More options" menu.
+     */
+    static void announceDuplicate(Minecraft minecraft, Waypoint original, Waypoint copy) {
+        if (minecraft.player == null) return;
+        String paired = original.pairedDimension();
+        if (paired == null) return;
+        MutableComponent message;
+        if (copy != null) {
+            BlockPos at = copy.getPos();
+            message = I18nHelper.getComponent("create.feedback_duplicated",
+                    copy.getName(), DimensionNames.chatName(paired), at.getX(), at.getY(), at.getZ());
+        } else {
+            message = I18nHelper.getComponent("create.duplicate_exists", DimensionNames.chatName(paired));
+        }
+        // Grey as a whole for the reason given at the edited/created messages below.
+        ClientCompat.setOverlayMessage(minecraft, message.withStyle(ChatFormatting.GRAY), true);
     }
 
     /** The dimension a new waypoint is saved into: wherever the player is now. */
@@ -460,7 +600,9 @@ public class WaypointCreateScreen extends Screen {
         return value.isPresent() ? value.getAsDouble() : original;
     }
 
-    private void saveWaypoint() {
+    /** Saves the form - editing the waypoint in place, or adding the new one - and
+     *  @return the waypoint as saved */
+    private Waypoint saveWaypoint() {
         String name = resolveWaypointName();
 
         // Each field is a number or a vanilla-style relative coordinate: "~" for the player's own
@@ -474,12 +616,13 @@ public class WaypointCreateScreen extends Screen {
         BlockPos newPos = BlockPos.containing(x, y, z);
         String dimension = this.editingWaypoint != null ? this.editingWaypoint.getDimension() : currentLevelDimension();
 
+        Waypoint saved;
         if (this.editingWaypoint != null) {
+            saved = this.editingWaypoint;
             this.editingWaypoint.setName(name);
             this.editingWaypoint.setPos(newPos);
             this.editingWaypoint.setColor(this.selectedColor);
             this.editingWaypoint.setDimension(dimension);
-            this.editingWaypoint.setShared(this.dimShared);
             // A manual edit turns a temporary death waypoint into a regular, permanent one
             // so it stops being auto-deleted on arrival (avoids the classic "renamed
             // deathpoint still gets deleted" bug seen in other waypoint mods). Fast Ping's flag is
@@ -487,6 +630,7 @@ public class WaypointCreateScreen extends Screen {
             // a throwaway ping, so it stops counting toward Ping # numbering.
             this.editingWaypoint.setDeath(false);
             this.editingWaypoint.setFastPing(false);
+            this.editingWaypoint.setFavorite(this.favorite);
 
             if (this.minecraft.player != null) {
                 // Gray is set as the component's own style instead of being left to the §7 in the
@@ -498,7 +642,10 @@ public class WaypointCreateScreen extends Screen {
                 ).withStyle(ChatFormatting.GRAY), true);
             }
         } else {
-            WaypointStore.waypoints.add(new Waypoint(name, newPos, this.selectedColor, dimension, this.dimShared));
+            Waypoint created = new Waypoint(name, newPos, this.selectedColor, dimension);
+            created.setFavorite(this.favorite);
+            WaypointStore.waypoints.add(created);
+            saved = created;
 
             if (this.minecraft.player != null) {
                 // Same reasoning as the edited-feedback message above.
@@ -517,5 +664,6 @@ public class WaypointCreateScreen extends Screen {
                 ModConfig.save();
             }
         }
+        return saved;
     }
 }

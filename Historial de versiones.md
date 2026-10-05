@@ -22,14 +22,53 @@ está. Al empezar una conversación nueva sobre una versión, leer primero este 
 **Estado general:** EN PROGRESO. Planificación cerrada el 2026-10-02. `alpha.1` implementada,
 probada en el juego y confirmada el 2026-10-02 (commit `v1.4.0-alpha.1` en `release/1.4.0`).
 `alpha.2` implementada el 2026-10-02, probada y confirmada el 2026-10-05 (commit
-`v1.4.0-alpha.2`). Sigue pendiente confirmar el plan de publicación (ver "Publicación").
+`v1.4.0-alpha.2`). `alpha.3` implementada, probada y cerrada el 2026-10-05 (commit
+`v1.4.0-alpha.3`); su último ajuste ("Guardar y duplicar" también al crear, ver F6) entró en ese
+commit **sin probar en el juego**: probarlo al principio de la alpha 4. Sigue pendiente confirmar
+el plan de publicación (ver "Publicación").
 
-**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.2` (la 1.3.5 nunca se publicará). Se
+**Siguiente paso:** `alpha.4` — F7 (formato de compartir nuevo) y F8 (comandos `/easywp`). Al
+empezar, subir `mod_version` a `1.4.0-alpha.4` y seguir la "Forma de trabajo por alpha" de abajo.
+
+**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.3` (la 1.3.5 nunca se publicará). Se
 cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los jars salen como
 `easywp-1.4.0-alpha.1+26.1.x.jar`.
 
 **Git:** todo el trabajo va en la rama `release/1.4.0`, con un commit por cada alpha/beta. Se
 fusiona a `main` con la versión final.
+
+### Forma de trabajo por alpha
+
+Acordada con el usuario al empezar la 1.4.0; se sigue en cada alpha (también en una conversación
+nueva).
+
+1. Rama `release/1.4.0`. Al empezar la alpha N, `mod_version=1.4.0-alpha.N` en `gradle.properties`.
+2. Implementar **solo** los puntos de esa alpha. No reabrir decisiones ya tomadas; si el plan choca
+   con el código real, parar y preguntar antes de improvisar. Lo que el plan no concrete se decide,
+   se anota aquí como "decisión nueva" y se avisa en el resumen.
+3. Todo cambio de cliente, idéntico en 26.1, 26.2 y 26.3 (se edita en 26.1 y se copia). Todo texto
+   nuevo, en los 8 archivos de idioma.
+4. Al arreglar un bug, buscar el mismo patrón en todo el código: si es el mismo tipo de bug,
+   arreglarlo; si no, anotarlo aquí.
+5. `./gradlew build` (compila las tres versiones y corre `checkSharedSources`, `checkLangParity` y
+   `:common:test`) y dar el resultado real. La lógica pura nueva va en `common/` con tests, y cada
+   test se comprueba contra una rotura deliberada del código.
+6. Actualizar este historial (estado de cada punto, decisiones nuevas, "Pruebas de regresión") y
+   `CLAUDE.md` con lo que cambió en el código.
+7. **No lanzar el juego** (`runClient`): las pruebas en el juego las hace el usuario.
+8. Entregar la guía de pruebas y **parar**. Sin commit ni siguiente alpha hasta que el usuario
+   confirme. Si reporta fallos, se corrigen dentro de la misma alpha y se da solo la guía de lo
+   afectado.
+9. Al confirmar: commit `v1.4.0-alpha.N: <resumen>` en `release/1.4.0` (con la línea
+   `Co-Authored-By`) y pasar a la siguiente. Sin push ni publicación salvo que el usuario lo pida.
+
+**Formato de la guía de pruebas.** Por cada ID: qué cambió (una línea), cómo prepararlo, pasos
+exactos, resultado esperado concreto, casos límite que apliquen (lista vacía y con más de 6,
+nombres con espacios/acentos/símbolos, teclas reasignadas, Overworld/Nether/End, un jugador o
+servidor, con y sin Xaero, config de 1.3.x) y qué podría haberse roto. **Organizada por versión**:
+26.1 completa; para 26.2 y 26.3 poner "(igual que 26.1)" y avisar solo de lo que varía (26.2 tiene
+Xaero en `run/mods` y renombra cambio de pantalla y HUD; 26.3 usa SDL para el teclado). Al final,
+la prueba de compatibilidad con 1.3.4 y la regresión acumulada.
 
 ### Reglas que aplican a toda la versión
 
@@ -298,9 +337,9 @@ Todas sin cambio visible para el jugador (regla 1).
   del número libre es `NameNumbering.lowestUnused` en `common/`, con `NameNumberingTest`
   (comprobado contra dos roturas deliberadas: empezar en 0 y "cantidad + 1").
 - **Decisión nueva (interpretación):** "waypoints de la dimensión actual" = los que **se ven** en
-  ella: los suyos y los compartidos proyectados desde la otra mitad del par Overworld/Nether
-  (`positionIn`). Así no salen dos etiquetas `WAYPOINT #1` a la vez en el Nether. La dimensión es
-  la del jugador, que es donde se guarda el waypoint nuevo.
+  ella. Desde U6 (alpha.3) eso son solo los suyos; en alpha.2 incluía también los compartidos
+  proyectados desde la otra mitad del par. La dimensión es la del jugador, que es donde se guarda
+  el waypoint nuevo.
 
 **U3 — Guardar `forceVisible`** · HECHO en alpha.2
 - Hoy: el foco sobrevive a un reinicio, pero los waypoints que lo acompañan (`forceVisible`) no.
@@ -324,7 +363,7 @@ Todas sin cambio visible para el jugador (regla 1).
 - Archivos: `WaypointListScreen.sortEntries`, `WaypointSortMode` (javadoc de `CREATED`).
 - Hecho tal cual: `List.sort` con `comparingLong(createdAtMillis)`, que es estable.
 
-**U5 — Página "Más opciones" en la pantalla de crear/editar** · PENDIENTE · alpha.3
+**U5 — Página "Más opciones" en la pantalla de crear/editar** · HECHO en alpha.3
 - La pantalla de crear ya está llena (224px de alto). En vez de hacerla más alta, se añade una
   segunda página, "Más opciones", a la que se llega con un botón desde la página principal.
 - Contiene: favorito (F5), grupos (F12, a partir de la alpha 6) y, solo al editar, duplicar en la
@@ -332,6 +371,61 @@ Todas sin cambio visible para el jugador (regla 1).
 - Guardar desde cualquiera de las dos páginas guarda todo; cambiar de página no pierde lo escrito
   en la otra.
 - Archivo: `WaypointCreateScreen`.
+- Hecho: botón `⋯` en la fila de abajo, entre Guardar (ahora de 158px) y el botón de lista; en
+  "Más opciones" el mismo botón muestra `‹` y vuelve. Cancelar, Guardar y lista son iguales en las
+  dos páginas. La página muestra arriba el nombre del waypoint tal como se guardaría.
+- **Decisiones nuevas:**
+  - Esc en "Más opciones" vuelve a la página principal (como Esc en una subpantalla de opciones de
+    vanilla); en la principal sigue cerrando. Enter guarda desde las dos.
+  - Al crear un waypoint nuevo, "Más opciones" solo tenía el favorito y un texto que decía que
+    duplicar estaba disponible al editar. **Cambiado el 2026-10-05 a petición:** ahora también
+    ofrece "Guardar y duplicar" al crear (ver F6).
+- Mismo patrón, arreglado: los campos de texto se reconstruían en cada `init()`, así que también
+  se perdía lo escrito al **redimensionar la ventana** y al **volver de la lista** abierta con el
+  botón de lista desde N/H. Ahora los cuatro campos se crean una sola vez y solo se recolocan, como
+  el buscador de la lista. La familia de color activa tampoco se recalcula en cada `init()`.
+
+**U6 — Quitar los waypoints compartidos entre Overworld y Nether** · HECHO en alpha.3
+- Añadido el 2026-10-05 a petición, fuera del plan original: la función "compartir coordenadas"
+  (un waypoint que también se dibujaba, convertido 1:8, en la otra mitad del par) se elimina y la
+  sustituye "Guardar y duplicar" (F6).
+- Se quitan: el interruptor del portal del formulario (el campo de nombre ocupa ahora su ancho),
+  el botón del portal de cada fila de la lista, las filas `[OW]`/`[N]` en amarillo, la proyección
+  compartida al exportar e importar con Xaero, `Waypoint.shared`, `forEachPosition`,
+  `DimensionNames.isConvertible`, `Icons.drawPortalIcon` y las texturas `portal_fill.png` y
+  `portal_frame.png`.
+- **Decisión (tomada al implementarlo, para revisar):** los waypoints compartidos que ya existen
+  (de 1.3.x o de alpha.1/alpha.2) se **convierten al cargar** en dos waypoints independientes: el
+  original y una copia en la otra dimensión, justo donde se dibujaba su espejo, con el mismo nombre,
+  color, visibilidad, favorito y fecha. La copia nunca está enfocada, pero se mantiene visible junto
+  al foco del original, como el espejo; tampoco es de muerte ni Fast Ping. No se crea si ya hay un
+  waypoint con ese nombre en ese mismo punto, ni si el compartido no estaba en Overworld/Nether.
+  - Motivo: el jugador sigue viendo lo mismo, y una copia que un "Exportar a Xaero" anterior ya
+    había escrito en la otra dimensión sigue coincidiendo (mismo nombre, X y Z), así que el
+    siguiente Exportar **no la borra de Xaero**. Quitar solo la marca la habría hecho desaparecer.
+  - El archivo del mundo actual se reescribe al momento (el `.bak` guarda la versión anterior) y
+    se anota una línea INFO en el log. Los archivos de otros mundos, al importarlos, se convierten
+    solo en memoria; el conteo del selector cuenta ya con las copias.
+  - Formato (regla 2): `shared` se lee pero ya no se escribe; las versiones 1.3.x leen la clave
+    ausente como `false`, así que al volver a 1.3.x se ven las dos copias, cada una en su dimensión.
+
+**U7 — Botón "Más opciones" en cada fila de la lista** · HECHO en alpha.3
+- Añadido el 2026-10-05 a petición: en el hueco del botón del portal (segundo por la derecha), un
+  botón `⋯`.
+- **Cambiado el 2026-10-05, a petición, tras la primera versión:** al principio abría el formulario
+  de edición directamente en su página "Más opciones". Ahora abre un **minimenú junto a la fila, sin
+  salir de la lista**: "Favorito: Sí/No" y "Duplicar en el Nether/Overworld". La página "Más
+  opciones" del formulario sigue existiendo (desde su propio `⋯`).
+- Detalles (decididos al implementarlo):
+  - El menú va justo a la derecha del modal, alineado con la fila; si la ventana es estrecha se
+    mete dentro de la pantalla y tapa parte de los botones de la fila.
+  - Se cierra con Esc (un segundo Esc ya cierra la lista), con un clic fuera (ese clic no hace nada
+    más, para que no caiga en el botón de borrar de debajo), al hacer scroll o si su fila sale de la
+    página.
+  - "Favorito" deja el menú abierto y lo mueve con la fila (que sube al principio). "Duplicar"
+    cierra el menú y muestra el mensaje en el HUD.
+  - Se dibuja a mano por encima de todo, no con widgets: así queda sobre el texto de las filas y
+    los clics no llegan a los botones de debajo.
 
 ### Funciones nuevas
 
@@ -385,7 +479,7 @@ Todas sin cambio visible para el jugador (regla 1).
 - Claves nuevas: `config.max_visible_row`, `config.max_visible_unlimited`,
   `config.max_visible_tooltip`.
 
-**F4 — Deshacer al borrar** · PENDIENTE · alpha.3
+**F4 — Deshacer al borrar** · HECHO en alpha.3
 - Solo para los borrados hechos desde la lista. No aplica a muertes, sincronización con Xaero ni
   `/easywp remove`.
 - **Cada borrado tiene su propio deshacer de 7 segundos.** Varios borrados seguidos se apilan:
@@ -399,8 +493,37 @@ Todas sin cambio visible para el jugador (regla 1).
   guarda. Las entradas se descartan si el jugador cambia de mundo.
 - "Confirmar antes de borrar" pasa a desactivado por defecto **solo en configs nuevas** (regla 4).
 - Archivos: `WaypointListScreen`, `ModConfig.Confirmations`, idiomas.
+- Hecho: `TimedUndoStack` en `common/` (pila con caducidad por entrada y reinserción con índice
+  limitado), con `TimedUndoStackTest` (comprobado contra cinco roturas deliberadas). El estado vive
+  en `WaypointStore` (`removeWithUndo`, `undoLastRemoval`, `pendingUndoCount`) y se vacía en cada
+  cambio de mundo. También se puede deshacer un borrado hecho con la confirmación activada.
+- Aviso: "Eliminado" o "N eliminados" más el botón "Deshacer". Mismo alto que el engranaje y los
+  botones de Xaero cuando hay sitio bajo el modal; si la pantalla es baja, justo debajo del modal.
+  **A saber:** con escala de GUI 4 en 1080p (la automática) la pantalla mide 270 de alto y el modal
+  acaba en 248, así que el aviso queda justo bajo el modal, más arriba que el engranaje.
+- Deshacer restaura el mismo waypoint con todo (foco, oculto, favorito, muerte).
+- **Rediseñado el 2026-10-05, a petición, tras la primera versión (sustituye al aviso de abajo al
+  centro y a `TimedUndoStack`):**
+  - Al borrar, el waypoint **se queda en su fila**, atenuado como uno oculto, y desaparece del mundo.
+    Su segunda línea dice "Se borrará en N s" en rojo.
+  - Sus botones (TP, visible, editar, compartir, más opciones, eliminar) se sustituyen por dos que
+    ocupan el mismo ancho: **Deshacer** y **Eliminar** (borra ya, sin esperar). El cuadro de color
+    queda atenuado y sin acción.
+  - A los 7 s la fila desaparece sola, con la lista abierta o cerrada. Cada borrado lleva su propia
+    cuenta.
+  - Ya no hay pila ni índices: el waypoint nunca sale de la lista hasta que el borrado es definitivo.
+    `PendingRemovals` en `common/` lleva las cuentas atrás, con `PendingRemovalsTest` (comprobado
+    contra cinco roturas deliberadas); `TimedUndoStack` y su test se eliminaron.
+  - **Decisiones (tomadas al implementarlo):**
+    - El archivo lo da por borrado desde el primer momento (no se guarda mientras está pendiente),
+      igual que antes: cerrar el juego en esos 7 s lo deja borrado.
+    - Si estaba enfocado, el foco desaparece del mundo al instante, y Deshacer lo devuelve.
+    - Importar o exportar con Xaero durante esos segundos hace definitivos los borrados pendientes
+      antes de sincronizar.
+    - Un pendiente de borrar no impide importar desde otro mundo uno igual, y el doble clic sobre su
+      fila no copia nada.
 
-**F5 — Favoritos** · PENDIENTE · alpha.3
+**F5 — Favoritos** · HECHO en alpha.3
 - Se marca en la página "Más opciones" (U5). En la lista se muestra una estrella delante del nombre
   (resta ancho a `NAME_MAX_WIDTH`, hoy 133px).
 - Los favoritos van primero en cualquier orden de la lista.
@@ -412,13 +535,51 @@ Todas sin cambio visible para el jugador (regla 1).
 - Campo opcional nuevo `favorite`. `mergeFrom` lo conserva.
 - Archivos: `Waypoint`, `WaypointStore.WaypointData`, `WaypointCreateScreen`,
   `WaypointListScreen`, `WaypointRenderer.lookOpacity`, `ModConfig`, `ModConfigScreen`.
+- Hecho: botón "Favorito: Sí/No" con estrella en "Más opciones". Estrella de 9x9 dibujada a mano
+  (`Icons.drawStar`) en ámbar (`UiPalette.FAVORITE_STAR`), distinta del dorado del foco. Grupo
+  `favorites.unlookedOpacityPercent = 80`; deslizador "Favoritos sin mirar" justo debajo de
+  "Opacidad sin mirar". El enfocado sigue al 100%.
+- **Decisiones nuevas:**
+  - Solo las filas favoritas desplazan el nombre (11px) y pierden ese ancho; las demás no cambian,
+    así que una lista sin favoritos se ve igual que antes.
+  - Favoritos primero = segundo orden estable tras el del modo, así que dentro de cada mitad se
+    mantiene el orden elegido.
+  - Lo importado de Xaero no es favorito; lo importado de otro mundo conserva su favorito.
 
-**F6 — Duplicar en la otra dimensión** · PENDIENTE · alpha.3
+**F6 — Duplicar en la otra dimensión** · HECHO en alpha.3
 - Botón en la página "Más opciones" (U5), solo al editar. Crea una copia independiente en la otra
   dimensión del par Overworld/Nether, en la posición convertida 1:8 (misma conversión que
   `Waypoint.positionIn`), con el mismo nombre y color, no compartida y con fecha de creación nueva.
 - Desactivado si el waypoint ya es compartido (se vería dos veces) o si no está en Overworld/Nether.
+  (Desde U6 ya no hay compartidos: solo se desactiva fuera de Overworld/Nether.)
 - Archivos: `WaypointCreateScreen`, `Waypoint` (exponer la conversión).
+- Hecho: `Waypoint.pairedDimension()` y `Waypoint.convertedPosition()`, la única definición de la
+  conversión 1:8 (también la usa la conversión de los compartidos viejos, U6).
+- **Decisión nueva (el plan no decía qué pasa con lo editado sin guardar):** el botón es **"Guardar y
+  duplicar en el Nether/Overworld"**: primero guarda el formulario y después crea la copia a partir
+  de lo guardado, y cierra (vuelve a la lista o al juego). Así la copia y el original coinciden
+  siempre.
+- La copia no hereda favorito (el plan solo nombra nombre y color). Mensaje en el HUD con la
+  dimensión y las coordenadas de la copia.
+- **Añadido el 2026-10-05, a petición: no se duplica dos veces.** Si la copia ya existe, el botón
+  (del formulario y del minimenú de la lista) sale desactivado con "Ya hay una copia en el Nether".
+  Si la copia se borra, se puede volver a duplicar.
+  - **Decisión (qué cuenta como "la copia"):** un waypoint en la otra dimensión con el **mismo
+    nombre** cuyas X y Z corresponden a 1:8. La **Y no cuenta**, para que siga siendo la copia
+    aunque le ajustes la altura; si la renombras o la mueves en X/Z, deja de serlo. Una copia
+    pendiente de borrar tampoco cuenta.
+  - Funciona en los dos sentidos pese al redondeo: `-15` en el Overworld se duplica a `-2` en el
+    Nether, y duplicar ese `-2` de vuelta no crea un `-16` junto al `-15`. La regla
+    (`PairedCoordinates`, en `common/`) compara en coordenadas del Nether; tiene su test,
+    `PairedCoordinatesTest`, comprobado contra tres roturas deliberadas.
+  - "Guardar y duplicar" vuelve a mirarlo después de guardar (el formulario puede haber cambiado
+    el nombre o la posición); si ya existe, solo guarda y avisa.
+- **Añadido el 2026-10-05, a petición: también al crear.** "Más opciones" de un waypoint nuevo
+  ofrece "Guardar y duplicar en el Nether" si el jugador está en el Overworld, "…en el Overworld"
+  si está en el Nether, y desactivado en cualquier otra dimensión. Guarda el nuevo y su copia en un
+  paso. (`saveWaypoint()` devuelve ahora el waypoint guardado; `DimensionNames.paired` da la otra
+  mitad del par para una dimensión sin waypoint.) Entró en el commit de la alpha 3 sin probar en el
+  juego.
 
 **F7 — Formato de compartir nuevo** · PENDIENTE · alpha.4
 - Hoy: `easywp.share.chat` = `%s >>> %s %s %s %s` (NOMBRE en mayúsculas, dimensión legible, X Y Z),
@@ -561,8 +722,7 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
   fila durante 1 s y el portapapeles tiene sus coordenadas.
 - O1 — El selector de importación muestra el mismo número de waypoints por mundo que en 1.3.4, y
   hacer scroll no da tirones.
-- O2 — Importar de Xaero dos veces seguidas: la segunda añade 0 (con waypoints compartidos
-  incluidos).
+- O2 — Importar de Xaero dos veces seguidas: la segunda añade 0.
 - O3 — Caminar con el balanceo de cámara de vanilla (View Bobbing) activado: los waypoints se
   mueven pegados a su sitio, sin bailar; en `logs/latest.log` no aparece "view bob".
 - O4 — Crear con N sin escribir nombre: la sugerencia gris, la vista previa y el nombre guardado
@@ -585,3 +745,26 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
   `abc` en Y conserva la Y original.
 - F3 — "Máx. visibles" en 5 con 10 waypoints a la vista: solo se dibujan los 5 más cercanos; el
   enfocado se ve aunque esté lejos. En "Sin límite" se ven todos.
+
+**alpha.3**
+- U5 — En el formulario, escribir un nombre, ir a "Más opciones" (`⋯`), volver (`‹`): el nombre
+  sigue escrito. Guardar desde "Más opciones" guarda también lo de la página principal.
+- U5 (campos) — Escribir un nombre y redimensionar la ventana: el nombre sigue ahí.
+- F4 — Borrar un waypoint desde la lista: la fila se queda atenuada, dice "Se borrará en N s", sus
+  botones pasan a ser "Deshacer" y "Eliminar", y desaparece del mundo. "Deshacer" la devuelve tal
+  cual; "Eliminar" la borra al momento.
+- F4 (tiempo) — Borrar, cerrar la lista y abrirla antes de 7 s: la fila sigue con su cuenta; a los
+  7 s desaparece sola, también con la lista abierta.
+- F5 — Marcar un waypoint como favorito: sale primero en la lista con estrella, en cualquier orden;
+  sin mirarlo se ve más opaco que los demás.
+- F6 — Editar un waypoint del Overworld en X=800 Z=-160 y pulsar "Guardar y duplicar en el
+  Nether": aparece una copia en el Nether en X=100 Z=-20.
+- F6 (sin doble) — Con la copia ya hecha, "Duplicar" sale desactivado ("Ya hay copia en el
+  Nether"); al borrar la copia vuelve a estar disponible.
+- F6 (al crear) — Con N en el Overworld, "Más opciones" ofrece "Guardar y duplicar en el Nether"
+  (en el Nether, "…en el Overworld"; en el End, desactivado): guarda el nuevo y su copia a la vez.
+- U6 — Abrir un mundo con un waypoint compartido de 1.3.x (Overworld X=800 Z=-160): quedan dos
+  waypoints, uno en cada dimensión (Nether X=100 Z=-20), y "Exportar a Xaero" no borra la copia
+  del Nether en Xaero.
+- U7 — En la lista, el botón `⋯` de una fila abre un minimenú junto a ella (favorito, duplicar)
+  sin salir de la lista; Esc o un clic fuera lo cierran.

@@ -3,9 +3,7 @@ package com.easywp.client;
 import java.util.Locale;
 
 /**
- * Turns a dimension identifier into the various human-readable forms the mod needs, plus the one
- * piece of domain knowledge those forms share: which dimensions the renderer's {@code shared} 1:8
- * conversion actually understands.
+ * Turns a dimension identifier into the various human-readable forms the mod needs.
  *
  * <p>Extracted from {@code WaypointListScreen}, which used to be the only place any of this lived,
  * once a second caller needed the same name/color for the same reason (labeling and coloring by
@@ -57,6 +55,18 @@ public final class DimensionNames {
         return sb.length() == 0 ? dimension : sb.toString();
     }
 
+    /** The other half of the Overworld/Nether pair, or {@code null} for any other dimension - the
+     *  only pair with a coordinate relationship (1:8) to place a copy across. */
+    public static String paired(String dimension) {
+        if (OVERWORLD.equals(dimension)) {
+            return NETHER;
+        }
+        if (NETHER.equals(dimension)) {
+            return OVERWORLD;
+        }
+        return null;
+    }
+
     public static int color(String dimension) {
         return switch (dimension) {
             case OVERWORLD -> UiPalette.DIM_OVERWORLD;
@@ -64,15 +74,5 @@ public final class DimensionNames {
             case END -> UiPalette.DIM_END;
             default -> UiPalette.TEXT_PRIMARY;
         };
-    }
-
-    /**
-     * Whether waypoints in this dimension can be mirrored into another one. Only the Overworld and
-     * the Nether have the 1:8 relationship the renderer knows how to convert, which is the same rule
-     * {@code WaypointCreateScreen} already applies to its own share toggle. For the vanilla three
-     * this is exactly the old {@code !equals(END)} test.
-     */
-    public static boolean isConvertible(String dimension) {
-        return dimension.equals(OVERWORLD) || dimension.equals(NETHER);
     }
 }

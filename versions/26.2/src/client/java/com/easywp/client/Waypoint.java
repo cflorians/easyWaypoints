@@ -1,15 +1,13 @@
 package com.easywp.client;
 
+import com.easywp.PairedCoordinates;
 import net.minecraft.core.BlockPos;
-
-import java.util.function.BiConsumer;
 
 public class Waypoint {
     private String name;
     private BlockPos pos;
     private int color;
     private String dimension;
-    private boolean shared;
     private boolean visible = true;
     private boolean focused = false;
     private boolean forceVisible = false;
@@ -19,6 +17,13 @@ public class Waypoint {
     // which builds a plain Waypoint and flags it after - adding this to the canonical constructor
     // below would mean touching every call site for a flag almost none of them ever need.
     private boolean fastPing = false;
+    // Set only by setter too: marked on the create screen's "More options" page (and loaded from
+    // disk), never part of creating a waypoint.
+    private boolean favorite = false;
+    // Never saved: deleted from the list and waiting out the seconds in which that can be undone
+    // (see WaypointStore.markForRemoval). Gone from the world and from the file already, still a
+    // row in the list.
+    private boolean pendingRemoval = false;
 
     // Render-side cache of the on-screen label built for this waypoint (see WaypointRenderer).
     // Lives here instead of a separate map because the renderer already reads and writes waypoint
@@ -41,31 +46,22 @@ public class Waypoint {
         this(name, pos, color, DimensionNames.OVERWORLD);
     }
 
-    public Waypoint(String name, BlockPos pos, int color, String dimension) {
-        this(name, pos, color, dimension, false);
-    }
-
-    public Waypoint(String name, BlockPos pos, int color, String dimension, boolean shared) {
-        this(name, pos, color, dimension, shared, true, false);
-    }
-
     /**
      * Every shorter constructor ends here, and each one is used only to create a waypoint that did
-     * not exist before - the create screen, Fast Ping, a Xaero import - so it is stamped with the
-     * current time. They used to leave it at 0, which made every waypoint but a death one look
-     * created at the epoch. A waypoint rebuilt from a save file or copied from another world keeps
-     * its original time through the full constructor below.
+     * not exist before - the create screen, Fast Ping, a Xaero import, a duplicate - so it is
+     * stamped with the current time. They used to leave it at 0, which made every waypoint but a
+     * death one look created at the epoch. A waypoint rebuilt from a save file or copied from
+     * another world keeps its original time through the full constructor below.
      */
-    public Waypoint(String name, BlockPos pos, int color, String dimension, boolean shared, boolean visible, boolean focused) {
-        this(name, pos, color, dimension, shared, visible, focused, false, System.currentTimeMillis());
+    public Waypoint(String name, BlockPos pos, int color, String dimension) {
+        this(name, pos, color, dimension, true, false, false, System.currentTimeMillis());
     }
 
-    public Waypoint(String name, BlockPos pos, int color, String dimension, boolean shared, boolean visible, boolean focused, boolean death, long createdAtMillis) {
+    public Waypoint(String name, BlockPos pos, int color, String dimension, boolean visible, boolean focused, boolean death, long createdAtMillis) {
         this.name = name;
         this.pos = pos;
         this.color = color;
         this.dimension = dimension;
-        this.shared = shared;
         this.visible = visible;
         this.focused = focused;
         this.forceVisible = false;
@@ -111,59 +107,38 @@ public class Waypoint {
     }
 
     /**
-     * Where this waypoint shows up in {@code viewedDimension}, or {@code null} if it doesn't.
-     *
-     * <p>Its own dimension gets its own position. A {@code shared} waypoint also shows up in the
-     * other half of the Overworld/Nether pair, at the 1:8 converted X/Z (Y unchanged) - the only
-     * dimension pair with a coordinate relationship to convert. This, and {@link #forEachPosition},
-     * are the single definition of that projection: the renderer, the list screen and the Xaero
-     * sync all ask here instead of each carrying its own copy of the ratio.
+     * Where this waypoint shows up in {@code viewedDimension}: its position in its own dimension,
+     * {@code null} in any other. A waypoint belongs to exactly one dimension since 1.4.0 - the
+     * "shared" waypoints that also showed up, converted, in the other half of the Overworld/Nether
+     * pair are gone, replaced by an independent copy there (see {@link #convertedPosition} and
+     * {@code WaypointStore}'s split of the old ones).
      */
     public BlockPos positionIn(String viewedDimension) {
+        return dimensionOrOverworld().equals(viewedDimension) ? pos : null;
+    }
+
+    /** The other half of the Overworld/Nether pair this waypoint's dimension belongs to, or
+     *  {@code null} for any other dimension - the only pair with a coordinate relationship. */
+    public String pairedDimension() {
+        return DimensionNames.paired(dimensionOrOverworld());
+    }
+
+    /**
+     * This waypoint's position converted into {@link #pairedDimension()} at 1:8 (X/Z divided by 8
+     * going into the Nether, multiplied coming out, rounded, Y unchanged), or {@code null} outside
+     * the pair. The single definition of that conversion: the create screen's "duplicate in the
+     * other dimension" places its copy here, and loading a pre-1.4.0 shared waypoint places its
+     * split-off copy here too - exactly where the shared one used to be drawn.
+     */
+    public BlockPos convertedPosition() {
         String own = dimensionOrOverworld();
-        if (own.equals(viewedDimension)) {
-            return pos;
+        if (own.equals(DimensionNames.OVERWORLD)) {
+            return new BlockPos(PairedCoordinates.toNether(pos.getX()), pos.getY(), PairedCoordinates.toNether(pos.getZ()));
         }
-        if (!shared) {
-            return null;
-        }
-        if (own.equals(DimensionNames.OVERWORLD) && viewedDimension.equals(DimensionNames.NETHER)) {
-            return scaled(1.0 / 8.0);
-        }
-        if (own.equals(DimensionNames.NETHER) && viewedDimension.equals(DimensionNames.OVERWORLD)) {
-            return scaled(8.0);
+        if (own.equals(DimensionNames.NETHER)) {
+            return new BlockPos(PairedCoordinates.toOverworld(pos.getX()), pos.getY(), PairedCoordinates.toOverworld(pos.getZ()));
         }
         return null;
-    }
-
-    /** Every dimension this waypoint shows up in, with its position there - its own first. */
-    public void forEachPosition(BiConsumer<String, BlockPos> consumer) {
-        String own = dimensionOrOverworld();
-        consumer.accept(own, pos);
-        if (!shared) {
-            return;
-        }
-        if (own.equals(DimensionNames.OVERWORLD)) {
-            consumer.accept(DimensionNames.NETHER, scaled(1.0 / 8.0));
-        } else if (own.equals(DimensionNames.NETHER)) {
-            consumer.accept(DimensionNames.OVERWORLD, scaled(8.0));
-        }
-    }
-
-    private BlockPos scaled(double factor) {
-        return new BlockPos(
-                (int) Math.round(pos.getX() * factor),
-                pos.getY(),
-                (int) Math.round(pos.getZ() * factor)
-        );
-    }
-
-    public boolean isShared() {
-        return shared;
-    }
-
-    public void setShared(boolean shared) {
-        this.shared = shared;
     }
 
     public boolean isVisible() {
@@ -196,7 +171,17 @@ public class Waypoint {
      *                   {@link WaypointStore#hasAnyFocused()}.
      */
     public boolean isShown(boolean anyFocused) {
-        return visible && (!anyFocused || focused || forceVisible);
+        return !pendingRemoval && visible && (!anyFocused || focused || forceVisible);
+    }
+
+    /** Whether this waypoint has been deleted from the list and can still be undone - see the field. */
+    public boolean isPendingRemoval() {
+        return pendingRemoval;
+    }
+
+    /** Only {@code WaypointStore} sets this, alongside the countdown it keeps. */
+    void setPendingRemoval(boolean pendingRemoval) {
+        this.pendingRemoval = pendingRemoval;
     }
 
     public void setForceVisible(boolean forceVisible) {
@@ -209,6 +194,14 @@ public class Waypoint {
 
     public void setDeath(boolean death) {
         this.death = death;
+    }
+
+    public boolean isFavorite() {
+        return favorite;
+    }
+
+    public void setFavorite(boolean favorite) {
+        this.favorite = favorite;
     }
 
     public boolean isFastPing() {
