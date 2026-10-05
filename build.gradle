@@ -42,6 +42,7 @@ def sharedClientSources = [
 	'ChatAddButtons.java',
 	'PlayerPickScreen.java',
 	'PopupMenu.java',
+	'WelcomeMessage.java',
 	'EasyWpClient.java',
 	'WaypointRenderer.java',
 	'WaypointStore.java',

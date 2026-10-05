@@ -147,5 +147,14 @@
   "easywp.create.group_add": "Add to this group",
   "easywp.create.group_remove": "Remove from \"%s\"",
   "easywp.create.group_full": "At most %s groups",
-  "easywp.create.group_create": "Create the group \"%s\""
+  "easywp.create.group_create": "Create the group \"%s\"",
+  "easywp.welcome.title": "easyWp %s",
+  "easywp.welcome.settings": "Settings: the gear in the waypoint list (%s)",
+  "easywp.welcome.settings_modmenu": "Settings: the gear in the waypoint list (%s) or Mod Menu",
+  "easywp.welcome.news_title": "What's new:",
+  "easywp.welcome.news.1.4.0.1": "Groups and favorites, in the list's \"More options\" (⋯)",
+  "easywp.welcome.news.1.4.0.2": "Share in chat or privately, or copy to the clipboard; [+] saves what others share",
+  "easywp.welcome.news.1.4.0.3": "Commands: /easywp list, add, focus, share, tp",
+  "easywp.welcome.news.1.4.0.4": "Deleting from the list can be undone for 7 seconds",
+  "easywp.welcome.news.1.4.0.5": "Distances in km, and ~ coordinates when creating a waypoint"
 }

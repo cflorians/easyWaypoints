@@ -36,9 +36,13 @@ sección siguiente), probado en el juego y confirmado: desde aquí cada entrega 
 `alpha.6` (F12, grupos) implementada, probada y confirmada el 2026-10-05 (commit
 `v1.4.0-alpha.6`), con el arreglo del clic izquierdo en 26.3.
 
-**Siguiente paso:** `alpha.7` — mensaje de bienvenida (F13), la última alpha antes de la `beta.1`.
+`alpha.7` (F13, mensaje de bienvenida) implementada, probada y confirmada el 2026-10-05 (commit
+`v1.4.0-alpha.7`). Es la última alpha.
 
-**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.6` (la 1.3.5 nunca se publicará). Se
+**Siguiente paso:** `beta.1`: congelado de funciones, pruebas completas en 26.1, 26.2 y 26.3,
+revisión de idiomas.
+
+**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.7` (la 1.3.5 nunca se publicará). Se
 cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los jars salen como
 `easywp-1.4.0-alpha.1+26.1.x.jar` hasta la alpha.4; desde la alpha.5 son dos:
 `easywp-<versión>+26.1-26.2.jar` (Minecraft 26.1.x y 26.2) y `easywp-<versión>+26.3.jar`.
@@ -873,7 +877,7 @@ Todas sin cambio visible para el jugador (regla 1).
   `create.group_hint`, `create.group_add`, `create.group_remove`, `create.group_full`,
   `create.group_create`.
 
-**F13 — Mensaje de bienvenida con teclas y novedades** · PENDIENTE · alpha.7
+**F13 — Mensaje de bienvenida con teclas y novedades** · HECHO en alpha.7
 - Al entrar al primer mundo tras instalar o actualizar, un mensaje local en el chat con:
   - las cinco teclas con su asignación **actual** (`KeyMapping.getTranslatedKeyMessage()`; el
     jugador puede haberlas cambiado);
@@ -883,6 +887,25 @@ Todas sin cambio visible para el jugador (regla 1).
 - Sale una vez por versión, comparando la versión **completa**: también en cada alpha y beta.
 - Grupo nuevo en `config.json` (p. ej. `onboarding.lastSeenVersion`), comparado con la versión de
   `FabricLoader`. Los usuarios de 1.3.x también lo ven una vez al actualizar, que sirve de anuncio.
+- Hecho: `WelcomeMessage` (cliente) y `WelcomeVersion` en `common/`, con `WelcomeVersionTest`
+  (comprobado contra cuatro roturas deliberadas). Grupo `onboarding.lastSeenVersion` en
+  `config.json`.
+- **Decisiones nuevas:**
+  - **Formato:** título "easyWp <versión>"; "Configuración: el engranaje de la lista de waypoints
+    (J)", con la tecla actual de la lista, y "o Mod Menu" solo si Mod Menu está instalado;
+    "Novedades:" y cinco puntos. **Cambio pedido por el usuario (2026-10-05):** se quitó la línea
+    con las cinco teclas; el mensaje solo lleva la tecla para llegar a la configuración y lo nuevo.
+    El texto de cada versión lo aprueba el usuario antes del commit (regla en `CLAUDE.md`).
+  - **Novedades de 1.4.0:** grupos y favoritos; compartir (chat, privado, portapapeles, `[+]`);
+    comandos `/easywp`; deshacer al borrar; distancias en km y coordenadas `~`.
+  - **Claves por versión:** `welcome.news.<versión>.N` con la versión sin el `-alpha.N`/`+...`
+    (`1.4.0`), así que todas las alphas, betas y la final de 1.4.0 muestran las mismas novedades, y
+    una versión futura solo añade sus claves. Si una versión no tiene, el mensaje sale sin novedades.
+  - **Cuándo:** 2 segundos después de entrar al mundo, para que no quede tapado por los mensajes que
+    el servidor manda al entrar. Se marca como visto antes de mostrarlo.
+  - **Sin opción para desactivarlo:** sale una sola vez por versión.
+- Claves nuevas: `welcome.title`, `welcome.settings`, `welcome.settings_modmenu`,
+  `welcome.news_title`, `welcome.news.1.4.0.1` a `.5`.
 
 ### Descartado para 1.4.0
 
@@ -1000,6 +1023,11 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
 - F12 (desaparece) — Quitar `Minas` de todos sus waypoints: el grupo ya no sale en el filtro.
 - Clic izquierdo en 26.3 — Los menús (`⋯` de la lista, filtro de grupos, sugerencias de grupos)
   responden al clic, y el doble clic en una fila copia sus coordenadas.
+
+**alpha.7**
+- F13 — Al entrar al primer mundo tras actualizar, a los 2 s sale en el chat el mensaje de
+  bienvenida con la tecla de la configuración y las novedades; al salir y volver a entrar, ya no
+  sale. Con la tecla de la lista reasignada, el mensaje muestra la nueva.
 
 **Jar único 26.1+26.2** (desde la alpha.5, se repasa en cada entrega)
 - Jar `+26.1-26.2` en 26.1 y en 26.2: abrir y cerrar lista, formulario y configuración; mensaje

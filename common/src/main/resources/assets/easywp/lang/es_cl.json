@@ -147,5 +147,14 @@
   "easywp.create.group_add": "Añadir a este grupo",
   "easywp.create.group_remove": "Quitar de «%s»",
   "easywp.create.group_full": "Máximo %s grupos",
-  "easywp.create.group_create": "Crear el grupo «%s»"
+  "easywp.create.group_create": "Crear el grupo «%s»",
+  "easywp.welcome.title": "easyWp %s",
+  "easywp.welcome.settings": "Configuración: el engranaje de la lista de waypoints (%s)",
+  "easywp.welcome.settings_modmenu": "Configuración: el engranaje de la lista de waypoints (%s) o Mod Menu",
+  "easywp.welcome.news_title": "Novedades:",
+  "easywp.welcome.news.1.4.0.1": "Grupos y favoritos, en \"Más opciones\" (⋯) de la lista",
+  "easywp.welcome.news.1.4.0.2": "Compartir en el chat o en privado, o copiar al portapapeles; [+] guarda lo que te compartan",
+  "easywp.welcome.news.1.4.0.3": "Comandos: /easywp list, add, focus, share, tp",
+  "easywp.welcome.news.1.4.0.4": "Borrar desde la lista se puede deshacer durante 7 segundos",
+  "easywp.welcome.news.1.4.0.5": "Distancias en km y coordenadas ~ al crear un waypoint"
 }

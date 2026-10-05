@@ -30,6 +30,7 @@ public class ModConfig {
     public XaeroIntegration xaeroIntegration = new XaeroIntegration();
     public LookFade lookFade = new LookFade();
     public Favorites favorites = new Favorites();
+    public Onboarding onboarding = new Onboarding();
 
     public static class DeathWaypoints {
         public boolean enabled = true;
@@ -70,6 +71,15 @@ public class ModConfig {
         /** Opacity, 0-100, of a favorite the player is not looking at, in place of
          *  {@code lookFade.unlookedOpacityPercent}; between that one's default (60) and no fade. */
         public double unlookedOpacityPercent = 80.0;
+    }
+
+    /**
+     * The welcome message (see {@code WelcomeMessage}). A group of its own, added in 1.4.0: an
+     * older config.json has none, gets this one's defaults, and so shows the message once.
+     */
+    public static class Onboarding {
+        /** The full mod version the welcome message was last shown for; {@code null} if never. */
+        public String lastSeenVersion = null;
     }
 
     public static class LabelDisplay {
@@ -212,6 +222,9 @@ public class ModConfig {
         }
         if (loaded.favorites == null) {
             loaded.favorites = new Favorites();
+        }
+        if (loaded.onboarding == null) {
+            loaded.onboarding = new Onboarding();
         }
     }
 
