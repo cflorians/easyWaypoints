@@ -42,6 +42,32 @@ cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los
 **Git:** todo el trabajo va en la rama `release/1.4.0`, con un commit por cada alpha/beta. Se
 fusiona a `main` con la versión final.
 
+### Experimento: un solo jar para 26.1 y 26.2 (rama `experimento/jar-26.1-26.2`)
+
+**Estado:** implementado el 2026-10-05 en la rama `experimento/jar-26.1-26.2` (worktree
+`D:\Proyectos\easyWaypoints-unjar`), **sin probar en el juego** y **sin unir** a `release/1.4.0`.
+Pedido por el usuario: probarlo aparte y, si funciona perfectamente, unirlo a la 1.4.0.
+
+- **Resultado:** dos jars publicables en vez de tres: `+26.1-26.2` (Minecraft 26.1.x y 26.2) y
+  `+26.3`.
+- **Por qué es posible:** compilado contra 26.1 y contra 26.2, todo el bytecode salía idéntico
+  salvo `ClientCompat`. Sus cuatro diferencias (mensaje del HUD y chat en `gui.hud`, F1 en
+  `Hud.isHidden()`, `gameRenderState()`) se resuelven ahora al arrancar, por nombre; `setScreen`
+  usa `setScreenAndShow`, que existe en las dos.
+- **Cómo se comprueba:** el subproyecto 26.2 sigue (para `runClient` y para compilar contra 26.2),
+  pero no publica nada. `checkMergedSources` exige fuentes y `fabric.mod.json` idénticos entre
+  26.1 y 26.2, y `checkMergedJar` que sus jars tengan las clases idénticas. Las dos comprobaciones
+  fallan con una diferencia deliberada en la copia de 26.2. Además se inicializó el `ClientCompat`
+  del jar publicado contra las clases reales de 26.1 y de 26.2: toma la rama correcta en cada una
+  y resuelve todo lo que necesita.
+- **Declaraciones corregidas:** el rango de Minecraft de `fabric.mod.json` sale de
+  `gradle.properties`: `>=26.1 <26.3-` para el jar común y `~26.3` para el de 26.3. Antes los jars
+  de 26.2 y 26.3 declaraban `>=26.2`/`>=26.3`, y Fabric dejaba cargarlos en una versión posterior
+  donde fallarían.
+- **Para unirlo:** cuando la alpha.5 tenga su commit en `release/1.4.0`, traer solo el commit del
+  experimento (cherry-pick); el primero de la rama es una base temporal con la alpha.5 sin
+  confirmar.
+
 ### Forma de trabajo por alpha
 
 Acordada con el usuario al empezar la 1.4.0; se sigue en cada alpha (también en una conversación

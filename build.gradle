@@ -143,6 +143,131 @@ tasks.register('checkSharedSources') {
 }
 
 /**
+ * Minecraft versions that ship as ONE jar. The first one's jar is the one published (built against
+ * the oldest Minecraft, so it cannot use anything only the newer one has); every other one keeps
+ * its subproject only to compile the very same sources against its own Minecraft and run them with
+ * runClient, and marks itself verification_only so its jar stays out of build/libs.
+ *
+ * Two checks make that safe. checkMergedSources: every client source and fabric.mod.json is
+ * byte-identical across the group - ClientCompat included, which resolves the renames between
+ * these versions at runtime instead of per tree (see CLAUDE.md). checkMergedJar: the classes and
+ * resources of their jars are byte-identical too. Compiling the same source against two
+ * Minecrafts giving the same bytecode means every method, field and type it names exists with the
+ * same signature in both - so what is tested on the newer one with runClient is exactly what
+ * ships for it.
+ */
+def mergedVersions = ['26.1', '26.2']
+
+def mergedProjects = {
+	mergedVersions.collect { v -> project(":versions:${v}") }
+}
+
+tasks.register('checkMergedSources') {
+	group = 'verification'
+	description = 'Fails if the versions that ship as one jar no longer have identical client sources and fabric.mod.json.'
+
+	def trees = mergedVersions.collect { v -> [name: v, dir: file("versions/${v}")] }
+	inputs.files(trees.collect { t -> fileTree(t.dir) { include 'src/client/java/**/*.java', 'src/main/resources/fabric.mod.json' } })
+			.withPropertyName('mergedSources')
+	def marker = layout.buildDirectory.file('checkMergedSources.txt')
+	outputs.file(marker)
+
+	doLast {
+		def relative = { File root, File f -> root.toPath().relativize(f.toPath()).toString().replace('\\', '/') }
+		def listing = { File root ->
+			def files = [:]
+			def clientRoot = new File(root, 'src/client/java')
+			if (clientRoot.isDirectory()) {
+				clientRoot.eachFileRecurse(groovy.io.FileType.FILES) { f ->
+					if (f.name.endsWith('.java')) files[relative(root, f)] = f
+				}
+			}
+			def fmj = new File(root, 'src/main/resources/fabric.mod.json')
+			if (fmj.isFile()) files[relative(root, fmj)] = fmj
+			files
+		}
+		def reference = trees.first()
+		def referenceFiles = listing(reference.dir)
+		def problems = []
+		trees.tail().each { t ->
+			def files = listing(t.dir)
+			(referenceFiles.keySet() + files.keySet()).sort().each { name ->
+				def a = referenceFiles[name]
+				def b = files[name]
+				if (a == null || b == null) {
+					problems << "${name}: only in ${a == null ? t.name : reference.name}"
+				} else if (!java.util.Arrays.equals(a.bytes, b.bytes)) {
+					problems << "${name}: differs between ${reference.name} and ${t.name}"
+				}
+			}
+		}
+		if (!problems.isEmpty()) {
+			throw new GradleException(
+					"${mergedVersions.join('+')} ship as one jar, but their sources have drifted apart:\n  " +
+					problems.join('\n  ') +
+					"\n\nEvery client source - ClientCompat too - and fabric.mod.json must be identical across them.\n" +
+					"A rename between these versions goes into ClientCompat as a runtime lookup (see CLAUDE.md),\n" +
+					"never into a per-version copy."
+			)
+		}
+		marker.get().asFile.text = "ok\n"
+	}
+}
+
+tasks.register('checkMergedJar') {
+	group = 'verification'
+	description = 'Fails if the jars of the versions that ship as one jar do not hold identical classes and resources.'
+
+	// The archive task of each subproject, looked up lazily: the root is configured first.
+	def archiveTask = { Project p -> p.tasks.findByName('remapJar') ?: p.tasks.getByName('jar') }
+	dependsOn { mergedProjects().collect { archiveTask(it) } }
+	def marker = layout.buildDirectory.file('checkMergedJar.txt')
+	outputs.file(marker)
+	outputs.upToDateWhen { false }
+
+	doLast {
+		// The manifest records which Minecraft each jar was built against; everything else must match.
+		def entries = { File jar ->
+			def map = [:]
+			new java.util.zip.ZipFile(jar).withCloseable { zip ->
+				zip.entries().each { e ->
+					if (!e.isDirectory() && e.name != 'META-INF/MANIFEST.MF') {
+						map[e.name] = zip.getInputStream(e).bytes
+					}
+				}
+			}
+			map
+		}
+		def jars = mergedProjects().collect { p -> [name: p.name, file: archiveTask(p).archiveFile.get().asFile] }
+		def reference = jars.first()
+		def referenceEntries = entries(reference.file)
+		def problems = []
+		jars.tail().each { j ->
+			def other = entries(j.file)
+			(referenceEntries.keySet() + other.keySet()).sort().each { name ->
+				def a = referenceEntries[name]
+				def b = other[name]
+				if (a == null || b == null) {
+					problems << "${name}: only in the ${a == null ? j.name : reference.name} jar"
+				} else if (!java.util.Arrays.equals(a, b)) {
+					problems << "${name}: differs between the ${reference.name} and ${j.name} builds"
+				}
+			}
+		}
+		if (!problems.isEmpty()) {
+			throw new GradleException(
+					"The ${reference.name} jar is published for ${mergedVersions.join(' and ')}, but building the same\n" +
+					"sources against another of them does not give the same jar:\n  " + problems.join('\n  ') +
+					"\n\nA class that compiles to different bytecode names something that differs between those\n" +
+					"Minecraft versions, and the published jar would fail on the newer one. Route it through\n" +
+					"ClientCompat's runtime lookups (see CLAUDE.md)."
+			)
+		}
+		marker.get().asFile.text = "ok\n"
+	}
+}
+
+/**
  * Locales that must stay a verbatim copy of es_es.json.
  *
  * Minecraft resolves regional codes by exact match with no es_mx -> es -> en_us cascade, so every
@@ -225,6 +350,8 @@ subprojects {
 		tasks.named('check').configure {
 			dependsOn rootProject.tasks.named('checkSharedSources')
 			dependsOn rootProject.tasks.named('checkLangParity')
+			dependsOn rootProject.tasks.named('checkMergedSources')
+			dependsOn rootProject.tasks.named('checkMergedJar')
 		}
 	}
 }
