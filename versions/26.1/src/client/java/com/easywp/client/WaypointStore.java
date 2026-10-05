@@ -212,9 +212,14 @@ public final class WaypointStore {
         if (worldId.equals("unknown")) return;
 
         try {
+            // forceVisible only means something beside a focused waypoint. Deleting the focused one
+            // (from the list, by reaching a death waypoint, by a Xaero import) leaves the others'
+            // flags behind; they are ignored in memory until the next focus clears them, but they
+            // are not written out as if they still meant something.
+            boolean anyFocused = hasAnyFocused();
             List<WaypointData> dataList = new ArrayList<>();
             for (Waypoint wp : waypoints) {
-                dataList.add(new WaypointData(wp));
+                dataList.add(new WaypointData(wp, anyFocused));
             }
 
             // Serialised in full, here on the client thread, before anything touches the disk:
@@ -350,7 +355,9 @@ public final class WaypointStore {
      *
      * <p>{@code focused} is always cleared on the copy too: focus is exclusive (one waypoint at a
      * time, see WaypointListScreen's focus toggle), and an imported focused waypoint would sit
-     * focused beside whichever one the current world already had.
+     * focused beside whichever one the current world already had. {@code forceVisible} goes with
+     * it - it only means "kept visible beside the focused one", and the copy has no focus to be
+     * beside; the fresh {@link Waypoint} below starts without it.
      *
      * <p>{@code death} and {@code fastPing} are always cleared on the copy that gets added, the
      * same way {@code WaypointCreateScreen.saveWaypoint()} already clears them the moment either
@@ -487,8 +494,12 @@ public final class WaypointStore {
         Boolean death;
         Long createdAt;
         Boolean fastPing;
+        /** Since 1.4.0, so the waypoints kept visible beside a focused one survive a restart the
+         *  way the focus itself always did. Optional: a file from before reads it as absent, and
+         *  older versions simply ignore it. */
+        Boolean forceVisible;
 
-        public WaypointData(Waypoint wp) {
+        public WaypointData(Waypoint wp, boolean anyFocused) {
             this.name = wp.getName();
             this.x = wp.getPos().getX();
             this.y = wp.getPos().getY();
@@ -501,6 +512,7 @@ public final class WaypointStore {
             this.death = wp.isDeath();
             this.createdAt = wp.getCreatedAtMillis();
             this.fastPing = wp.isFastPing();
+            this.forceVisible = anyFocused && wp.isForceVisible();
         }
 
         public Waypoint toWaypoint() {
@@ -516,6 +528,7 @@ public final class WaypointStore {
                 createdAt == null ? 0L : createdAt
             );
             wp.setFastPing(fastPing != null && fastPing);
+            wp.setForceVisible(forceVisible != null && forceVisible);
             return wp;
         }
     }

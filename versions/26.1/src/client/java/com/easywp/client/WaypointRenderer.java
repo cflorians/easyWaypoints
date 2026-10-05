@@ -1,5 +1,6 @@
 package com.easywp.client;
 
+import com.easywp.DistanceFormat;
 import com.easywp.EasyWp;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.DeltaTracker;
@@ -128,6 +129,7 @@ public class WaypointRenderer {
 
     private static final List<WaypointHolder> activeWaypoints = new ArrayList<>();
     private static final List<WaypointHolder> holderPool = new ArrayList<>();
+    private static final List<WaypointHolder> limitScratch = new ArrayList<>();
 
     /**
      * HUD entry point while the HUD is showing. Registered before vanilla's first HUD element, so
@@ -248,9 +250,12 @@ public class WaypointRenderer {
         // Farther waypoints first, so nearer ones are drawn over them.
         activeWaypoints.sort((a, b) -> Double.compare(b.realDistance, a.realDistance));
 
+        applyVisibleLimit(ModConfig.get().visibility.maxVisible);
+
         Font font = client.font;
         boolean uppercaseLabels = ModConfig.get().labelDisplay.uppercase;
         boolean showDistance = ModConfig.get().labelDisplay.showDistance;
+        boolean useKm = !ModConfig.get().labelDisplay.metersOnly;
         int markerAlpha = (int) Math.round(255 * Mth.clamp(ModConfig.get().waypointSize.opacityPercent / 100.0, 0.0, 1.0));
         ModConfig.LookFade lookCfg = ModConfig.get().lookFade;
         float unlookedOpacity = (float) Mth.clamp(lookCfg.unlookedOpacityPercent / 100.0, 0.0, 1.0);
@@ -258,7 +263,7 @@ public class WaypointRenderer {
 
         for (WaypointHolder holder : activeWaypoints) {
             Waypoint wp = holder.waypoint;
-            String nameText = labelText(font, wp, uppercaseLabels, showDistance, holder.realDistance);
+            String nameText = labelText(font, wp, uppercaseLabels, showDistance, useKm, holder.realDistance);
             int textWidth = (int) wp.getCachedLabelWidth();
 
             LabelLayout label = labelLayout(holder, textWidth);
@@ -281,22 +286,59 @@ public class WaypointRenderer {
 
     /**
      * The label string, rebuilt and re-measured only when one of its inputs changed - the name,
-     * the uppercase setting, the distance toggle or the displayed whole-metre distance.
+     * the uppercase setting, the distance toggle or the distance text shown, which in kilometres
+     * changes only every 100 blocks (see {@link DistanceFormat#cacheKey}).
      */
-    private static String labelText(Font font, Waypoint wp, boolean uppercase, boolean showDistance, double realDistance) {
+    private static String labelText(Font font, Waypoint wp, boolean uppercase, boolean showDistance,
+                                     boolean useKm, double realDistance) {
         String wpName = wp.getName() != null ? wp.getName() : "Waypoint";
-        int distanceMeters = showDistance ? (int) realDistance : 0;
-        if (wp.labelCacheMatches(wpName, uppercase, showDistance, distanceMeters)) {
+        int distanceMeters = (int) realDistance;
+        int distanceKey = showDistance ? DistanceFormat.cacheKey(distanceMeters, useKm) : 0;
+        if (wp.labelCacheMatches(wpName, uppercase, showDistance, distanceKey)) {
             return wp.getCachedLabelText();
         }
-        // Uppercased before the suffix is appended, not after: the trailing "m" is a unit symbol
-        // and stays lowercase whatever the label styling says.
+        // Uppercased before the suffix is appended, not after: the trailing "m"/"km" is a unit
+        // symbol and stays lowercase whatever the label styling says.
         String nameText = uppercase ? wpName.toUpperCase(Locale.ROOT) : wpName;
         if (showDistance) {
-            nameText = nameText + " (" + distanceMeters + "m)";
+            nameText = nameText + " (" + DistanceFormat.format(distanceMeters, useKm) + ")";
         }
-        wp.setCachedLabel(wpName, uppercase, showDistance, distanceMeters, nameText, font.width(nameText));
+        wp.setCachedLabel(wpName, uppercase, showDistance, distanceKey, nameText, font.width(nameText));
         return nameText;
+    }
+
+    /**
+     * Keeps only the {@code limit} nearest of the waypoints about to be drawn (0 = no limit). Runs
+     * on {@link #activeWaypoints} after it is sorted far to near and after the off-screen ones are
+     * already gone, so the limit counts what is actually on screen: turning around brings the
+     * nearest ones in that direction into view, rather than slots being held by waypoints behind
+     * the player. Each drawn waypoint costs a {@code nextStratum()} - a draw batch of its own -
+     * which is what makes hundreds of them on screen expensive.
+     *
+     * <p>A focused waypoint is always kept, in one of the {@code limit} slots, so the cap holds
+     * exactly. The far-to-near order is preserved.
+     */
+    private static void applyVisibleLimit(int limit) {
+        if (limit <= 0 || activeWaypoints.size() <= limit) return;
+
+        int focusedCount = 0;
+        for (WaypointHolder holder : activeWaypoints) {
+            if (holder.waypoint.isFocused()) focusedCount++;
+        }
+        int othersLeft = limit - focusedCount;
+
+        // Nearest first (the list's end), so the first others are the nearest; then back to far first.
+        limitScratch.clear();
+        for (int i = activeWaypoints.size() - 1; i >= 0; i--) {
+            WaypointHolder holder = activeWaypoints.get(i);
+            if (holder.waypoint.isFocused() || othersLeft-- > 0) {
+                limitScratch.add(holder);
+            }
+        }
+        activeWaypoints.clear();
+        for (int i = limitScratch.size() - 1; i >= 0; i--) {
+            activeWaypoints.add(limitScratch.get(i));
+        }
     }
 
     /** The marker icon, bottom-centred on the waypoint's projected position. */

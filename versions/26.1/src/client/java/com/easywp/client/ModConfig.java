@@ -65,6 +65,11 @@ public class ModConfig {
         public boolean uppercase = false;
         /** Appends the "(Xm)" distance suffix to marker labels when true. */
         public boolean showDistance = true;
+        /** Keeps the distance in metres at any range when true. False (the default) shows it in
+         *  kilometres from 1000 m on ({@code 1.2km}) - see {@code DistanceFormat}. Named this way
+         *  round so that Gson's {@code false}, which a config.json from before the setting reads
+         *  as, is the default: kilometres on. */
+        public boolean metersOnly = false;
     }
 
     public static class Confirmations {
@@ -77,6 +82,10 @@ public class ModConfig {
         public boolean rememberOnExit = false;
         /** Last known visibility state; only meaningful when rememberOnExit is true. */
         public boolean lastVisible = true;
+        /** At most this many waypoints drawn at once, the nearest on screen, the focused one always
+         *  among them; 0 (the default) is no limit. 0 is also what a config.json from before the
+         *  setting reads as, so it needs no group of its own. */
+        public int maxVisible = 0;
     }
 
     public static class Ping {

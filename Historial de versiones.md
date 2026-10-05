@@ -21,9 +21,10 @@ está. Al empezar una conversación nueva sobre una versión, leer primero este 
 
 **Estado general:** EN PROGRESO. Planificación cerrada el 2026-10-02. `alpha.1` implementada,
 probada en el juego y confirmada el 2026-10-02 (commit `v1.4.0-alpha.1` en `release/1.4.0`).
-Sigue pendiente confirmar el plan de publicación (ver "Publicación").
+`alpha.2` implementada el 2026-10-02, probada y confirmada el 2026-10-05 (commit
+`v1.4.0-alpha.2`). Sigue pendiente confirmar el plan de publicación (ver "Publicación").
 
-**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.1` (la 1.3.5 nunca se publicará). Se
+**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.2` (la 1.3.5 nunca se publicará). Se
 cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los jars salen como
 `easywp-1.4.0-alpha.1+26.1.x.jar`.
 
@@ -272,7 +273,7 @@ Todas sin cambio visible para el jugador (regla 1).
 
 ### Cambios de UX
 
-**U1 — Volver a la lista tras editar o crear desde ella** · PENDIENTE · alpha.2
+**U1 — Volver a la lista tras editar o crear desde ella** · HECHO en alpha.2
 - Hoy: guardar una edición cierra todo y devuelve al juego.
 - Decisión: si la pantalla de crear/editar se abrió desde la lista (botón editar o botón "Nuevo"),
   guardar, cancelar y su propio botón de lista vuelven a **esa misma** lista, que se refresca al
@@ -280,26 +281,48 @@ Todas sin cambio visible para el jugador (regla 1).
 - Esto evita que lista → editar → lista → editar se vaya apilando (hoy el botón de lista de la
   pantalla de crear abre una lista nueva con la pantalla de crear como padre).
 - Archivos: `WaypointCreateScreen` (pantalla de retorno opcional), `WaypointListScreen`.
+- Hecho: campo `returnScreen` en `WaypointCreateScreen`, que la lista pasa desde editar y Nuevo.
+- **Decisión nueva:** Esc también vuelve a la lista (es un "cancelar"); se hace sobrescribiendo
+  `onClose()`, por el que pasan guardar, cancelar, Enter y Esc. El botón de lista, abierta desde
+  la lista, vuelve a ella **sin guardar**, igual que cancelar. Abierta con N/H no cambia nada: su
+  botón de lista sigue abriendo una lista cuyo "Volver" regresa al formulario (eso no se apila).
 
-**U2 — Nombre por defecto con el número libre más bajo, por dimensión** · PENDIENTE · alpha.2
+**U2 — Nombre por defecto con el número libre más bajo, por dimensión** · HECHO en alpha.2
 - Hoy: `WAYPOINT #N` con N = total de waypoints + 1, que repite nombres tras borrar.
 - Decisión: N es el número más bajo cuyo nombre traducido exacto (`create.default_name`) no use
   ningún waypoint **de la dimensión actual**. Se prueba N = 1, 2, … contra el nombre traducido, en
   vez de reutilizar la regex de Fast Ping, porque `WAYPOINT #N` y `Ping #N` comparten el patrón
   `#N` y la regex contaría también los pings. Fast Ping no cambia (sigue siendo global).
 - Archivo: `WaypointCreateScreen` (y O4).
+- Hecho: `WaypointCreateScreen.nextDefaultName`, calculado una vez en `init()` (O4). La búsqueda
+  del número libre es `NameNumbering.lowestUnused` en `common/`, con `NameNumberingTest`
+  (comprobado contra dos roturas deliberadas: empezar en 0 y "cantidad + 1").
+- **Decisión nueva (interpretación):** "waypoints de la dimensión actual" = los que **se ven** en
+  ella: los suyos y los compartidos proyectados desde la otra mitad del par Overworld/Nether
+  (`positionIn`). Así no salen dos etiquetas `WAYPOINT #1` a la vez en el Nether. La dimensión es
+  la del jugador, que es donde se guarda el waypoint nuevo.
 
-**U3 — Guardar `forceVisible`** · PENDIENTE · alpha.2
+**U3 — Guardar `forceVisible`** · HECHO en alpha.2
 - Hoy: el foco sobrevive a un reinicio, pero los waypoints que lo acompañan (`forceVisible`) no.
 - Decisión: campo opcional nuevo en `WaypointData`. Al quitar el foco se siguen limpiando todos,
   como ahora. `mergeFrom` lo limpia en la copia, igual que `focused`.
 - Archivos: `WaypointStore.WaypointData`, `WaypointStore.mergeFrom`.
+- Hecho: `Boolean forceVisible` en `WaypointData` (ausente = `false`). `mergeFrom` crea la copia
+  sin él.
+- Ajuste del plan: "al quitar el foco se siguen limpiando todos, como ahora" no era exacto; el
+  código solo limpiaba el del waypoint que estaba enfocado, y los demás esperaban al siguiente
+  foco (sin efecto visible, porque sin foco `forceVisible` no cuenta). Ahora quitar el foco limpia
+  **todos**, para no guardar marcas huérfanas. Mismo resultado en pantalla.
+- Mismo patrón, arreglado: borrar el waypoint enfocado (desde la lista, al llegar a una muerte o al
+  importar de Xaero) también dejaba marcas sin foco. En vez de tocar cada ruta, al guardar se
+  escribe `forceVisible = false` si no hay ningún waypoint enfocado.
 
-**U4 — El orden "Creado" usa la fecha de creación** · PENDIENTE · alpha.2
+**U4 — El orden "Creado" usa la fecha de creación** · HECHO en alpha.2
 - Decisión: con B6 hecho, el orden `CREATED` ordena por `createdAtMillis` con un orden estable: los
   que tienen 0 (anteriores a 1.4) conservan entre sí su orden de inserción y quedan primero. Un
   waypoint importado de otro mundo se coloca según su fecha original.
 - Archivos: `WaypointListScreen.sortEntries`, `WaypointSortMode` (javadoc de `CREATED`).
+- Hecho tal cual: `List.sort` con `comparingLong(createdAtMillis)`, que es estable.
 
 **U5 — Página "Más opciones" en la pantalla de crear/editar** · PENDIENTE · alpha.3
 - La pantalla de crear ya está llena (224px de alto). En vez de hacerla más alta, se añade una
@@ -312,7 +335,7 @@ Todas sin cambio visible para el jugador (regla 1).
 
 ### Funciones nuevas
 
-**F1 — Distancia en km** · PENDIENTE · alpha.2
+**F1 — Distancia en km** · HECHO en alpha.2
 - A partir de 1000 bloques la etiqueta muestra `1.2km` en vez de `1234m`, con un decimal y
   `Locale.ROOT` (punto decimal en cualquier idioma).
 - Configurable, **activada por defecto**. Por la regla 3, el campo se nombra para que `false` sea
@@ -321,15 +344,28 @@ Todas sin cambio visible para el jugador (regla 1).
   que en km se recalcula cada 100 bloques en vez de cada bloque.
 - También se usa en la salida de `/easywp list` (F8).
 - Archivos: `WaypointRenderer.labelText`, `ModConfig`, `ModConfigScreen` (fila en Apariencia).
+- Hecho: `DistanceFormat` en `common/` (`format` y `cacheKey`), con `DistanceFormatTest`
+  (comprobado contra cuatro roturas deliberadas). Campo `labelDisplay.metersOnly = false`. Fila
+  "Distancia en km" (encendido = km), justo debajo de "Mostrar distancia", con tooltip.
+- **Decisión nueva:** el decimal se **trunca**, no se redondea (`1999` → `1.9km`), igual que los
+  metros, que ya se truncaban (`999.9` → `999m`). El texto se construye a mano, sin
+  `String.format`, así que el punto decimal no depende del idioma ni de `Locale`.
+- Claves nuevas: `config.distance_km`, `config.distance_km_tooltip`.
 
-**F2 — Coordenadas relativas `~`** · PENDIENTE · alpha.2
+**F2 — Coordenadas relativas `~`** · HECHO en alpha.2
 - En los campos X/Y/Z de la pantalla de crear: `~` es la posición del jugador en ese eje, y `~5`
   o `~-3` le suman un desplazamiento (como en vanilla). Un valor que no se pueda interpretar
   conserva el comportamiento actual (se queda la coordenada original).
 - El parser es texto puro: va en `common/` con tests, porque los comandos (F8) lo reutilizan.
 - Archivos: `WaypointCreateScreen.saveWaypoint`, clase nueva en `common/`.
+- Hecho: `RelativeCoordinate.parse(texto, base)` en `common/`, con `RelativeCoordinateTest`
+  (comprobado contra cuatro roturas deliberadas). La base es la posición exacta del jugador, y
+  `BlockPos.containing` la baja al bloque, como los argumentos de bloque de vanilla.
+- **Decisiones nuevas:** `~ 5` (con espacio) no se acepta, como en vanilla. `NaN`, `Infinity` y
+  números fuera de rango, que antes se aceptaban y daban coordenada 0 o 2147483647, ahora cuentan
+  como ilegibles (se queda la coordenada original). Todo lo que antes se leía sigue leyéndose.
 
-**F3 — Límite de waypoints visibles** · PENDIENTE · alpha.2
+**F3 — Límite de waypoints visibles** · HECHO en alpha.2
 - Opción propia: "máximo de waypoints visibles", deslizador de **0 a 100 en pasos de 5**. Por
   defecto `0` = sin límite, así que no cambia nada para quien no la toque (regla 1). `0` es el
   valor cero de Gson, así que no necesita grupo nuevo.
@@ -337,6 +373,17 @@ Todas sin cambio visible para el jugador (regla 1).
 - Motivo: cada waypoint visible hace un `nextStratum()` (`WaypointRenderer.java:281`), y con cientos
   en pantalla son cientos de lotes de dibujo.
 - Archivos: `WaypointRenderer.render`, `ModConfig`, `ModConfigScreen`.
+- Hecho: `visibility.maxVisible` (grupo existente, `0` por defecto). Deslizador "Máx. visibles" al
+  final de Apariencia, que muestra "Sin límite" en 0, con tooltip. `WaypointRenderer.applyVisibleLimit`.
+- **Decisiones nuevas (el plan no lo concretaba):**
+  - Los N más cercanos se eligen **entre los que están en pantalla** (después de descartar los que
+    quedan fuera de la vista), no entre todos los de la dimensión: así el límite cuenta lo que se
+    dibuja de verdad, y al girarse aparecen los más cercanos en esa dirección en vez de que los de
+    detrás ocupen sitio. El descarte de fuera de pantalla es generoso (margen de unos 64 px), así
+    que uno justo en el borde puede contar.
+  - El enfocado **ocupa uno de los N** (siempre se dibuja, pero el máximo se cumple exacto).
+- Claves nuevas: `config.max_visible_row`, `config.max_visible_unlimited`,
+  `config.max_visible_tooltip`.
 
 **F4 — Deshacer al borrar** · PENDIENTE · alpha.3
 - Solo para los borrados hechos desde la lista. No aplica a muertes, sincronización con Xaero ni
@@ -522,3 +569,19 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
   coinciden.
 - O5 — Los botones con texto (Nuevo, Volver, orden) muestran su texto; los de icono no muestran
   texto.
+
+**alpha.2**
+- U1 — Lista → editar → Guardar: vuelve a la misma lista (misma pestaña, búsqueda y scroll) con el
+  cambio ya visible. Con N → Guardar: vuelve al juego.
+- U2 — En el Overworld con `WAYPOINT #1`, `#2` y `#3`, borrar `#2` y pulsar N: la sugerencia es
+  `WAYPOINT #2`. En el Nether vacío, N sugiere `WAYPOINT #1`.
+- U3 — Enfocar uno, marcar otro como visible (ojo), salir y volver a entrar: los dos siguen
+  visibles y el resto oculto.
+- U4 — Orden "Creación": un waypoint importado de otro mundo con fecha antigua aparece antes que
+  los creados hoy; los de 1.3.x siguen primero y en su orden.
+- F1 — Waypoint a más de 1000 bloques: la etiqueta dice `(1.2km)`; con "Distancia en km" apagado,
+  `(1234m)`.
+- F2 — Pulsar N, escribir `~10` en X y guardar: el waypoint queda 10 bloques al este del jugador.
+  `abc` en Y conserva la Y original.
+- F3 — "Máx. visibles" en 5 con 10 waypoints a la vista: solo se dibujan los 5 más cercanos; el
+  enfocado se ve aunque esté lejos. En "Sin límite" se ven todos.

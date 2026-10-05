@@ -81,5 +81,10 @@
   "easywp.config.xaero_chat_format": "Formato de chat de Xaero",
   "easywp.config.xaero_missing": "Requiere Xaero's Minimap",
   "easywp.config.import_button": "Importar waypoints...",
-  "easywp.config.import_needs_world": "Entra primero a un mundo: los waypoints se importan al mundo en el que estás"
+  "easywp.config.import_needs_world": "Entra primero a un mundo: los waypoints se importan al mundo en el que estás",
+  "easywp.config.distance_km": "Distancia en km",
+  "easywp.config.distance_km_tooltip": "A partir de 1000 bloques, las etiquetas muestran 1.2km en vez de 1234m",
+  "easywp.config.max_visible_row": "Máx. visibles: %s",
+  "easywp.config.max_visible_unlimited": "Sin límite",
+  "easywp.config.max_visible_tooltip": "Dibuja solo los waypoints más cercanos en pantalla. El enfocado se ve siempre."
 }

@@ -54,6 +54,9 @@ public class ModConfigScreen extends OptionsSubScreen {
     private static final double LOOK_AREA_FLOOR = 1.0;
     private static final double LOOK_AREA_CEIL = 7.0;
 
+    private static final double MAX_VISIBLE_FLOOR = 0.0;
+    private static final double MAX_VISIBLE_CEIL = 100.0;
+
     private static final double MAX_DEATH_FLOOR = 1.0;
     private static final double MAX_DEATH_CEIL = 10.0;
 
@@ -128,6 +131,16 @@ public class ModConfigScreen extends OptionsSubScreen {
                                 }),
                 resetButton(this::resetShowDistance)
         );
+        // Shown as "kilometres on", stored inverted as metersOnly - see ModConfig.LabelDisplay.
+        this.list.addSmall(
+                tooltip("config.distance_km_tooltip", CycleButton.onOffBuilder(!cfg.labelDisplay.metersOnly)
+                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.distance_km"),
+                                (button, value) -> {
+                                    ModConfig.get().labelDisplay.metersOnly = !value;
+                                    ModConfig.save();
+                                })),
+                resetButton(this::resetDistanceKm)
+        );
         this.list.addSmall(
                 CycleButton.onOffBuilder(cfg.labelDisplay.uppercase)
                         .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.uppercase_labels"),
@@ -136,6 +149,14 @@ public class ModConfigScreen extends OptionsSubScreen {
                                     ModConfig.save();
                                 }),
                 resetButton(this::resetUppercaseLabels)
+        );
+        // 0 to 100 in steps of 5, where 0 means no limit and reads as such.
+        this.list.addSmall(
+                tooltip("config.max_visible_tooltip",
+                        new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, MAX_VISIBLE_FLOOR, MAX_VISIBLE_CEIL, 5.0,
+                                cfg.visibility.maxVisible, "config.max_visible_row", 0, this::applyMaxVisible)
+                                .withZeroLabel("config.max_visible_unlimited")),
+                resetButton(this::resetMaxVisible)
         );
 
         this.list.addHeader(I18nHelper.getComponent("config.section.death_waypoint"));
@@ -257,6 +278,13 @@ public class ModConfigScreen extends OptionsSubScreen {
         return widget;
     }
 
+    /** Attaches a hover explanation to {@code widget} and returns it, to wrap an {@code addSmall}
+     *  argument inline like {@link #gated}. */
+    private static AbstractWidget tooltip(String key, AbstractWidget widget) {
+        widget.setTooltip(Tooltip.create(I18nHelper.getComponent(key)));
+        return widget;
+    }
+
     @Override
     protected void addFooter() {
         this.layout.addToFooter(Button.builder(I18nHelper.getComponent("menu.back"), btn -> this.onClose())
@@ -300,6 +328,11 @@ public class ModConfigScreen extends OptionsSubScreen {
 
     private void applyLookAreaSize(double v) {
         ModConfig.get().lookFade.lookAreaSize = (int) Math.round(clamp(v, LOOK_AREA_FLOOR, LOOK_AREA_CEIL));
+        ModConfig.save();
+    }
+
+    private void applyMaxVisible(double v) {
+        ModConfig.get().visibility.maxVisible = (int) Math.round(clamp(v, MAX_VISIBLE_FLOOR, MAX_VISIBLE_CEIL));
         ModConfig.save();
     }
 
@@ -353,6 +386,18 @@ public class ModConfigScreen extends OptionsSubScreen {
 
     private void resetShowDistance() {
         ModConfig.get().labelDisplay.showDistance = new ModConfig.LabelDisplay().showDistance;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetDistanceKm() {
+        ModConfig.get().labelDisplay.metersOnly = new ModConfig.LabelDisplay().metersOnly;
+        ModConfig.save();
+        reopen();
+    }
+
+    private void resetMaxVisible() {
+        ModConfig.get().visibility.maxVisible = new ModConfig.Visibility().maxVisible;
         ModConfig.save();
         reopen();
     }
@@ -462,6 +507,8 @@ public class ModConfigScreen extends OptionsSubScreen {
         private final String i18nKey;
         private final int decimals;
         private final DoubleConsumer onChange;
+        /** Shown instead of the number when the value is 0, for a slider whose 0 means "off"; null for none. */
+        private String zeroLabelKey;
 
         /**
          * @param decimals how many decimals the value is rendered with. It has to be stated here
@@ -492,9 +539,20 @@ public class ModConfigScreen extends OptionsSubScreen {
          * printed "85". No explicit Locale, so the decimal separator keeps following the system
          * locale exactly as it did before the strings moved into the lang files.
          */
+        /** Names the value 0 with {@code key}'s text (e.g. "Unlimited") instead of the number. */
+        ConfigSlider withZeroLabel(String key) {
+            this.zeroLabelKey = key;
+            this.updateMessage();
+            return this;
+        }
+
         @Override
         protected void updateMessage() {
-            this.setMessage(I18nHelper.getComponent(i18nKey, String.format("%." + decimals + "f", currentValue())));
+            double value = currentValue();
+            Object shown = zeroLabelKey != null && value == 0.0
+                    ? I18nHelper.getComponent(zeroLabelKey)
+                    : String.format("%." + decimals + "f", value);
+            this.setMessage(I18nHelper.getComponent(i18nKey, shown));
         }
 
         @Override

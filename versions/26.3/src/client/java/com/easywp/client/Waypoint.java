@@ -27,7 +27,9 @@ public class Waypoint {
     private String cachedLabelSourceName;
     private boolean cachedLabelUppercase;
     private boolean cachedLabelShowDistance;
-    private int cachedLabelDistance;
+    /** {@code DistanceFormat.cacheKey} of the distance shown, not the distance itself: in
+     *  kilometres the text only changes every 100 blocks, and so does this. */
+    private int cachedLabelDistanceKey;
     private String cachedLabelText;
     private float cachedLabelWidth;
 
@@ -232,19 +234,19 @@ public class Waypoint {
     }
 
     /** Whether the cached label is still valid for the given inputs, so the caller can skip rebuilding it. */
-    public boolean labelCacheMatches(String sourceName, boolean uppercase, boolean showDistance, int distanceMeters) {
+    public boolean labelCacheMatches(String sourceName, boolean uppercase, boolean showDistance, int distanceKey) {
         return cachedLabelText != null
                 && cachedLabelUppercase == uppercase
                 && cachedLabelShowDistance == showDistance
-                && (!showDistance || cachedLabelDistance == distanceMeters)
+                && (!showDistance || cachedLabelDistanceKey == distanceKey)
                 && sourceName.equals(cachedLabelSourceName);
     }
 
-    public void setCachedLabel(String sourceName, boolean uppercase, boolean showDistance, int distanceMeters, String text, float width) {
+    public void setCachedLabel(String sourceName, boolean uppercase, boolean showDistance, int distanceKey, String text, float width) {
         this.cachedLabelSourceName = sourceName;
         this.cachedLabelUppercase = uppercase;
         this.cachedLabelShowDistance = showDistance;
-        this.cachedLabelDistance = distanceMeters;
+        this.cachedLabelDistanceKey = distanceKey;
         this.cachedLabelText = text;
         this.cachedLabelWidth = width;
     }

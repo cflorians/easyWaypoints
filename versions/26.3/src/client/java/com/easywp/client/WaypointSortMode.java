@@ -3,10 +3,12 @@ package com.easywp.client;
 /**
  * Row ordering offered by {@link WaypointListScreen}, cycled with the button next to the search box.
  *
- * <p>{@link #CREATED} is the default and deliberately reorders nothing: waypoints are appended to
- * the list as they are created, and the JSON is written and read back in that same order, so the
- * insertion order already is the creation order. That keeps the list looking exactly as it did
- * before sorting existed unless the player asks for something else.
+ * <p>{@link #CREATED} is the default and orders by {@code Waypoint.getCreatedAtMillis()}, with a
+ * stable sort. Waypoints from before 1.4.0 never had their creation time recorded and all read 0,
+ * so they keep their insertion order among themselves and come first - where they already were,
+ * since this mode used to reorder nothing at all and the insertion order was the creation order.
+ * What the timestamp adds is a waypoint imported from another world: it sorts by when it was
+ * originally created there, not by when it was imported.
  */
 public enum WaypointSortMode {
     CREATED("sort.created"),

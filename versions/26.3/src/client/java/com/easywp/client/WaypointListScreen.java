@@ -232,8 +232,11 @@ public class WaypointListScreen extends Screen {
                         : BlockPos.ZERO;
                 entries.sort(Comparator.comparingDouble(entry -> squaredDistance(entry.displayPos, from)));
             }
-            // CREATED leaves the insertion order alone, which is already the creation order.
-            case CREATED -> { }
+            // By creation time. List.sort is stable, so waypoints from before 1.4.0 - all at 0, their
+            // real time never recorded - keep their insertion order among themselves and come
+            // first, which is exactly where the old "no sort" put them. A waypoint imported from
+            // another world sorts by when it was originally created, not when it was imported.
+            case CREATED -> entries.sort(Comparator.comparingLong(entry -> entry.waypoint.getCreatedAtMillis()));
         }
     }
 
@@ -474,7 +477,8 @@ public class WaypointListScreen extends Screen {
             buttonX -= 20;
 
             var editBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
-                ClientCompat.setScreen(this.minecraft, new WaypointCreateScreen(wp));
+                // Opened from here, the form comes back here - see WaypointCreateScreen's returnScreen.
+                ClientCompat.setScreen(this.minecraft, new WaypointCreateScreen(wp, this));
             }).pos(buttonX, itemY).size(18, 18)
                     .icon((g, b, hovered) -> ClientCompat.blitTinted(g, Icons.EDIT, b.getX(), b.getY(), 18, 18, UiPalette.ICON_IDLE))
                     .build();
@@ -529,8 +533,16 @@ public class WaypointListScreen extends Screen {
             // Focus toggle now lives on the marker swatch itself, at the left of the name.
             var focusBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 if (wp.isFocused()) {
+                    // Every "kept visible" goes with the focus it was kept beside. Only this one's
+                    // flag used to be cleared, the rest waiting for the next focus to clear them:
+                    // invisible while nothing is focused, but now that forceVisible is saved,
+                    // leaving them would write stale flags into the file.
                     wp.setFocused(false);
-                    wp.setForceVisible(false);
+                    for (Waypoint w : WaypointStore.waypoints) {
+                        if (w != null) {
+                            w.setForceVisible(false);
+                        }
+                    }
                 } else {
                     for (Waypoint w : WaypointStore.waypoints) {
                         if (w != null) {
@@ -588,7 +600,7 @@ public class WaypointListScreen extends Screen {
 
         var newBtn = ModernButton.modernBuilder(I18nHelper.getComponent("menu.new"), btn -> {
             if (this.minecraft.player != null) {
-                ClientCompat.setScreen(this.minecraft, new WaypointCreateScreen(this.minecraft.player.blockPosition()));
+                ClientCompat.setScreen(this.minecraft, new WaypointCreateScreen(this.minecraft.player.blockPosition(), this));
             }
         }).pos(centerX - 105, centerY + 86).size(102, 20).build();
         this.addRenderableWidget(newBtn);

@@ -1,5 +1,7 @@
 package com.easywp.client;
 
+import com.easywp.NameNumbering;
+import com.easywp.RelativeCoordinate;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -9,7 +11,10 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.BlockPos;
 
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.OptionalDouble;
+import java.util.Set;
 
 /**
  * Centered modal screen for creating or editing waypoints.
@@ -56,6 +61,14 @@ public class WaypointCreateScreen extends Screen {
     private int activeBaseIndex = 0;
     private final BlockPos originalPos;
     private final Waypoint editingWaypoint;
+    /**
+     * The list this form was opened from (its edit or New button), or {@code null} when it was
+     * opened from the game (N/H). Saving, cancelling, Esc and the form's own list button all go
+     * back to that same list, which rebuilds its rows on the way in; from the game they close to
+     * the game as always. The list button used to open a <em>new</em> list with this form as its
+     * parent, so list, edit, list, edit kept stacking screens.
+     */
+    private final Screen returnScreen;
     private boolean dimShared = false;
     /**
      * The name a new waypoint saves under if the field is left empty - the grey suggestion in the
@@ -77,19 +90,41 @@ public class WaypointCreateScreen extends Screen {
     }
 
     public WaypointCreateScreen(BlockPos pos) {
+        this(pos, null);
+    }
+
+    /** A new waypoint at {@code pos}; {@code returnScreen} is where saving or leaving goes - see the field. */
+    public WaypointCreateScreen(BlockPos pos, Screen returnScreen) {
         super(I18nHelper.getComponent("create.title.new"));
         this.originalPos = pos != null ? pos : BlockPos.ZERO;
         this.editingWaypoint = null;
+        this.returnScreen = returnScreen;
 
         this.selectedColor = WaypointColors.random();
     }
 
     public WaypointCreateScreen(Waypoint waypointToEdit) {
+        this(waypointToEdit, null);
+    }
+
+    /** Edits {@code waypointToEdit}; {@code returnScreen} is where saving or leaving goes - see the field. */
+    public WaypointCreateScreen(Waypoint waypointToEdit, Screen returnScreen) {
         super(I18nHelper.getComponent("create.title.edit"));
         this.originalPos = waypointToEdit.getPos();
         this.editingWaypoint = waypointToEdit;
+        this.returnScreen = returnScreen;
         this.selectedColor = waypointToEdit.getColor();
         this.dimShared = waypointToEdit.isShared();
+    }
+
+    /** Back to the list it came from, or to the game - for save, cancel and Esc alike. */
+    @Override
+    public void onClose() {
+        if (this.returnScreen != null) {
+            ClientCompat.setScreen(this.minecraft, this.returnScreen);
+        } else {
+            super.onClose();
+        }
     }
 
     @Override
@@ -112,7 +147,7 @@ public class WaypointCreateScreen extends Screen {
             // be the obvious widget for this, but vanilla hides it while the box is focused - and
             // this one always is - whereas the suggestion is drawn regardless, and only while the
             // value is empty since the responder clears it the moment anything is typed.
-            this.defaultName = I18nHelper.getComponent("create.default_name", String.valueOf(WaypointStore.waypoints.size() + 1)).getString();
+            this.defaultName = nextDefaultName(currentLevelDimension());
             this.nameField.setSuggestion(this.defaultName);
             this.nameField.setResponder(value -> this.nameField.setSuggestion(value.isEmpty() ? this.defaultName : null));
         }
@@ -198,7 +233,13 @@ public class WaypointCreateScreen extends Screen {
 
         this.addRenderableWidget(
             ModernButton.modernBuilder(Component.literal(""), btn -> {
-                ClientCompat.setScreen(this.minecraft, new WaypointListScreen(this));
+                // From the list: back to that same list, unsaved, like cancel. From the game: a
+                // list whose Back returns here, as before.
+                if (this.returnScreen != null) {
+                    this.onClose();
+                } else {
+                    ClientCompat.setScreen(this.minecraft, new WaypointListScreen(this));
+                }
             }).pos(centerX + 96, centerY + 85).size(22, 20).build()
         );
     }
@@ -370,6 +411,38 @@ public class WaypointCreateScreen extends Screen {
         this.setInitialFocus(this.nameField);
     }
 
+    /**
+     * {@code WAYPOINT #N} with the lowest N whose exact name no waypoint in {@code dimension} uses -
+     * its own waypoints and the shared ones projected into it, since those show the same name
+     * there. It used to be the total count of waypoints plus one, across every dimension, which
+     * repeated a name still in use once an earlier one was deleted and kept climbing for numbers
+     * already freed.
+     *
+     * <p>Each N is tried as the finished translated name, not read back out of the existing names:
+     * Fast Ping's {@code Ping #N} shares the {@code #N} shape (see {@link NameNumbering}).
+     */
+    private static String nextDefaultName(String dimension) {
+        Set<String> taken = new HashSet<>();
+        for (Waypoint wp : WaypointStore.waypoints) {
+            if (wp != null && wp.getName() != null && wp.positionIn(dimension) != null) {
+                taken.add(wp.getName());
+            }
+        }
+        int n = NameNumbering.lowestUnused(WaypointCreateScreen::defaultNameFor, taken);
+        return defaultNameFor(n);
+    }
+
+    private static String defaultNameFor(int n) {
+        return I18nHelper.getComponent("create.default_name", String.valueOf(n)).getString();
+    }
+
+    /** The dimension a new waypoint is saved into: wherever the player is now. */
+    private String currentLevelDimension() {
+        return this.minecraft.level != null
+                ? this.minecraft.level.dimension().identifier().toString()
+                : DimensionNames.OVERWORLD;
+    }
+
     /** Resolves the name that would actually be saved right now: the typed value, or the same fallback saveWaypoint() uses when it's empty. */
     private String resolveWaypointName() {
         String name = this.nameField.getValue();
@@ -379,28 +452,27 @@ public class WaypointCreateScreen extends Screen {
         return name;
     }
 
+    /** One field's coordinate (see {@link RelativeCoordinate}), or {@code original} if it cannot be
+     *  read. {@code playerAxis} is the player's exact position, so "~" floors to the block the
+     *  player is in, like vanilla's own block-position arguments. */
+    private static double coordinate(EditBox field, int original, double playerAxis) {
+        OptionalDouble value = RelativeCoordinate.parse(field.getValue(), playerAxis);
+        return value.isPresent() ? value.getAsDouble() : original;
+    }
+
     private void saveWaypoint() {
         String name = resolveWaypointName();
 
-        double x = originalPos.getX();
-        double y = originalPos.getY();
-        double z = originalPos.getZ();
-
-        try {
-            x = Double.parseDouble(this.xField.getValue());
-        } catch (NumberFormatException ignored) {}
-        try {
-            y = Double.parseDouble(this.yField.getValue());
-        } catch (NumberFormatException ignored) {}
-        try {
-            z = Double.parseDouble(this.zField.getValue());
-        } catch (NumberFormatException ignored) {}
+        // Each field is a number or a vanilla-style relative coordinate: "~" for the player's own
+        // position on that axis, "~5"/"~-3" offset from it. A field that cannot be read keeps the
+        // coordinate the form opened with, as it always did.
+        boolean hasPlayer = this.minecraft.player != null;
+        double x = coordinate(this.xField, originalPos.getX(), hasPlayer ? this.minecraft.player.getX() : Double.NaN);
+        double y = coordinate(this.yField, originalPos.getY(), hasPlayer ? this.minecraft.player.getY() : Double.NaN);
+        double z = coordinate(this.zField, originalPos.getZ(), hasPlayer ? this.minecraft.player.getZ() : Double.NaN);
 
         BlockPos newPos = BlockPos.containing(x, y, z);
-        String dimension = this.editingWaypoint != null ? this.editingWaypoint.getDimension() : DimensionNames.OVERWORLD;
-        if (this.editingWaypoint == null && this.minecraft.level != null) {
-            dimension = this.minecraft.level.dimension().identifier().toString();
-        }
+        String dimension = this.editingWaypoint != null ? this.editingWaypoint.getDimension() : currentLevelDimension();
 
         if (this.editingWaypoint != null) {
             this.editingWaypoint.setName(name);
