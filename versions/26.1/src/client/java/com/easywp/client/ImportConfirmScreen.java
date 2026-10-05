@@ -20,7 +20,9 @@ import java.util.List;
  * longer file ends the list with an ellipsis line.
  *
  * <p>The waypoints are read once, here, and the same list is what gets merged on confirm, so the
- * preview and the import can never disagree. Either button returns to the picker.
+ * preview and the import can never disagree. Either button returns to the screen it came from.
+ *
+ * <p>Also the confirmation for waypoints pasted into the list (Ctrl+V), with their own question.
  */
 public class ImportConfirmScreen extends Screen {
     private static final int MAX_LISTED = 7;
@@ -39,6 +41,15 @@ public class ImportConfirmScreen extends Screen {
         this.parentScreen = parentScreen;
         this.incoming = WaypointStore.loadWaypointsFrom(file);
         this.question = I18nHelper.getComponent("import.confirm_message", WaypointStore.prettyWorldName(file));
+    }
+
+    /** Waypoints read from pasted text ({@code WaypointListScreen}'s Ctrl+V): same preview and the
+     *  same additive, deduplicated merge as a world file. */
+    public ImportConfirmScreen(Screen parentScreen, List<Waypoint> incoming) {
+        super(I18nHelper.getComponent("import.title"));
+        this.parentScreen = parentScreen;
+        this.incoming = incoming;
+        this.question = I18nHelper.getComponent("import.clipboard_confirm", String.valueOf(incoming.size()));
     }
 
     @Override

@@ -20,16 +20,13 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.permissions.Permissions;
-import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -63,7 +60,8 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 public final class EasyWpCommands {
 
     /** Vanilla {@code EditBox}'s default limit, which the create screen's name field keeps: a longer
-     *  name from {@code add} would be cut short the first time it was edited. */
+     *  name from {@code add} would be cut short the first time it was edited. A name must also fit
+     *  the list's width ({@code WaypointListScreen.NAME_FIT_WIDTH}), which is usually the tighter. */
     static final int MAX_NAME_LENGTH = 32;
 
     /** A screen a command asked for, opened on the next tick: the chat closes itself right after
@@ -182,8 +180,8 @@ public final class EasyWpCommands {
         WaypointStore.checkAndLoadWorldWaypoints();
 
         String name = ctx.getArgument("name", String.class).trim();
-        if (name.length() > MAX_NAME_LENGTH) {
-            source.sendError(I18nHelper.getComponent("command.name_too_long", String.valueOf(MAX_NAME_LENGTH)));
+        if (name.length() > MAX_NAME_LENGTH || client.font.width(name) > WaypointListScreen.NAME_FIT_WIDTH) {
+            source.sendError(I18nHelper.getComponent("command.name_too_long"));
             return 0;
         }
 
@@ -256,10 +254,8 @@ public final class EasyWpCommands {
         Minecraft client = source.getClient();
         LocalPlayer player = source.getPlayer();
 
-        String dimension = WaypointShareFormat.dimensionFromLabel(ctx.getArgument("dimension", String.class));
-        if (dimension == null || !knownDimensions(client).contains(dimension)) {
-            dimension = currentDimension(client);
-        }
+        String dimension = WaypointShare.resolveDimension(client,
+                WaypointShareFormat.dimensionFromLabel(ctx.getArgument("dimension", String.class)));
         BlockPos pos = BlockPos.containing(
                 coordinate(ctx, "x", player.getX()),
                 coordinate(ctx, "y", player.getY()),
@@ -268,6 +264,7 @@ public final class EasyWpCommands {
         if (name.length() > MAX_NAME_LENGTH) {
             name = name.substring(0, MAX_NAME_LENGTH);
         }
+        // The form also fits it to what the list shows whole (WaypointListScreen.NAME_FIT_WIDTH).
         pendingScreen = new WaypointCreateScreen(pos, dimension, name);
         return 1;
     }
@@ -386,18 +383,7 @@ public final class EasyWpCommands {
     }
 
     private static String currentDimension(Minecraft client) {
-        return client.level != null ? client.level.dimension().identifier().toString() : DimensionNames.OVERWORLD;
-    }
-
-    private static Set<String> knownDimensions(Minecraft client) {
-        Set<String> ids = new LinkedHashSet<>();
-        ClientPacketListener connection = client.getConnection();
-        if (connection != null) {
-            for (ResourceKey<Level> key : connection.levels()) {
-                ids.add(key.identifier().toString());
-            }
-        }
-        return ids;
+        return WaypointShare.currentDimension(client);
     }
 
     /** A rest-of-line name typed in quotes, as {@code add} requires, works here too. */

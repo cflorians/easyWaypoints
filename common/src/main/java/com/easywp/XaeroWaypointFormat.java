@@ -320,6 +320,38 @@ public final class XaeroWaypointFormat {
             0xFF00FF, 0xADD8E6, 0x00FF00, 0xFFC0CB, 0x8B4513,
     };
 
+    /**
+     * The waypoint in a received {@code xaero-waypoint:} chat line - the inverse of
+     * {@link #chatShareLine}, found anywhere in {@code text} so a sender prefix
+     * ({@code <Steve> }) does not hide it. At least the eight fields Xaero's own receiving parser
+     * requires ({@code name:initials:x:y:z:color:rotation:yaw}); anything after them is ignored. A Y
+     * of {@code ~} (a waypoint saved without one) comes back as {@code null}, and an out-of-range
+     * colour as {@code 0}. Returns {@code null} for anything else: too few fields, a non-numeric
+     * coordinate or colour, an empty name.
+     */
+    public static XaeroWaypoint parseChatShareLine(String text) {
+        if (text == null) return null;
+        int at = text.indexOf(CHAT_TAG);
+        if (at < 0) return null;
+        String[] fields = text.substring(at + CHAT_TAG.length()).split(":", -1);
+        if (fields.length < 8) return null;
+        String name = fields[0].trim();
+        if (name.isEmpty()) return null;
+        try {
+            int x = Integer.parseInt(fields[2].trim());
+            String yText = fields[3].trim();
+            Integer y = yText.equals("~") ? null : Integer.valueOf(yText);
+            int z = Integer.parseInt(fields[4].trim());
+            int color = Integer.parseInt(fields[5].trim());
+            if (color < 0 || color >= COLOR_PALETTE.length) {
+                color = 0;
+            }
+            return new XaeroWaypoint(name, fields[1].trim(), x, y, z, color, false, 0, DEFAULT_SET_NAME, List.of());
+        } catch (NumberFormatException notANumber) {
+            return null;
+        }
+    }
+
     public static int colorCount() {
         return COLOR_PALETTE.length;
     }

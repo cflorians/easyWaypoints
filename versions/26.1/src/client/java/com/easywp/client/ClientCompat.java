@@ -54,6 +54,12 @@ public final class ClientCompat {
         client.gui.setOverlayMessage(message, animate);
     }
 
+    /** Adds a local line to the chat, seen only by this player. 26.2 moved the chat under
+     *  {@code gui.hud}, as it did the overlay message. */
+    public static void addChatMessage(Minecraft client, Component message) {
+        client.gui.getChat().addClientSystemMessage(message);
+    }
+
     /**
      * The keyboard half of {@code InputConstants.Type}. 26.1/26.2 called it {@code KEYSYM} - GLFW's
      * name for a layout-mapped key; 26.3 moved to SDL and renamed it {@code KEYBOARD}.

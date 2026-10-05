@@ -74,6 +74,43 @@ public final class WaypointShareFormat {
         }
     }
 
+    /** What ends a sender prefix before the line: vanilla's {@code <Steve> } and
+     *  {@code Steve whispers to you: }, and the {@code [Rank] }/{@code Name » } of chat plugins. */
+    private static final String[] PREFIX_ENDS = {": ", "> ", "] ", "» "};
+
+    /**
+     * The share line inside a received message, or {@code null}. A message usually carries a sender
+     * prefix the line does not ({@code <Steve> }, {@code Steve whispers to you: },
+     * {@code [Admin] Steve: }), and since a name may contain spaces nothing marks where the prefix
+     * ends and the name begins. So the text after the <b>last</b> prefix end ({@code ": "},
+     * {@code "> "}, {@code "] "}, {@code "» "}) before the separator is tried first - the last one,
+     * because a plugin prefix often has several - and the whole text after that. The cost: a name
+     * that itself contains one of those ({@code Base: norte}) loses the part before it here. A
+     * player's chat message reaches the receiver with its own text as well, where {@link #parse}
+     * reads such a name whole; this is for what arrives only decorated (whispers, plugin chat).
+     */
+    public static Shared findIn(String text) {
+        if (text == null) return null;
+        int separator = text.lastIndexOf(">>>");
+        if (separator < 0) return null;
+        int start = -1;
+        for (String end : PREFIX_ENDS) {
+            int i = text.lastIndexOf(end, separator - 1);
+            // The "> " ending a ">>>" inside the name is part of the name, not a prefix.
+            while (i >= 0 && end.equals("> ") && i >= 2 && text.startsWith(">>", i - 2)) {
+                i = i == 0 ? -1 : text.lastIndexOf(end, i - 1);
+            }
+            if (i >= 0) {
+                start = Math.max(start, i + end.length());
+            }
+        }
+        if (start > 0) {
+            Shared shared = parse(text.substring(start));
+            if (shared != null) return shared;
+        }
+        return parse(text);
+    }
+
     /** The waypoint in {@code line}, or {@code null} if it is not a share line. The whole line must
      *  be one: text before or after it makes it unreadable. */
     public static Shared parse(String line) {

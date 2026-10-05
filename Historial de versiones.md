@@ -28,10 +28,14 @@ commit **sin probar en el juego**: probarlo al principio de la alpha 4. Sigue pe
 el plan de publicación (ver "Publicación"). `alpha.4` (F7 y F8) implementada, probada y
 confirmada el 2026-10-05 (commit `v1.4.0-alpha.4`), junto con el ajuste de F6 de la alpha 3.
 
-**Siguiente paso:** `alpha.5` — F9 (menú de compartir), F10 (portapapeles) y F11 (`[+]` en el
-chat). Es la primera que se publica (Modrinth y CurseForge, canal Alpha).
+`alpha.5` (F9, F10 y F11) implementada el 2026-10-05, **pendiente de probar en el juego**. Es la
+primera que se publica (Modrinth y CurseForge, canal Alpha), confirmado por el usuario.
 
-**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.4` (la 1.3.5 nunca se publicará). Se
+**Siguiente paso:** probar la `alpha.5` (con un segundo jugador para F9 privado y F11) y, al
+confirmarla, commit `v1.4.0-alpha.5` y publicación (la hace el usuario). Después, `alpha.6` — grupos
+(F12).
+
+**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.5` (la 1.3.5 nunca se publicará). Se
 cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los jars salen como
 `easywp-1.4.0-alpha.1+26.1.x.jar`.
 
@@ -112,7 +116,8 @@ corrigen.
 
 ### Publicación
 
-**Propuesta pendiente de confirmar.** Publicar solo tres (o cuatro) entregas, siempre para las tres
+**Confirmado para la `alpha.5`** (el usuario, 2026-10-05); el resto de la propuesta sigue
+pendiente. Publicar solo tres (o cuatro) entregas, siempre para las tres
 versiones de Minecraft:
 
 - **`alpha.5` en el canal Alpha:** es el primer punto en el que hace falta gente de fuera para
@@ -666,7 +671,7 @@ Todas sin cambio visible para el jugador (regla 1).
   `command.focused`, `command.not_found`, `command.ambiguous`, `command.no_permission`,
   `command.empty_name`, `command.name_too_long`, `command.bad_coordinate`, `command.bad_color`.
 
-**F9 — Menú de compartir: público / privado / copiar** · PENDIENTE · alpha.5
+**F9 — Menú de compartir: público / privado / copiar** · HECHO en alpha.5 (pendiente de probar)
 - El botón de compartir de la lista abre un menú pequeño:
   - **Público:** el comportamiento actual, con el formato F7 (o la línea de Xaero si
     `xaeroChatFormat` está activo).
@@ -675,8 +680,40 @@ Todas sin cambio visible para el jugador (regla 1).
     en un solo jugador o sin otros jugadores.
   - **Copiar:** copia la línea F7 de ese waypoint al portapapeles.
 - Archivos: `WaypointListScreen`, pantalla nueva para el selector de jugador.
+- Hecho: `PlayerPickScreen` (selector de jugador) y `WaypointShare` (`send`, `sendPrivate`, `copy`,
+  `otherPlayers`).
+- **Cambio pedido por el usuario (2026-10-05, antes de probar):** compartir va **dentro de "Más
+  opciones"** (U7), no en un menú propio. Se quitó el botón de compartir de la fila (y su textura,
+  `sharebutton.png`); el minimenú queda: Favorito, Duplicar, Compartir en el chat, Enviar en
+  privado (si hay otros jugadores), Copiar al portapapeles.
+  - **Decisión:** los iconos que quedan a su izquierda (editar, visible, TP) se corren 20 px a la
+    derecha para no dejar hueco; el nombre **no** se ensancha, porque ese espacio lo usan "Deshacer"
+    y "Eliminar" de una fila pendiente de borrar.
+- **Cambio pedido por el usuario (2026-10-05, con captura):** el minimenú se abre **dentro del
+  modal**, sobre los botones de su fila, con su esquina superior derecha en la del botón de
+  eliminar; antes salía a la derecha, fuera del panel. Cerca del final de la página se sube para
+  terminar en el borde inferior del modal, y nunca sobresale por la izquierda.
+- **Cambio pedido por el usuario (2026-10-05, con captura): el nombre nunca sale cortado con
+  "..." en la lista.** La columna del nombre llega ahora hasta justo antes del TP (155 px; antes
+  133). El máximo de un nombre es lo que cabe en ella **incluso con la estrella de favorito
+  delante** (144 px), así que marcarlo como favorito tampoco lo corta.
+  - **Decisiones:** es un límite de **ancho**, no de caracteres (la fuente es proporcional: caben
+    más "i" que "W"); el límite de 32 caracteres sigue. En el formulario, una tecla o un pegado que
+    no cabe simplemente no entra. `/easywp add` da error ("demasiado largo para verse entero en la
+    lista"). Editar un waypoint importado con un nombre más largo, o abrir uno con `/easywp open`,
+    lo recorta en el campo. Lo importado de otro mundo, de Xaero o del portapapeles conserva su
+    nombre y puede seguir saliendo con "...". Una fila pendiente de borrar mantiene los 133 px,
+    porque "Deshacer" y "Eliminar" empiezan donde acababa el nombre.
+- **Decisiones nuevas:**
+  - "Compartir en el chat" y "Enviar en privado" cierran la lista, como el botón antes; "Copiar" la
+    deja abierta y avisa en el HUD.
+  - El selector es de estilo vanilla (como las pantallas de importar), con buscador enfocado al
+    abrir y desplazamiento con la rueda. La lista de jugadores se lee al abrirlo. Al enviar, vuelve
+    al juego; "Volver" vuelve a la lista.
+  - "Copiar" copia siempre la línea F7, aunque esté activo el formato de Xaero (el plan lo decía
+    así); Público y Privado sí respetan esa opción.
 
-**F10 — Exportar e importar por portapapeles** · PENDIENTE · alpha.5
+**F10 — Exportar e importar por portapapeles** · HECHO en alpha.5 (pendiente de probar)
 - Exportar:
   - un waypoint, desde "Copiar" (F9);
   - la pestaña actual o el resultado de la búsqueda, desde un botón nuevo en la **esquina inferior
@@ -686,8 +723,18 @@ Todas sin cambio visible para el jugador (regla 1).
   buscador). Acepta líneas F7 y líneas `xaero-waypoint:` (mismo parser que F11); se ignoran las
   demás. Se muestra una vista previa como la de `ImportConfirmScreen` y se fusiona con
   `mergeFrom`, que ya ignora los duplicados (mismo nombre, posición y dimensión).
+- Hecho: botón con icono de "copiar" (dos cuadrados) junto al engranaje, con tooltip que menciona
+  Ctrl+V. `WaypointShare.exportLines`/`parseLines`; `ImportConfirmScreen` con un segundo constructor.
+- **Decisiones nuevas:**
+  - Se exporta lo que muestra la lista (pestaña + búsqueda) **sin los pendientes de borrar**.
+  - Una línea F7 no trae color: al importarla se le da uno **al azar** (como Fast Ping). Las de
+    Xaero, el de su paleta.
+  - Dimensión desconocida (o que el servidor no tiene) y la Y que falta en una línea de Xaero: las
+    del **jugador**, no las de la pestaña abierta, igual que el `[+]`.
+  - Las líneas F7 se buscan **dentro** de cada línea pegada (mismo lector que F11), así que una
+    línea copiada del chat con el nombre del jugador delante también vale.
 
-**F11 — `[+]` en el chat** · PENDIENTE · alpha.5
+**F11 — `[+]` en el chat** · HECHO en alpha.5 (pendiente de probar)
 - Escucha `ClientReceiveMessageEvents.CHAT` y `GAME` (los `/msg` y los plugins de chat llegan como
   mensajes de sistema con prefijo), busca una línea F7 **dentro** del mensaje (no solo al inicio) y
   añade debajo un mensaje local con `[+]`.
@@ -700,6 +747,21 @@ Todas sin cambio visible para el jugador (regla 1).
   de chat de Xaero (hoy solo existe el que lo genera, `chatShareLine`).
 - ~~A comprobar en 26.x: que un clic `RUN_COMMAND` llegue al comando de cliente sin que vanilla pida
   confirmación.~~ Comprobado en alpha.4 (ver F8): llega sin confirmación en las tres versiones.
+- Hecho: `ChatAddButtons`; `WaypointShareFormat.findIn` y `XaeroWaypointFormat.parseChatShareLine`
+  en `common/`, con tests (comprobados contra siete roturas deliberadas). `ClientCompat` gana
+  `addChatMessage` (26.2 movió el chat a `gui.hud`).
+- **Decisiones nuevas:**
+  - **Cómo se encuentra la línea dentro del mensaje:** en un mensaje de jugador se lee primero su
+    propio texto (sin el `<Steve>`), que acepta cualquier nombre. Si no (susurros, plugins), se
+    toma lo que va tras el **último** `": "`, `"> "`, `"] "` o `"» "` antes del `>>>`: el último,
+    porque los prefijos de plugins suelen tener varios (`[Admin] Steve: `). Coste: en ese caso un
+    nombre que contenga uno de esos (`Base: norte`) pierde lo de delante.
+  - **Mensajes propios:** se ignoran por el remitente (chat) y, además, cualquier línea que este
+    jugador haya enviado en los últimos 30 s (cubre el "Le susurras a Bob: ..." de `/msg`).
+  - El mensaje es "**[+]** Guardar waypoint «Nombre»", todo clicable, con la dimensión y las
+    coordenadas al pasar el ratón. Se añade un tick después, para que salga debajo del mensaje.
+  - La dimensión se resuelve al recibir el mensaje; una línea de Xaero sin Y abre el formulario con
+    la Y del jugador (`~`).
 
 **F12 — Grupos** · PENDIENTE · alpha.6
 - **Un waypoint puede estar en varios grupos** (son etiquetas). Por defecto, en ninguno.
@@ -828,3 +890,15 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
   pedir confirmación; sin permisos, `[TP]` no aparece y `/easywp tp` da error.
 - F8 (open) — `/easywp open minecraft:the_nether 100 70 -20 Portal` abre el formulario relleno, y
   al guardar el waypoint queda en el Nether aunque el jugador esté en el Overworld.
+
+**alpha.5**
+- F9 — La fila ya no tiene botón de compartir; "Más opciones" (`⋯`) trae "Compartir en el chat",
+  que envía la línea y cierra la lista, y "Copiar al portapapeles" copia `Nombre >>> Dimensión X Y Z`. En un solo jugador
+  no aparece "Enviar en privado".
+- F9 (privado) — Con otro jugador conectado, "Enviar en privado..." abre el selector; elegirlo le
+  llega por `/msg`.
+- F10 — El botón junto al engranaje copia los waypoints de la pestaña (o de la búsqueda); Ctrl+V en
+  otro mundo muestra la vista previa y los importa sin duplicar los que ya están.
+- F11 — Al recibir una línea compartida (chat o `/msg`), aparece debajo "[+] Guardar waypoint «X»";
+  clic abre el formulario relleno. Los mensajes propios no lo reciben.
+- F11 (Xaero) — Sin Xaero instalado, una línea `xaero-waypoint:` recibe `[+]`; con Xaero, no.

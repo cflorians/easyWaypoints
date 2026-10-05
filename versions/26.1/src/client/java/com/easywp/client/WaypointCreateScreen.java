@@ -91,6 +91,10 @@ public class WaypointCreateScreen extends Screen {
      * shows, so preview, suggestion and saved name cannot disagree. Unused when editing.
      */
     private String defaultName = "";
+    /** The name field's last value that fit {@code WaypointListScreen.NAME_FIT_WIDTH}, and its
+     *  cursor - what a keystroke that would not fit is undone back to. */
+    private String lastFittingName = "";
+    private int lastNameCursor = 0;
     /** Which page is showing: the main form, or "More options" (see {@link #initMorePage}). */
     private boolean morePage = false;
     /** Saved as {@code Waypoint.favorite}; toggled on the "More options" page. */
@@ -191,20 +195,39 @@ public class WaypointCreateScreen extends Screen {
      */
     private void createFields() {
         this.nameField = new EditBox(this.font, 0, 0, NAME_FIELD_W, 18, I18nHelper.getComponent("create.name_label"));
+        // A name from elsewhere (an import, a shared line) may be wider than the list allows; the
+        // form fits it.
         if (this.editingWaypoint != null) {
-            this.nameField.setValue(this.editingWaypoint.getName());
-        } else {
-            // A new waypoint starts with an empty name and shows the default one as a grey
-            // suggestion instead, so typing replaces it outright with nothing to delete first. An
-            // empty name still saves as that default (resolveWaypointName()). EditBox's hint would
-            // be the obvious widget for this, but vanilla hides it while the box is focused - and
-            // this one always is - whereas the suggestion is drawn regardless, and only while the
-            // value is empty since the responder clears it the moment anything is typed.
-            this.nameField.setResponder(value -> this.nameField.setSuggestion(value.isEmpty() ? this.defaultName : null));
-            if (this.initialName != null) {
-                this.nameField.setValue(this.initialName);
-            }
+            this.nameField.setValue(WaypointListScreen.fitName(this.font, this.editingWaypoint.getName()));
+        } else if (this.initialName != null) {
+            this.nameField.setValue(WaypointListScreen.fitName(this.font, this.initialName));
         }
+        this.lastFittingName = this.nameField.getValue();
+        this.lastNameCursor = this.nameField.getCursorPosition();
+        this.nameField.setResponder(value -> {
+            // No wider than what the list shows whole before its TP icon (NAME_FIT_WIDTH): a
+            // keystroke or paste that would not fit is undone, cursor and all. 26.x's EditBox has
+            // no input filter to refuse it up front.
+            if (this.font.width(value) > WaypointListScreen.NAME_FIT_WIDTH) {
+                int cursor = this.lastNameCursor;
+                this.nameField.setValue(this.lastFittingName);
+                this.nameField.setCursorPosition(cursor);
+                this.nameField.setHighlightPos(cursor);
+                this.lastNameCursor = cursor;
+                return;
+            }
+            this.lastFittingName = value;
+            this.lastNameCursor = this.nameField.getCursorPosition();
+            if (this.editingWaypoint == null) {
+                // A new waypoint starts with an empty name and shows the default one as a grey
+                // suggestion instead, so typing replaces it outright with nothing to delete first. An
+                // empty name still saves as that default (resolveWaypointName()). EditBox's hint would
+                // be the obvious widget for this, but vanilla hides it while the box is focused - and
+                // this one always is - whereas the suggestion is drawn regardless, and only while the
+                // value is empty since this clears it the moment anything is typed.
+                this.nameField.setSuggestion(value.isEmpty() ? this.defaultName : null);
+            }
+        });
 
         this.xField = new EditBox(this.font, 0, 0, 68, 18, Component.literal("X"));
         this.xField.setValue(String.valueOf(originalPos.getX()));

@@ -329,4 +329,46 @@ class XaeroWaypointFormatTest {
         assertEquals("X", XaeroWaypointFormat.initialsFor(""));
         assertEquals("X", XaeroWaypointFormat.initialsFor(null));
     }
+
+    @Test
+    void parsesItsOwnChatShareLineBack() {
+        XaeroWaypoint parsed = XaeroWaypointFormat.parseChatShareLine(
+                XaeroWaypointFormat.chatShareLine(new XaeroWaypoint("Base norte", 100, 64, -200, 2, "x")));
+        assertEquals("Base norte", parsed.name());
+        assertEquals(100, parsed.x());
+        assertEquals(64, parsed.y());
+        assertEquals(-200, parsed.z());
+        assertEquals(2, parsed.colorOrdinal());
+    }
+
+    @Test
+    void findsTheChatLineAfterASenderPrefixAndIgnoresADestination() {
+        XaeroWaypoint parsed = XaeroWaypointFormat.parseChatShareLine(
+                "<Steve> xaero-waypoint:Mina:M:-5:12:7:14:false:0:Internal-overworld-waypoints");
+        assertEquals("Mina", parsed.name());
+        assertEquals(-5, parsed.x());
+        assertEquals(12, parsed.y());
+        assertEquals(7, parsed.z());
+        assertEquals(14, parsed.colorOrdinal());
+    }
+
+    @Test
+    void aTildeYIsNoY() {
+        assertNull(XaeroWaypointFormat.parseChatShareLine("xaero-waypoint:Base:B:100:~:-200:0:false:0").y());
+    }
+
+    @Test
+    void anOutOfRangeChatColorFallsBackToTheFirst() {
+        assertEquals(0, XaeroWaypointFormat.parseChatShareLine("xaero-waypoint:Base:B:1:2:3:99:false:0").colorOrdinal());
+    }
+
+    @Test
+    void rejectsWhatIsNotAChatLine() {
+        assertNull(XaeroWaypointFormat.parseChatShareLine(null));
+        assertNull(XaeroWaypointFormat.parseChatShareLine("hola"));
+        assertNull(XaeroWaypointFormat.parseChatShareLine("xaero-waypoint:Base:B:1:2:3:0:false"));  // seven fields
+        assertNull(XaeroWaypointFormat.parseChatShareLine("xaero-waypoint:Base:B:x:2:3:0:false:0"));
+        assertNull(XaeroWaypointFormat.parseChatShareLine("xaero-waypoint:Base:B:1:2:3:red:false:0"));
+        assertNull(XaeroWaypointFormat.parseChatShareLine("xaero-waypoint: :B:1:2:3:0:false:0"));
+    }
 }

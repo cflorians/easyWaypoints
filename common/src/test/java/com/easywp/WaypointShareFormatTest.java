@@ -86,4 +86,38 @@ class WaypointShareFormatTest {
         assertNull(WaypointShareFormat.parse("Casa >>> Nether 1 2 3 y más")); // trailing text
         assertNull(WaypointShareFormat.parse("Casa >>> Nether 1 2 3000000000")); // past int range
     }
+
+    @Test
+    void findsTheLineAfterASenderPrefix() {
+        WaypointShareFormat.Shared base = new WaypointShareFormat.Shared("Base principal", NETHER, 12, 64, -30);
+        assertEquals(base, WaypointShareFormat.findIn("<Steve> Base principal >>> Nether 12 64 -30"));
+        assertEquals(base, WaypointShareFormat.findIn("Steve whispers to you: Base principal >>> Nether 12 64 -30"));
+        assertEquals(base, WaypointShareFormat.findIn("[Steve -> me] Base principal >>> Nether 12 64 -30"));
+        assertEquals(base, WaypointShareFormat.findIn("Steve » Base principal >>> Nether 12 64 -30"));
+    }
+
+    @Test
+    void aPluginPrefixWithSeveralPartsEndsAtTheLastOne() {
+        assertEquals(new WaypointShareFormat.Shared("Casa", "minecraft:overworld", 1, 2, 3),
+                WaypointShareFormat.findIn("[Admin] Steve: Casa >>> Overworld 1 2 3"));
+    }
+
+    @Test
+    void aSeparatorInsideTheNameIsNotAPrefix() {
+        assertEquals(new WaypointShareFormat.Shared("A >>> B", NETHER, 1, 2, 3),
+                WaypointShareFormat.findIn("<Steve> A >>> B >>> Nether 1 2 3"));
+    }
+
+    @Test
+    void aBareLineIsFoundToo() {
+        assertEquals(new WaypointShareFormat.Shared("Casa", NETHER, 1, 2, 3),
+                WaypointShareFormat.findIn("Casa >>> Nether 1 2 3"));
+    }
+
+    @Test
+    void findsNothingInAnOrdinaryMessage() {
+        assertNull(WaypointShareFormat.findIn(null));
+        assertNull(WaypointShareFormat.findIn("<Steve> hola a todos"));
+        assertNull(WaypointShareFormat.findIn("<Steve> vamos >>> ahora"));
+    }
 }

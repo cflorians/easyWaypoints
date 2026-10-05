@@ -39,6 +39,8 @@ def sharedClientSources = [
 	'ImportWorldScreen.java',
 	'WaypointShare.java',
 	'EasyWpCommands.java',
+	'ChatAddButtons.java',
+	'PlayerPickScreen.java',
 	'EasyWpClient.java',
 	'WaypointRenderer.java',
 	'WaypointStore.java',

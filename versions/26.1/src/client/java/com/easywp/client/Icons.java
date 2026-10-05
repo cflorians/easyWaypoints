@@ -22,7 +22,6 @@ public final class Icons {
     public static final Identifier SHOW    = Identifier.fromNamespaceAndPath("easywp", "textures/gui/show.png");
     public static final Identifier HIDE    = Identifier.fromNamespaceAndPath("easywp", "textures/gui/hide.png");
     public static final Identifier TP      = Identifier.fromNamespaceAndPath("easywp", "textures/gui/tp.png");
-    public static final Identifier SHARE   = Identifier.fromNamespaceAndPath("easywp", "textures/gui/sharebutton.png");
 
     /** Marker in layers: fill tinted with the waypoint's own color (skip if 0), then outline, then an optional skull badge. */
     public static void drawMarkerIcon(GuiGraphicsExtractor g, int x, int y,

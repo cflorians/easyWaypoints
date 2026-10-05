@@ -77,13 +77,17 @@ public class WaypointListScreen extends Screen {
     private List<String> dimensions = VANILLA_DIMENSIONS;
 
     /**
-     * Name column runs from just past the marker swatch (centerX - 117) up to just short of the
-     * TP icon (centerX + 20), regardless of whether TP is actually shown for this player, so the
-     * layout doesn't shift with permissions. Leaves a small gap so the text never touches the icon.
-     * The focus toggle used to occupy this slot; merging it into the swatch on the left freed 20px,
-     * and shifting the action-button row right (to equalize the left/right modal margins) freed 12 more.
+     * Name column runs from just past the marker swatch (centerX - 117) up to just short of the TP
+     * icon (centerX + 40), whether or not TP is shown for this player, so the layout doesn't shift
+     * with permissions. The focus toggle used to occupy this slot; merging it into the swatch on the
+     * left freed 20px, shifting the action-button row right (to equalize the left/right modal
+     * margins) freed 12 more, and the share button moving into "More options" (1.4.0) 20 more.
      */
-    private static final int NAME_MAX_WIDTH = 133;
+    private static final int NAME_MAX_WIDTH = 155;
+
+    /** A row pending deletion keeps the narrower column: its Undo and Delete start at centerX + 20
+     *  (see PENDING_BUTTON_W), where the name used to end. */
+    private static final int PENDING_NAME_WIDTH = 133;
 
     /**
      * A favorite's name starts after its 9px star and a 2px gap, and gives up that width. Only
@@ -97,8 +101,23 @@ public class WaypointListScreen extends Screen {
     }
 
     /**
-     * A row pending deletion shows Undo and Delete across the whole action strip, from the TP slot
-     * (centerX + 20) to the delete icon's right edge (centerX + 138): two buttons with a 4px gap.
+     * The widest name a player can give a waypoint: what fits in a row before the TP icon even with
+     * a favorite's star in front, so a name typed in the form or with {@code /easywp add} is always
+     * shown whole, never cut with an ellipsis. A width, not a character count: the font is
+     * proportional, so "iiii" and "WWWW" take very different room. Names from elsewhere (another
+     * world, Xaero, the clipboard) keep theirs and may still be cut here.
+     */
+    static final int NAME_FIT_WIDTH = NAME_MAX_WIDTH - STAR_SLOT;
+
+    /** The longest start of {@code name} within {@link #NAME_FIT_WIDTH}. */
+    static String fitName(net.minecraft.client.gui.Font font, String name) {
+        return font.plainSubstrByWidth(name, NAME_FIT_WIDTH);
+    }
+
+    /**
+     * A row pending deletion shows Undo and Delete across the whole action strip, from the end of
+     * the name column (centerX + 20) to the delete icon's right edge (centerX + 138): two buttons
+     * with a 4px gap.
      */
     private static final int PENDING_BUTTON_W = 57;
 
@@ -107,6 +126,10 @@ public class WaypointListScreen extends Screen {
     private static final int MENU_PAD = 2;
     /** Where an item's text starts, past the space for the favorite star. */
     private static final int MENU_TEXT_INSET = 17;
+
+    /** The modal panel, centred on the screen - see extractRenderState. The row menu stays inside it. */
+    private static final int MODAL_WIDTH = 290;
+    private static final int MODAL_HEIGHT = 226;
 
     /**
      * Search box and sort button share the 260px the search box used to occupy on its own, at the
@@ -149,7 +172,8 @@ public class WaypointListScreen extends Screen {
 
         Component name(net.minecraft.client.gui.Font font) {
             if (nameComponent == null) {
-                nameComponent = Component.literal(truncateToWidth(font, waypoint.getName(), NAME_MAX_WIDTH - nameIndent(waypoint)));
+                int column = waypoint.isPendingRemoval() ? PENDING_NAME_WIDTH : NAME_MAX_WIDTH;
+                nameComponent = Component.literal(truncateToWidth(font, waypoint.getName(), column - nameIndent(waypoint)));
             }
             return nameComponent;
         }
@@ -345,6 +369,16 @@ public class WaypointListScreen extends Screen {
                     .build()
         );
 
+        // Beside the gear, anchored to the screen like it: what the list shows right now - this tab,
+        // narrowed by the search - as share lines on the clipboard. Ctrl+V reads them back.
+        var copyAllBtn = ModernButton.modernBuilder(Component.literal(""), btn -> exportShownToClipboard())
+                .pos(CORNER_BUTTON_MARGIN + CORNER_BUTTON_PITCH, this.height - 28).size(CORNER_BUTTON_SIZE, CORNER_BUTTON_SIZE)
+                .icon((g, b, hovered) -> drawCopyGlyph(g, b.getX() + b.getWidth() / 2, b.getY() + b.getHeight() / 2,
+                        hovered ? UiPalette.BTN_TEXT_HOVER : UiPalette.ICON_IDLE))
+                .build();
+        copyAllBtn.setTooltip(Tooltip.create(I18nHelper.getComponent("list.export_tooltip")));
+        this.addRenderableWidget(copyAllBtn);
+
         this.showXaeroButtons = ModConfig.get().xaeroIntegration.enabled && XaeroBridge.isModInstalled();
         if (this.showXaeroButtons) {
             var importBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
@@ -369,6 +403,49 @@ public class WaypointListScreen extends Screen {
         }
 
         refreshItemWidgets();
+    }
+
+    /** The clipboard export: every waypoint the list is showing, pending deletions left out. */
+    private void exportShownToClipboard() {
+        List<Waypoint> shown = new ArrayList<>();
+        for (WaypointEntry entry : this.cachedFilteredWaypoints) {
+            if (entry != null && entry.waypoint != null && !entry.waypoint.isPendingRemoval()) {
+                shown.add(entry.waypoint);
+            }
+        }
+        if (shown.isEmpty()) {
+            ClientCompat.setOverlayMessage(this.minecraft, I18nHelper.getComponent("list.export_empty"), false);
+            return;
+        }
+        this.minecraft.keyboardHandler.setClipboard(WaypointShare.exportLines(shown));
+        ClientCompat.setOverlayMessage(this.minecraft,
+                I18nHelper.getComponent("list.exported", String.valueOf(shown.size())), false);
+    }
+
+    /** The paste: the waypoints in the clipboard, previewed and confirmed before they are merged
+     *  (additive and deduplicated, as a world import). */
+    private void importFromClipboard() {
+        List<Waypoint> incoming = WaypointShare.parseLines(this.minecraft, this.minecraft.keyboardHandler.getClipboard());
+        if (incoming.isEmpty()) {
+            ClientCompat.setOverlayMessage(this.minecraft, I18nHelper.getComponent("list.paste_empty"), false);
+            return;
+        }
+        ClientCompat.setScreen(this.minecraft, new ImportConfirmScreen(this, incoming));
+    }
+
+    /** Two overlapping squares, the usual "copy" glyph, centred on {@code (cx, cy)}: the back one
+     *  showing only its top and left edges, the front one outlined. Hand-drawn like the Xaero pair's. */
+    private static void drawCopyGlyph(GuiGraphicsExtractor g, int cx, int cy, int color) {
+        int x = cx - 5;
+        int y = cy - 5;
+        g.fill(x, y, x + 7, y + 1, color);
+        g.fill(x, y, x + 1, y + 7, color);
+        int fx = x + 3;
+        int fy = y + 3;
+        g.fill(fx, fy, fx + 8, fy + 1, color);
+        g.fill(fx, fy + 7, fx + 8, fy + 8, color);
+        g.fill(fx, fy, fx + 1, fy + 8, color);
+        g.fill(fx + 7, fy, fx + 8, fy + 8, color);
     }
 
     /** Rebuilds the rows when deletions ran out (or were all made final) while the list was open:
@@ -464,9 +541,10 @@ public class WaypointListScreen extends Screen {
             dynamicWidgets.add(delBtn);
             buttonX -= 20;
 
-            // Opens this row's "More options" menu (favorite, duplicate in the other dimension) without
-            // leaving the list, in the slot the shared-waypoint portal toggle had until 1.4.0. While a
-            // menu is open mouseClicked handles every click itself, so this only ever opens one.
+            // Opens this row's "More options" menu (favorite, duplicate in the other dimension, and the
+            // three ways to share) without leaving the list, in the slot the shared-waypoint portal
+            // toggle had until 1.4.0. While a menu is open mouseClicked handles every click itself, so
+            // this only ever opens one.
             var moreBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 this.optionsFor = wp;
             }).pos(buttonX, itemY).size(18, 18)
@@ -478,16 +556,6 @@ public class WaypointListScreen extends Screen {
             dynamicWidgets.add(moreBtn);
             buttonX -= 20;
 
-            var shareBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
-                if (WaypointShare.send(this.minecraft, wp)) {
-                    this.onClose();
-                }
-            }).pos(buttonX, itemY).size(18, 18)
-                    .icon((g, b, hovered) -> ClientCompat.blitTinted(g, Icons.SHARE, b.getX(), b.getY(), 18, 18, UiPalette.ICON_IDLE))
-                    .build();
-            this.addRenderableWidget(shareBtn);
-            dynamicWidgets.add(shareBtn);
-            buttonX -= 20;
 
             var editBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 // Opened from here, the form comes back here - see WaypointCreateScreen's returnScreen.
@@ -664,7 +732,7 @@ public class WaypointListScreen extends Screen {
      * second press cannot leave two copies.
      */
     private List<MenuItem> menuItems(Waypoint wp) {
-        List<MenuItem> items = new ArrayList<>(2);
+        List<MenuItem> items = new ArrayList<>(5);
         items.add(new MenuItem(
                 I18nHelper.getComponent(wp.isFavorite() ? "create.favorite_on" : "create.favorite_off"), true, true, () -> {
                     wp.setFavorite(!wp.isFavorite());
@@ -684,14 +752,44 @@ public class WaypointListScreen extends Screen {
                 refreshItemWidgets();
             }));
         }
+        addShareItems(items, wp);
         return items;
     }
 
     /**
-     * The open menu's box, beside its row: just right of the modal, top-aligned with the row, and
-     * pulled back inside the screen where there is no room for it there (on a narrow window it then
-     * covers part of the row's own buttons, as an overlay). {@code null} - and the menu closed -
-     * when no menu is open or its row is not on the page any more.
+     * The menu's three ways to share, where the row's own share button used to be: the public chat
+     * line (what that button sent directly), a private one to a player picked from those online -
+     * offered only when anyone else is - and a copy of the share line to the clipboard. The two that
+     * send close the list, as sharing always did; copying stays.
+     */
+    private void addShareItems(List<MenuItem> items, Waypoint wp) {
+        items.add(new MenuItem(I18nHelper.getComponent("list.share_public"), true, false, () -> {
+            this.optionsFor = null;
+            if (WaypointShare.send(this.minecraft, wp)) {
+                this.onClose();
+            }
+        }));
+        List<String> others = WaypointShare.otherPlayers(this.minecraft);
+        if (!others.isEmpty()) {
+            items.add(new MenuItem(I18nHelper.getComponent("list.share_private"), true, false, () -> {
+                this.optionsFor = null;
+                ClientCompat.setScreen(this.minecraft, new PlayerPickScreen(this, wp, others));
+            }));
+        }
+        items.add(new MenuItem(I18nHelper.getComponent("list.share_copy"), true, false, () -> {
+            this.optionsFor = null;
+            WaypointShare.copy(this.minecraft, wp);
+            ClientCompat.setOverlayMessage(this.minecraft, I18nHelper.getComponent("list.share_copied", wp.getName()), false);
+        }));
+    }
+
+    /**
+     * The open menu's box, inside the modal and over its row's own buttons: its top-right corner on
+     * the delete button's (centerX + 138, the row's top), so it opens right where it was asked for
+     * and lines up with the action strip. Near the bottom of the page it is pushed up to end at the
+     * modal's inner edge, and a translation too wide for the modal starts at its left inner edge -
+     * it never sticks out of the panel. {@code null} - and the menu closed - when no menu is open or
+     * its row is not on the page any more.
      */
     private MenuBox menuBox() {
         if (this.optionsFor == null) return null;
@@ -716,8 +814,10 @@ public class WaypointListScreen extends Screen {
         int width = MENU_TEXT_INSET + textWidth + 6 + MENU_PAD * 2;
         int height = items.size() * MENU_ITEM_H + MENU_PAD * 2;
         int itemY = this.height / 2 - 60 + row * 22;
-        int x = Math.min(this.width / 2 + 145 + 4, this.width - width - 2);
-        int y = Math.max(2, Math.min(itemY - 1, this.height - height - 2));
+        int modalLeft = this.width / 2 - MODAL_WIDTH / 2 + 1;
+        int modalBottom = this.height / 2 + MODAL_HEIGHT / 2 - 1;
+        int x = Math.max(modalLeft, this.width / 2 + 138 - width);
+        int y = Math.min(itemY, modalBottom - height);
         return new MenuBox(x, y, width, height, items);
     }
 
@@ -863,8 +963,8 @@ public class WaypointListScreen extends Screen {
         int centerX = this.width / 2;
         int centerY = this.height / 2;
 
-        int bgW = 290;
-        int bgH = 226;
+        int bgW = MODAL_WIDTH;
+        int bgH = MODAL_HEIGHT;
         int minX = centerX - bgW / 2;
         int minY = centerY - bgH / 2;
 
@@ -970,6 +1070,11 @@ public class WaypointListScreen extends Screen {
         }
         if (!(this.getFocused() instanceof EditBox) && ModKeyBindings.listWaypointsKey.matches(event)) {
             this.onClose();
+            return true;
+        }
+        // Ctrl+V imports - unless the search box has the focus, where it pastes into the search.
+        if (!(this.getFocused() instanceof EditBox) && event.isPaste()) {
+            importFromClipboard();
             return true;
         }
         return super.keyPressed(event);
