@@ -77,6 +77,13 @@ public class WaypointCreateScreen extends Screen {
      * parent, so list, edit, list, edit kept stacking screens.
      */
     private final Screen returnScreen;
+    /** The dimension a new waypoint is saved into when it is not the player's own - set only by
+     *  {@code /easywp open}, which pre-fills a waypoint someone shared from another dimension.
+     *  {@code null} otherwise, and unused when editing. */
+    private final String newDimension;
+    /** The name a new waypoint's field starts with ({@code /easywp open}); {@code null} starts it
+     *  empty, showing {@link #defaultName} as the suggestion. */
+    private final String initialName;
     /**
      * The name a new waypoint saves under if the field is left empty - the grey suggestion in the
      * name field. Resolved once per {@link #init()} rather than on every frame, which translated it
@@ -106,10 +113,23 @@ public class WaypointCreateScreen extends Screen {
 
     /** A new waypoint at {@code pos}; {@code returnScreen} is where saving or leaving goes - see the field. */
     public WaypointCreateScreen(BlockPos pos, Screen returnScreen) {
+        this(pos, returnScreen, null, null);
+    }
+
+    /** A new waypoint at {@code pos} in {@code dimension}, named {@code name} - what
+     *  {@code /easywp open} fills in from a shared line, for the player to adjust before saving.
+     *  Opened from the game, so it closes to the game. */
+    public WaypointCreateScreen(BlockPos pos, String dimension, String name) {
+        this(pos, null, dimension, name);
+    }
+
+    private WaypointCreateScreen(BlockPos pos, Screen returnScreen, String dimension, String name) {
         super(I18nHelper.getComponent("create.title.new"));
         this.originalPos = pos != null ? pos : BlockPos.ZERO;
         this.editingWaypoint = null;
         this.returnScreen = returnScreen;
+        this.newDimension = dimension;
+        this.initialName = name;
 
         this.selectedColor = WaypointColors.random();
     }
@@ -124,6 +144,8 @@ public class WaypointCreateScreen extends Screen {
         this.originalPos = waypointToEdit.getPos();
         this.editingWaypoint = waypointToEdit;
         this.returnScreen = returnScreen;
+        this.newDimension = null;
+        this.initialName = null;
         this.selectedColor = waypointToEdit.getColor();
         this.favorite = waypointToEdit.isFavorite();
     }
@@ -147,7 +169,7 @@ public class WaypointCreateScreen extends Screen {
             createFields();
         }
         if (this.editingWaypoint == null) {
-            this.defaultName = nextDefaultName(currentLevelDimension());
+            this.defaultName = nextDefaultName(newWaypointDimension());
             this.nameField.setSuggestion(this.nameField.getValue().isEmpty() ? this.defaultName : null);
         }
 
@@ -179,6 +201,9 @@ public class WaypointCreateScreen extends Screen {
             // this one always is - whereas the suggestion is drawn regardless, and only while the
             // value is empty since the responder clears it the moment anything is typed.
             this.nameField.setResponder(value -> this.nameField.setSuggestion(value.isEmpty() ? this.defaultName : null));
+            if (this.initialName != null) {
+                this.nameField.setValue(this.initialName);
+            }
         }
 
         this.xField = new EditBox(this.font, 0, 0, 68, 18, Component.literal("X"));
@@ -263,7 +288,7 @@ public class WaypointCreateScreen extends Screen {
         // Overworld for one in the Nether - a new waypoint's being the player's own dimension.
         String paired = this.editingWaypoint != null
                 ? this.editingWaypoint.pairedDimension()
-                : DimensionNames.paired(currentLevelDimension());
+                : DimensionNames.paired(newWaypointDimension());
         Component label = paired != null
                 ? I18nHelper.getComponent("create.duplicate", DimensionNames.chatName(paired))
                 : I18nHelper.getComponent("create.duplicate_generic");
@@ -576,7 +601,12 @@ public class WaypointCreateScreen extends Screen {
         ClientCompat.setOverlayMessage(minecraft, message.withStyle(ChatFormatting.GRAY), true);
     }
 
-    /** The dimension a new waypoint is saved into: wherever the player is now. */
+    /** The dimension a new waypoint is saved into: the one {@code /easywp open} named, or else
+     *  wherever the player is now. */
+    private String newWaypointDimension() {
+        return this.newDimension != null ? this.newDimension : currentLevelDimension();
+    }
+
     private String currentLevelDimension() {
         return this.minecraft.level != null
                 ? this.minecraft.level.dimension().identifier().toString()
@@ -614,7 +644,7 @@ public class WaypointCreateScreen extends Screen {
         double z = coordinate(this.zField, originalPos.getZ(), hasPlayer ? this.minecraft.player.getZ() : Double.NaN);
 
         BlockPos newPos = BlockPos.containing(x, y, z);
-        String dimension = this.editingWaypoint != null ? this.editingWaypoint.getDimension() : currentLevelDimension();
+        String dimension = this.editingWaypoint != null ? this.editingWaypoint.getDimension() : newWaypointDimension();
 
         Waypoint saved;
         if (this.editingWaypoint != null) {
@@ -657,13 +687,7 @@ public class WaypointCreateScreen extends Screen {
 
         WaypointStore.saveToFile();
 
-        if (ModKeyBindings.displayMode == WaypointDisplayMode.DISABLED) {
-            ModKeyBindings.displayMode = WaypointDisplayMode.WORLD_MARKERS;
-            if (ModConfig.get().visibility.rememberOnExit) {
-                ModConfig.get().visibility.lastVisible = true;
-                ModConfig.save();
-            }
-        }
+        ModKeyBindings.showWaypointsAfterCreate();
         return saved;
     }
 }

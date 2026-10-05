@@ -37,6 +37,8 @@ def sharedClientSources = [
 	'XaeroLinkLedger.java',
 	'WaypointColors.java',
 	'ImportWorldScreen.java',
+	'WaypointShare.java',
+	'EasyWpCommands.java',
 	'EasyWpClient.java',
 	'WaypointRenderer.java',
 	'WaypointStore.java',

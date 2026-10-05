@@ -130,18 +130,25 @@ public class ModKeyBindings {
                             "create.feedback_created", name, pos.getX(), pos.getY(), pos.getZ()
                     ).withStyle(ChatFormatting.GRAY), true);
 
-                    // Same restore-visibility reasoning as WaypointCreateScreen.saveWaypoint(): a
-                    // waypoint just created while display is off would otherwise stay invisible.
-                    if (displayMode == WaypointDisplayMode.DISABLED) {
-                        displayMode = WaypointDisplayMode.WORLD_MARKERS;
-                        if (ModConfig.get().visibility.rememberOnExit) {
-                            ModConfig.get().visibility.lastVisible = true;
-                            ModConfig.save();
-                        }
-                    }
+                    showWaypointsAfterCreate();
                 }
             }
         });
+    }
+
+    /**
+     * Turns the waypoints back on if display is off: a waypoint just created while they are hidden
+     * would otherwise stay invisible, which reads as the creation having failed. Called by every
+     * way of creating one - the form, Fast Ping and {@code /easywp add}.
+     */
+    static void showWaypointsAfterCreate() {
+        if (displayMode == WaypointDisplayMode.DISABLED) {
+            displayMode = WaypointDisplayMode.WORLD_MARKERS;
+            if (ModConfig.get().visibility.rememberOnExit) {
+                ModConfig.get().visibility.lastVisible = true;
+                ModConfig.save();
+            }
+        }
     }
 
     /** The last run of digits in a name - "Ping #12" gives 12, in any locale's wording. */

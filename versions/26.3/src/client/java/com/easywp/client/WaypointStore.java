@@ -309,6 +309,38 @@ public final class WaypointStore {
         return Minecraft.getInstance().level != null;
     }
 
+    /**
+     * Focuses {@code wp}, the only one: focus is exclusive, and every "kept visible" beside the old
+     * focus goes with it. {@code wp} is made visible too, since a hidden focus would hide everything.
+     * The list's focus swatch and {@code /easywp focus}.
+     */
+    public static void focus(Waypoint wp) {
+        for (Waypoint w : waypoints) {
+            if (w != null) {
+                w.setFocused(false);
+                w.setForceVisible(false);
+            }
+        }
+        wp.setFocused(true);
+        wp.setVisible(true);
+        saveToFile();
+    }
+
+    /**
+     * Ends the focus. Every "kept visible" goes with the focus it was kept beside: only the focused
+     * one's flag used to be cleared, the rest waiting for the next focus to clear them - invisible
+     * while nothing is focused, but forceVisible is saved, so they were written out stale.
+     */
+    public static void clearFocus() {
+        for (Waypoint w : waypoints) {
+            if (w != null) {
+                w.setFocused(false);
+                w.setForceVisible(false);
+            }
+        }
+        saveToFile();
+    }
+
     /** Whether any waypoint of the current world is focused, in any dimension. A focus anywhere
      *  hides every waypoint that is neither focused nor kept visible beside it, in every dimension -
      *  see {@link Waypoint#isShown}. */

@@ -31,7 +31,9 @@ public final class DimensionNames {
         };
     }
 
-    /** Natural-case dimension name, used in the share-to-chat message. */
+    /** Natural-case dimension name, for messages shown to this player. The share line has its own,
+     *  fixed rule ({@code WaypointShareFormat.dimensionLabel}), which a modded dimension's
+     *  prettified name here would not survive. */
     public static String chatName(String dimension) {
         return switch (dimension) {
             case OVERWORLD -> "Overworld";

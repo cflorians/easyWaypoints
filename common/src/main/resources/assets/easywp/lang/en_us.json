@@ -32,7 +32,6 @@
   "easywp.create.default_name": "WAYPOINT #%s",
   "easywp.create.ping_name": "Ping #%s",
 
-  "easywp.share.chat": "%s >>> %s %s %s %s",
 
   "easywp.hud.mode.world": "§fWaypoints enabled",
   "easywp.hud.mode.disabled": "§7Waypoints disabled",
@@ -103,5 +102,22 @@
   "easywp.list.pending_delete": "Deleting in %s s",
   "easywp.list.duplicate": "Duplicate in the %s",
   "easywp.list.duplicate_exists": "Already copied to the %s",
-  "easywp.create.duplicate_exists": "There is already a copy in the %s"
+  "easywp.create.duplicate_exists": "There is already a copy in the %s",
+  "easywp.command.help": "easyWp commands: /easywp list | add <name> [x y z] [color] | remove | focus | share | tp <name>",
+  "easywp.command.list_header": "Waypoints in %s (%s):",
+  "easywp.command.list_empty": "No waypoints in %s.",
+  "easywp.command.list_focus": "[Focus]",
+  "easywp.command.list_focus_hover": "Focus this waypoint",
+  "easywp.command.list_tp": "[TP]",
+  "easywp.command.list_tp_hover": "Teleport to this waypoint",
+  "easywp.command.added": "Waypoint \"%s\" added at %s %s %s",
+  "easywp.command.removed": "Waypoint \"%s\" deleted",
+  "easywp.command.focused": "Focused \"%s\"",
+  "easywp.command.not_found": "There is no waypoint named \"%s\"",
+  "easywp.command.ambiguous": "%s waypoints are named \"%s\": using the nearest",
+  "easywp.command.no_permission": "You need operator permissions to teleport",
+  "easywp.command.empty_name": "The name cannot be empty",
+  "easywp.command.name_too_long": "The name is too long (at most %s characters)",
+  "easywp.command.bad_coordinate": "Invalid coordinate: %s (use a number, ~ or ~5)",
+  "easywp.command.bad_color": "Invalid color: %s (use #RRGGBB or RRGGBB)"
 }

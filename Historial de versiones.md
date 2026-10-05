@@ -25,12 +25,13 @@ probada en el juego y confirmada el 2026-10-02 (commit `v1.4.0-alpha.1` en `rele
 `v1.4.0-alpha.2`). `alpha.3` implementada, probada y cerrada el 2026-10-05 (commit
 `v1.4.0-alpha.3`); su último ajuste ("Guardar y duplicar" también al crear, ver F6) entró en ese
 commit **sin probar en el juego**: probarlo al principio de la alpha 4. Sigue pendiente confirmar
-el plan de publicación (ver "Publicación").
+el plan de publicación (ver "Publicación"). `alpha.4` (F7 y F8) implementada, probada y
+confirmada el 2026-10-05 (commit `v1.4.0-alpha.4`), junto con el ajuste de F6 de la alpha 3.
 
-**Siguiente paso:** `alpha.4` — F7 (formato de compartir nuevo) y F8 (comandos `/easywp`). Al
-empezar, subir `mod_version` a `1.4.0-alpha.4` y seguir la "Forma de trabajo por alpha" de abajo.
+**Siguiente paso:** `alpha.5` — F9 (menú de compartir), F10 (portapapeles) y F11 (`[+]` en el
+chat). Es la primera que se publica (Modrinth y CurseForge, canal Alpha).
 
-**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.3` (la 1.3.5 nunca se publicará). Se
+**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.4` (la 1.3.5 nunca se publicará). Se
 cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los jars salen como
 `easywp-1.4.0-alpha.1+26.1.x.jar`.
 
@@ -581,7 +582,7 @@ Todas sin cambio visible para el jugador (regla 1).
   mitad del par para una dimensión sin waypoint.) Entró en el commit de la alpha 3 sin probar en el
   juego.
 
-**F7 — Formato de compartir nuevo** · PENDIENTE · alpha.4
+**F7 — Formato de compartir nuevo** · HECHO en alpha.4
 - Hoy: `easywp.share.chat` = `%s >>> %s %s %s %s` (NOMBRE en mayúsculas, dimensión legible, X Y Z),
   sacado del archivo de idioma. `CLAUDE.md` lo describe mal (`-->` y `NAME[x, y, z] -> Dimension`);
   corregirlo al cerrar este punto.
@@ -597,8 +598,20 @@ Todas sin cambio visible para el jugador (regla 1).
   espacios). Acepta también las líneas de 1.3.x (nombre en mayúsculas; una dimensión de mod
   irreconocible se resuelve con la dimensión actual de quien recibe).
 - Va en `common/` (clase nueva, p. ej. `WaypointShareFormat`) con tests. Es la base de F8–F11.
+- Hecho: `WaypointShareFormat` en `common/` (`format`, `parse`, `dimensionLabel`,
+  `dimensionFromLabel`), con `WaypointShareFormatTest` (comprobado contra seis roturas
+  deliberadas). `WaypointShare.chatLine` (cliente) arma la línea para el botón de la lista y para
+  `/easywp share`; con `xaeroChatFormat` sigue saliendo la línea de Xaero. `easywp.share.chat` se
+  borró de los 8 idiomas. `CLAUDE.md` corregido.
+- **Decisiones nuevas:**
+  - `parse` exige que **toda** la línea sea una línea F7. Buscarla dentro de un mensaje más largo
+    (con prefijo de `/msg`, nombre del jugador...) es trabajo de F11.
+  - Los nombres vanilla se leen sin distinguir mayúsculas (`NETHER`, `the end`), y también se acepta
+    el id (`minecraft:the_nether`). Cualquier texto que no sea un id con espacio de nombres (p. ej.
+    `Twilight Forest` de 1.3.x) da dimensión desconocida.
+  - Se toleran espacios de más entre las partes.
 
-**F8 — Comandos de cliente `/easywp`** · PENDIENTE · alpha.4
+**F8 — Comandos de cliente `/easywp`** · HECHO en alpha.4
 - Con `ClientCommandRegistrationCallback` (Fabric API, `fabric-command-api-v2`). Sin alias corto.
 - Subcomandos:
   - `list`: waypoints de la **dimensión actual** en el chat, con su distancia (en km a partir de
@@ -618,6 +631,40 @@ Todas sin cambio visible para el jugador (regla 1).
 - Abrir una pantalla desde un comando hay que aplazarlo un tick: el chat se cierra después de
   ejecutar el comando.
 - Mensajes en los 8 idiomas.
+- Hecho: `EasyWpCommands` (cliente). La clase de Fabric se llama `ClientCommands` en las tres
+  versiones (no `ClientCommandManager`). Comprobado en los jars de Fabric API de las tres: Fabric
+  intercepta `sendCommand` y `sendUnattendedCommand`, así que un clic `RUN_COMMAND` sobre
+  `/easywp ...` se ejecuta **sin** confirmación de vanilla (resuelve la duda de F11).
+  Refactor de paso: `WaypointStore.focus`/`clearFocus` (lista y comando),
+  `ModKeyBindings.showWaypointsAfterCreate` (formulario, Fast Ping y `add`),
+  `EasyWpCommands.teleportCommand`/`canTeleport` (lista y comando).
+- **Decisiones nuevas:**
+  - **Nombres:** en `remove`, `focus`, `share`, `tp` y `open` el nombre es el resto de la línea,
+    así que no necesita comillas (si se ponen, se quitan). En `add` va entre comillas si tiene
+    espacios. Los nombres aceptan acentos y símbolos sin comillas (el texto sin comillas de
+    Brigadier no los admite, así que se leen con tipos de argumento propios).
+  - **Nombre de 32 caracteres como máximo** (el límite del campo del formulario, que si no lo
+    cortaría al editarlo): `add` da error, `open` lo recorta.
+  - **Qué waypoint es "ese nombre":** primero coincidencia exacta, si no la hay sin distinguir
+    mayúsculas. Nunca uno pendiente de borrar. Con varios, el más cercano en la dimensión del
+    jugador (si ninguno está en ella, el primero de otra) y avisa cuántos hay. El autocompletado
+    ofrece todos los nombres del mundo.
+  - **`list`:** solo la dimensión actual, ordenada por distancia, sin los pendientes de borrar.
+    Cada línea: cuadrado del color del waypoint, nombre (al pasar el ratón, sus coordenadas),
+    distancia, `[Enfocar]` y `[TP]` (solo con permisos). Los clics ejecutan `/easywp focus` y
+    `/easywp tp` con el nombre, así que con nombres repetidos actúan sobre el más cercano. El TP no
+    ejecuta el `/execute ... tp` de vanilla directamente porque vanilla pide confirmación al hacer
+    clic en un comando que requiere permisos.
+  - **`add` con color y sin coordenadas** también vale (`add Base #FF0000`). Un número de 6 cifras
+    solo tras el nombre se toma como color, no como una X incompleta.
+  - **`focus`** siempre enfoca (no alterna). **`remove`** borra al instante, sin deshacer.
+  - **`open`:** una dimensión que el servidor no tiene (o irreconocible) pasa a la actual. Las
+    coordenadas aceptan `~`. El waypoint se guarda en esa dimensión aunque el jugador esté en otra.
+  - **`/easywp` solo** muestra una línea de ayuda con los subcomandos.
+- Claves nuevas: `command.help`, `command.list_header`, `command.list_empty`,
+  `command.list_focus(_hover)`, `command.list_tp(_hover)`, `command.added`, `command.removed`,
+  `command.focused`, `command.not_found`, `command.ambiguous`, `command.no_permission`,
+  `command.empty_name`, `command.name_too_long`, `command.bad_coordinate`, `command.bad_color`.
 
 **F9 — Menú de compartir: público / privado / copiar** · PENDIENTE · alpha.5
 - El botón de compartir de la lista abre un menú pequeño:
@@ -651,9 +698,8 @@ Todas sin cambio visible para el jugador (regla 1).
   Xaero ya ofrece su `[Add]`). Esa línea no trae dimensión: se usa la actual. El color sale de su
   índice de paleta (`XaeroWaypointFormat.rgbForColorOrdinal`). Hace falta un parser para el formato
   de chat de Xaero (hoy solo existe el que lo genera, `chatShareLine`).
-- A comprobar en 26.x: que un clic `RUN_COMMAND` llegue al comando de cliente sin que vanilla pida
-  confirmación. Si no, alternativa: `SUGGEST_COMMAND` (escribe el comando en el chat y el jugador
-  pulsa Enter).
+- ~~A comprobar en 26.x: que un clic `RUN_COMMAND` llegue al comando de cliente sin que vanilla pida
+  confirmación.~~ Comprobado en alpha.4 (ver F8): llega sin confirmación en las tres versiones.
 
 **F12 — Grupos** · PENDIENTE · alpha.6
 - **Un waypoint puede estar en varios grupos** (son etiquetas). Por defecto, en ninguno.
@@ -768,3 +814,17 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
   del Nether en Xaero.
 - U7 — En la lista, el botón `⋯` de una fila abre un minimenú junto a ella (favorito, duplicar)
   sin salir de la lista; Esc o un clic fuera lo cierran.
+
+**alpha.4**
+- F7 — Compartir desde la lista un waypoint `Base principal` del Nether en 12 64 -30: el chat
+  muestra `Base principal >>> Nether 12 64 -30` (nombre sin mayúsculas forzadas).
+- F7 (Xaero) — Con "Formato de chat de Xaero" activado, compartir sigue enviando la línea
+  `xaero-waypoint:`.
+- F8 — `/easywp add "Mina de oro" ~ ~-5 ~ #FFAA00` crea el waypoint 5 bloques por debajo con ese
+  color; `/easywp list` lo muestra con su distancia y `[Enfocar]`, que lo enfoca al hacer clic.
+- F8 (nombres) — `/easywp remove Mina de oro` (sin comillas) lo borra al instante; con dos del
+  mismo nombre, actúa sobre el más cercano y avisa.
+- F8 (tp) — Con permisos, `[TP]` de `/easywp list` y `/easywp tp <nombre>` teletransportan sin
+  pedir confirmación; sin permisos, `[TP]` no aparece y `/easywp tp` da error.
+- F8 (open) — `/easywp open minecraft:the_nether 100 70 -20 Portal` abre el formulario relleno, y
+  al guardar el waypoint queda en el Nether aunque el jugador esté en el Overworld.

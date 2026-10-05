@@ -1,6 +1,5 @@
 package com.easywp.client;
 
-import com.easywp.XaeroWaypointFormat;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -12,7 +11,6 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.BlockPos;
 import net.minecraft.client.Minecraft;
-import net.minecraft.server.permissions.Permissions;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -317,8 +315,7 @@ public class WaypointListScreen extends Screen {
         // the search: a focus in another dimension, or filtered out by the search, still hides
         // these rows' waypoints in the world, so the rows have to show them hidden too.
         this.cachedHasAnyFocused = WaypointStore.hasAnyFocused();
-        this.cachedShowTP = this.minecraft != null && this.minecraft.player != null &&
-                            this.minecraft.player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
+        this.cachedShowTP = this.minecraft != null && EasyWpCommands.canTeleport(this.minecraft.player);
     }
 
     @Override
@@ -434,7 +431,6 @@ public class WaypointListScreen extends Screen {
             WaypointEntry entry = waypoints.get(i);
             if (entry == null || entry.waypoint == null) continue;
             Waypoint wp = entry.waypoint;
-            BlockPos pos = entry.displayPos;
             int offsetIndex = i - startIndex;
             int itemY = centerY - 60 + offsetIndex * 22;
 
@@ -483,32 +479,7 @@ public class WaypointListScreen extends Screen {
             buttonX -= 20;
 
             var shareBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
-                if (this.minecraft.player != null && this.minecraft.player.connection != null) {
-                    String msg;
-                    if (ModConfig.get().xaeroIntegration.xaeroChatFormat) {
-                        // Xaero's own chat listener recognizes this exact prefix and offers
-                        // recipients who run it an [Add] button - see XaeroWaypointFormat.
-                        // The set name is irrelevant to chatShareLine (the chat format carries no set
-                        // field at all - see its javadoc) but the convenience constructor requires one.
-                        XaeroWaypointFormat.XaeroWaypoint xwp = new XaeroWaypointFormat.XaeroWaypoint(
-                                wp.getName(), pos.getX(), pos.getY(), pos.getZ(),
-                                XaeroWaypointFormat.nearestColorOrdinal(wp.getColor()),
-                                XaeroWaypointFormat.DEFAULT_SET_NAME
-                        );
-                        msg = XaeroWaypointFormat.chatShareLine(xwp);
-                    } else {
-                        // Plain text, no color codes: vanilla strips the section sign from any
-                        // chat message a player sends before broadcasting it (a long-standing
-                        // anti-spoofing measure), so a client mod cannot color another player's
-                        // view of this message - only the in-game list itself can use DimensionNames'
-                        // per-dimension colors, which this line can't carry over the network.
-                        String dimName = DimensionNames.chatName(selectedDimension);
-                        msg = I18nHelper.getComponent("share.chat",
-                                wp.getName().toUpperCase(Locale.ROOT), dimName,
-                                String.valueOf(pos.getX()), String.valueOf(pos.getY()), String.valueOf(pos.getZ())
-                        ).getString();
-                    }
-                    this.minecraft.player.connection.sendChat(msg);
+                if (WaypointShare.send(this.minecraft, wp)) {
                     this.onClose();
                 }
             }).pos(buttonX, itemY).size(18, 18)
@@ -557,12 +528,7 @@ public class WaypointListScreen extends Screen {
                 buttonX -= 20;
                 var tpBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                     if (this.minecraft.player != null && this.minecraft.player.connection != null) {
-                        String targetDim = wp.dimensionOrOverworld();
-                        // Block centre on X/Z (x + 0.5, not "%d.5", which is wrong for negatives),
-                        // so the player lands in the middle of the block rather than on its corner.
-                        String tpCommand = String.format(Locale.ROOT, "execute in %s run tp @s %.1f %d %.1f",
-                                targetDim, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
-                        this.minecraft.player.connection.sendCommand(tpCommand);
+                        this.minecraft.player.connection.sendCommand(EasyWpCommands.teleportCommand(wp));
                         this.onClose();
                     }
                 }).pos(buttonX, itemY).size(18, 18)
@@ -575,27 +541,10 @@ public class WaypointListScreen extends Screen {
             // Focus toggle now lives on the marker swatch itself, at the left of the name.
             var focusBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 if (wp.isFocused()) {
-                    // Every "kept visible" goes with the focus it was kept beside. Only this one's
-                    // flag used to be cleared, the rest waiting for the next focus to clear them:
-                    // invisible while nothing is focused, but now that forceVisible is saved,
-                    // leaving them would write stale flags into the file.
-                    wp.setFocused(false);
-                    for (Waypoint w : WaypointStore.waypoints) {
-                        if (w != null) {
-                            w.setForceVisible(false);
-                        }
-                    }
+                    WaypointStore.clearFocus();
                 } else {
-                    for (Waypoint w : WaypointStore.waypoints) {
-                        if (w != null) {
-                            w.setFocused(false);
-                            w.setForceVisible(false);
-                        }
-                    }
-                    wp.setFocused(true);
-                    wp.setVisible(true);
+                    WaypointStore.focus(wp);
                 }
-                WaypointStore.saveToFile();
                 refreshItemWidgets();
             }).pos(centerX - 138, itemY).size(18, 18)
                     .icon((g, b, hovered) -> {

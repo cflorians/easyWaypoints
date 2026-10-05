@@ -12,6 +12,7 @@ public class EasyWpClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		ModKeyBindings.register();
+		EasyWpCommands.register();
 
 		// Waypoints are drawn on the HUD, projected from the world - see WaypointRenderer. Two
 		// attachment points because vanilla skips every HUD element while the HUD is hidden (F1)
