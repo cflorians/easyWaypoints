@@ -39,10 +39,10 @@ sección siguiente), probado en el juego y confirmado: desde aquí cada entrega 
 `alpha.7` (F13, mensaje de bienvenida) implementada, probada y confirmada el 2026-10-05 (commit
 `v1.4.0-alpha.7`). Es la última alpha.
 
-**Siguiente paso:** `beta.1`: congelado de funciones, pruebas completas en 26.1, 26.2 y 26.3,
-revisión de idiomas.
+`beta.1` (congelado de funciones, revisión de idiomas y de `CLAUDE.md`, ver "Beta 1" más abajo)
+probada por el usuario el 2026-10-05 (commit `v1.4.0-beta.1`); sus correcciones van en la `beta.2`.
 
-**Versión en `gradle.properties`:** `mod_version=1.4.0-alpha.7` (la 1.3.5 nunca se publicará). Se
+**Versión en `gradle.properties`:** `mod_version=1.4.0-beta.1` (la 1.3.5 nunca se publicará). Se
 cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los jars salen como
 `easywp-1.4.0-alpha.1+26.1.x.jar` hasta la alpha.4; desde la alpha.5 son dos:
 `easywp-<versión>+26.1-26.2.jar` (Minecraft 26.1.x y 26.2) y `easywp-<versión>+26.3.jar`.
@@ -907,6 +907,31 @@ Todas sin cambio visible para el jugador (regla 1).
 - Claves nuevas: `welcome.title`, `welcome.settings`, `welcome.settings_modmenu`,
   `welcome.news_title`, `welcome.news.1.4.0.1` a `.5`.
 
+### Beta 1
+
+**Congelado de funciones:** desde aquí solo se corrigen fallos; nada nuevo entra en 1.4.0.
+
+**Revisión de idiomas (2026-10-05)** · HECHO en beta.1
+- Ninguna clave usada en el código falta en `en_us.json` y ninguna sobra (las `welcome.news.*` se
+  leen por número). No hay texto visible escrito a mano en Java.
+- **Decisión nueva — español en mayúsculas de frase**, como el resto de la configuración y como
+  vanilla en español: los títulos y nombres de teclas que iban en Title Case pasan a minúscula
+  ("Lista de waypoints", "Nuevo waypoint", "Editar waypoint", "Importar waypoints", "Más opciones",
+  "Confirmar borrado", y las cuatro teclas: "Alternar visibilidad de waypoints", etc.). Cambiar el
+  nombre de una tecla no cambia su asignación (se guarda por id).
+- **Comillas:** «» en todo el español; quedaba `"%s"` en la confirmación de borrado. Las comillas
+  `"Más opciones"` del mensaje de bienvenida **no se tocaron**: ese texto lo aprueba el usuario.
+- Preguntas con "¿Seguro que quieres...?" en vez de "¿Estás seguro de...?" (borrar, importar).
+- La sección de Xaero se llama "Xaero's Minimap" también en español (nombre propio, como en su
+  tooltip "Requiere Xaero's Minimap").
+- "Ya hay una copia en el %s" igual en la lista y en el formulario.
+- Inglés: "Max Death Waypoints", "Unlooked Favorites", "Max Visible" en Title Case como las demás
+  filas de la configuración.
+
+**`CLAUDE.md`:** repasado; corregidas frases que seguían hablando de dos versiones
+(`build.gradle`, `fabric.mod.json`, Java 25), `ModMenuIntegration` como compartido y las versiones
+de Xaero/xaerolib de 26.3.
+
 ### Descartado para 1.4.0
 
 - **Ocultar etiquetas** de los waypoints que no se miran o más allá de cierta distancia: la
@@ -977,7 +1002,7 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
   sin mirarlo se ve más opaco que los demás.
 - F6 — Editar un waypoint del Overworld en X=800 Z=-160 y pulsar "Guardar y duplicar en el
   Nether": aparece una copia en el Nether en X=100 Z=-20.
-- F6 (sin doble) — Con la copia ya hecha, "Duplicar" sale desactivado ("Ya hay copia en el
+- F6 (sin doble) — Con la copia ya hecha, "Duplicar" sale desactivado ("Ya hay una copia en el
   Nether"); al borrar la copia vuelve a estar disponible.
 - F6 (al crear) — Con N en el Overworld, "Más opciones" ofrece "Guardar y duplicar en el Nether"
   (en el Nether, "…en el Overworld"; en el End, desactivado): guarda el nuevo y su copia a la vez.
