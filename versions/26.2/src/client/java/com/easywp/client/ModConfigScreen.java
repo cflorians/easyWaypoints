@@ -52,7 +52,7 @@ public class ModConfigScreen extends OptionsSubScreen {
     private static final double OPACITY_CEIL = 100.0;
 
     private static final double LOOK_AREA_FLOOR = 1.0;
-    private static final double LOOK_AREA_CEIL = 7.0;
+    private static final double LOOK_AREA_CEIL = 4.0;
 
     private static final double MAX_VISIBLE_FLOOR = 0.0;
     private static final double MAX_VISIBLE_CEIL = 100.0;
@@ -73,10 +73,38 @@ public class ModConfigScreen extends OptionsSubScreen {
         super(parentScreen, Minecraft.getInstance().options, I18nHelper.getComponent("config.title"));
     }
 
+    /** The list with a closer header under the import button - see {@link SettingsList}. */
+    private SettingsList settings;
+
     @Override
     protected void addContents() {
-        this.list = this.layout.addToContents(new OptionsList(this.minecraft, LIST_WIDTH, this));
+        this.settings = new SettingsList(this.minecraft, LIST_WIDTH, this);
+        this.list = this.layout.addToContents(this.settings);
         this.addOptions();
+    }
+
+    /**
+     * Vanilla's list, plus a header with less space above it. {@code addHeader} leaves two text lines
+     * above every header but the first row, which put the first section far below the lone import
+     * button; that one header sits closer, the rest keep vanilla's spacing between sections.
+     */
+    private static class SettingsList extends OptionsList {
+        /** Space above the first section's header, in place of vanilla's 18. */
+        private static final int FIRST_HEADER_PADDING = 6;
+        /** Extra space below that header. With only the padding taken off, the text sat almost on
+         *  the sliders under it (seen in the game, beta.2); this restores the gap the other
+         *  headers leave below their text. */
+        private static final int FIRST_HEADER_GAP_BELOW = 6;
+
+        SettingsList(Minecraft minecraft, int width, OptionsSubScreen screen) {
+            super(minecraft, width, screen);
+        }
+
+        void addCloseHeader(Screen screen, Component text) {
+            int lineHeight = 9;
+            this.addEntry(new HeaderEntry(screen, text, FIRST_HEADER_PADDING) { },
+                    FIRST_HEADER_PADDING + lineHeight + 4 + FIRST_HEADER_GAP_BELOW);
+        }
     }
 
     @Override
@@ -100,7 +128,7 @@ public class ModConfigScreen extends OptionsSubScreen {
         }
         this.list.addSmall(List.of(importButton));
 
-        this.list.addHeader(I18nHelper.getComponent("config.section.appearance"));
+        this.settings.addCloseHeader(this, I18nHelper.getComponent("config.section.appearance"));
         this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, SIZE_PERCENT_FLOOR, SIZE_PERCENT_CEIL, 1.0,
                         cfg.waypointSize.sizePercent, "config.size_row", 0, this::applySizePercent),
@@ -113,7 +141,7 @@ public class ModConfigScreen extends OptionsSubScreen {
         );
         this.list.addSmall(
                 new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, OPACITY_FLOOR, OPACITY_CEIL, 5.0,
-                        cfg.lookFade.unlookedOpacityPercent, "config.unlooked_opacity_row", 0, this::applyUnlookedOpacity),
+                        cfg.lookAt.unlookedOpacityPercent, "config.unlooked_opacity_row", 0, this::applyUnlookedOpacity),
                 resetButton(this::resetUnlookedOpacity)
         );
         this.list.addSmall(
@@ -121,10 +149,11 @@ public class ModConfigScreen extends OptionsSubScreen {
                         cfg.favorites.unlookedOpacityPercent, "config.favorite_unlooked_opacity_row", 0, this::applyFavoriteUnlookedOpacity),
                 resetButton(this::resetFavoriteUnlookedOpacity)
         );
-        // Discrete: step 1 over 1-7, so the slider snaps to seven sizes.
+        // Discrete: step 1 over 1-4, so the slider snaps to four sizes.
         this.list.addSmall(
-                new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, LOOK_AREA_FLOOR, LOOK_AREA_CEIL, 1.0,
-                        cfg.lookFade.lookAreaSize, "config.look_area_row", 0, this::applyLookAreaSize),
+                tooltip("config.look_area_tooltip",
+                        new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, LOOK_AREA_FLOOR, LOOK_AREA_CEIL, 1.0,
+                                cfg.lookAt.lookAreaSize, "config.look_area_row", 0, this::applyLookAreaSize)),
                 resetButton(this::resetLookAreaSize)
         );
         this.list.addSmall(
@@ -155,14 +184,6 @@ public class ModConfigScreen extends OptionsSubScreen {
                                 }),
                 resetButton(this::resetUppercaseLabels)
         );
-        // 0 to 100 in steps of 5, where 0 means no limit and reads as such.
-        this.list.addSmall(
-                tooltip("config.max_visible_tooltip",
-                        new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, MAX_VISIBLE_FLOOR, MAX_VISIBLE_CEIL, 5.0,
-                                cfg.visibility.maxVisible, "config.max_visible_row", 0, this::applyMaxVisible)
-                                .withZeroLabel("config.max_visible_unlimited")),
-                resetButton(this::resetMaxVisible)
-        );
 
         this.list.addHeader(I18nHelper.getComponent("config.section.death_waypoint"));
         this.list.addSmall(
@@ -185,8 +206,9 @@ public class ModConfigScreen extends OptionsSubScreen {
                 resetButton(this::resetRadius)
         );
         this.list.addSmall(
-                new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, GRACE_FLOOR, GRACE_CEIL, 0.5,
-                        cfg.deathWaypoints.graceSeconds, "config.grace_row", 1, this::applyGrace),
+                tooltip("config.grace_tooltip",
+                        new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, GRACE_FLOOR, GRACE_CEIL, 0.5,
+                                cfg.deathWaypoints.graceSeconds, "config.grace_row", 1, this::applyGrace)),
                 resetButton(this::resetGrace)
         );
 
@@ -222,14 +244,13 @@ public class ModConfigScreen extends OptionsSubScreen {
         );
 
         this.list.addHeader(I18nHelper.getComponent("config.section.behavior"));
+        // 0 to 100 in steps of 5, where 0 means no limit and reads as such.
         this.list.addSmall(
-                CycleButton.onOffBuilder(cfg.confirmations.confirmBeforeDelete)
-                        .create(0, 0, CONTROL_WIDTH, ROW_HEIGHT, I18nHelper.getComponent("config.confirm_delete_toggle"),
-                                (button, value) -> {
-                                    ModConfig.get().confirmations.confirmBeforeDelete = value;
-                                    ModConfig.save();
-                                }),
-                resetButton(this::resetConfirmBeforeDelete)
+                tooltip("config.max_visible_tooltip",
+                        new ConfigSlider(CONTROL_WIDTH, ROW_HEIGHT, MAX_VISIBLE_FLOOR, MAX_VISIBLE_CEIL, 5.0,
+                                cfg.visibility.maxVisible, "config.max_visible_row", 0, this::applyMaxVisible)
+                                .withZeroLabel("config.max_visible_unlimited")),
+                resetButton(this::resetMaxVisible)
         );
         this.list.addSmall(
                 CycleButton.onOffBuilder(cfg.visibility.rememberOnExit)
@@ -327,7 +348,7 @@ public class ModConfigScreen extends OptionsSubScreen {
     }
 
     private void applyUnlookedOpacity(double v) {
-        ModConfig.get().lookFade.unlookedOpacityPercent = clamp(v, OPACITY_FLOOR, OPACITY_CEIL);
+        ModConfig.get().lookAt.unlookedOpacityPercent = clamp(v, OPACITY_FLOOR, OPACITY_CEIL);
         ModConfig.save();
     }
 
@@ -337,7 +358,7 @@ public class ModConfigScreen extends OptionsSubScreen {
     }
 
     private void applyLookAreaSize(double v) {
-        ModConfig.get().lookFade.lookAreaSize = (int) Math.round(clamp(v, LOOK_AREA_FLOOR, LOOK_AREA_CEIL));
+        ModConfig.get().lookAt.lookAreaSize = (int) Math.round(clamp(v, LOOK_AREA_FLOOR, LOOK_AREA_CEIL));
         ModConfig.save();
     }
 
@@ -383,7 +404,7 @@ public class ModConfigScreen extends OptionsSubScreen {
     }
 
     private void resetUnlookedOpacity() {
-        ModConfig.get().lookFade.unlookedOpacityPercent = new ModConfig.LookFade().unlookedOpacityPercent;
+        ModConfig.get().lookAt.unlookedOpacityPercent = new ModConfig.LookFade().unlookedOpacityPercent;
         ModConfig.save();
         reopen();
     }
@@ -395,7 +416,7 @@ public class ModConfigScreen extends OptionsSubScreen {
     }
 
     private void resetLookAreaSize() {
-        ModConfig.get().lookFade.lookAreaSize = new ModConfig.LookFade().lookAreaSize;
+        ModConfig.get().lookAt.lookAreaSize = new ModConfig.LookFade().lookAreaSize;
         ModConfig.save();
         reopen();
     }
@@ -462,12 +483,6 @@ public class ModConfigScreen extends OptionsSubScreen {
 
     private void resetPingFluids() {
         ModConfig.get().ping.hitFluids = new ModConfig.Ping().hitFluids;
-        ModConfig.save();
-        reopen();
-    }
-
-    private void resetConfirmBeforeDelete() {
-        ModConfig.get().confirmations.confirmBeforeDelete = new ModConfig.Confirmations().confirmBeforeDelete;
         ModConfig.save();
         reopen();
     }

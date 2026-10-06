@@ -76,6 +76,47 @@ public final class WaypointShareFormat {
 
     /** What ends a sender prefix before the line: vanilla's {@code <Steve> } and
      *  {@code Steve whispers to you: }, and the {@code [Rank] }/{@code Name » } of chat plugins. */
+    /** The longest message or command a player may send - vanilla's limit for both, and past it the
+     *  server drops the connection instead of the message. */
+    public static final int CHAT_MAX_LENGTH = 256;
+
+    /** Vanilla's formatting-code character, which a player's chat may not contain. */
+    private static final int SECTION_SIGN = 0xA7;
+
+    /**
+     * {@code text} without the characters vanilla refuses in a player's chat, and disconnects the
+     * player for: the section sign, DEL and every control character. A name typed in the mod's own
+     * fields never has them, but one imported (from Xaero, the clipboard, another world) can.
+     */
+    public static String chatSafe(String text) {
+        if (text == null) return "";
+        StringBuilder out = new StringBuilder(text.length());
+        text.codePoints()
+                .filter(cp -> cp >= ' ' && cp != 127 && cp != SECTION_SIGN)
+                .forEach(out::appendCodePoint);
+        return out.toString();
+    }
+
+    /**
+     * The line {@code lineFor} builds from {@code name}, with the name cut short (never the rest of
+     * the line, which the receiver has to parse) until it fits in {@code maxLength}. A cut never
+     * splits a character in two, and keeps at least one. {@code null} if not even that fits.
+     */
+    public static String fitLine(String name, int maxLength, java.util.function.Function<String, String> lineFor) {
+        String cut = name;
+        String line = lineFor.apply(cut);
+        while (line.length() > maxLength) {
+            int end = cut.length() - (line.length() - maxLength);
+            if (end > 0 && Character.isHighSurrogate(cut.charAt(end - 1))) {
+                end--;
+            }
+            if (end < 1) return null;
+            cut = cut.substring(0, end);
+            line = lineFor.apply(cut);
+        }
+        return line;
+    }
+
     private static final String[] PREFIX_ENDS = {": ", "> ", "] ", "» "};
 
     /**

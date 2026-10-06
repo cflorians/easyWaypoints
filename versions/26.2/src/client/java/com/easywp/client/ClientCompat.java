@@ -17,6 +17,7 @@ import org.lwjgl.glfw.GLFW;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
 
 import static java.lang.invoke.MethodType.methodType;
@@ -30,8 +31,10 @@ import static java.lang.invoke.MethodType.methodType;
  * only one of the two has. The renames between them are resolved once, by name, when this class
  * loads:
  * <ul>
- *   <li>{@code setScreen} needs nothing: both versions have {@code Minecraft.setScreenAndShow}, which
- *       sets the screen and forces a frame. 26.2 dropped the plain {@code Minecraft.setScreen}.</li>
+ *   <li>{@code setScreen} moved from {@code Minecraft} to {@code Gui} in 26.2. Both versions also
+ *       have {@code Minecraft.setScreenAndShow}, but that one renders a frame on the spot, without
+ *       advancing game time - mid-click, between two screens - which showed as a flicker on every
+ *       screen change, so it is not used.</li>
  *   <li>26.2 split the HUD out of {@code Gui} into a public {@code Gui.hud} field. The overlay
  *       message and the chat moved there with the same names, and the F1 flag moved from
  *       {@code Options.hideGui} to {@code Hud.isHidden()}. Whether {@code Gui} has that field is
@@ -70,6 +73,10 @@ public final class ClientCompat {
     private static final MethodHandle OPTIONS_HIDE_GUI;
     /** {@code (GameRenderer) -> GameRenderState}. */
     private static final MethodHandle GAME_RENDER_STATE;
+    /** Whether {@code setScreen} is on {@code Gui} (26.2) rather than on {@code Minecraft} (26.1). */
+    private static final boolean SCREEN_ON_GUI;
+    /** {@code (Minecraft or Gui, Screen) -> void}. */
+    private static final MethodHandle SET_SCREEN;
 
     static {
         MethodHandles.Lookup lookup = MethodHandles.publicLookup();
@@ -96,6 +103,16 @@ public final class ClientCompat {
             OPTIONS_HIDE_GUI = HUD_SPLIT ? null : lookup.findGetter(Options.class, "hideGui", boolean.class);
             GAME_RENDER_STATE = findFirst(lookup, GameRenderer.class, methodType(GameRenderState.class),
                     "gameRenderState", "getGameRenderState");
+            MethodType setScreen = methodType(void.class, Screen.class);
+            MethodHandle onMinecraft = null;
+            try {
+                onMinecraft = lookup.findVirtual(Minecraft.class, "setScreen", setScreen);
+            } catch (NoSuchMethodException since262) {
+                // 26.2: Gui.setScreen.
+            }
+            SCREEN_ON_GUI = onMinecraft == null;
+            SET_SCREEN = (SCREEN_ON_GUI ? lookup.findVirtual(Gui.class, "setScreen", setScreen) : onMinecraft)
+                    .asType(methodType(void.class, Object.class, Screen.class));
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("easyWp does not support this Minecraft version's client API", e);
         }
@@ -103,7 +120,7 @@ public final class ClientCompat {
 
     /** The first of {@code names} that {@code owner} has with {@code type}. */
     private static MethodHandle findFirst(MethodHandles.Lookup lookup, Class<?> owner,
-                                          java.lang.invoke.MethodType type, String... names)
+                                          MethodType type, String... names)
             throws ReflectiveOperationException {
         ReflectiveOperationException last = null;
         for (String name : names) {
@@ -129,9 +146,13 @@ public final class ClientCompat {
         return new IllegalStateException(t);
     }
 
-    /** {@code setScreenAndShow} in both versions: sets the screen and forces a frame. */
+    /** {@code Minecraft.setScreen} on 26.1, {@code gui.setScreen} on 26.2. */
     public static void setScreen(Minecraft client, Screen screen) {
-        client.setScreenAndShow(screen);
+        try {
+            SET_SCREEN.invokeExact(SCREEN_ON_GUI ? (Object) client.gui : (Object) client, screen);
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
     }
 
     /** {@code gui.setOverlayMessage} on 26.1, {@code gui.hud.setOverlayMessage} on 26.2. */

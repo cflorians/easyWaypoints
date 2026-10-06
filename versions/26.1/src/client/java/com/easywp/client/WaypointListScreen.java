@@ -1,7 +1,6 @@
 package com.easywp.client;
 
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
@@ -54,6 +53,9 @@ public class WaypointListScreen extends Screen {
      * the menu closes.
      */
     private Waypoint optionsFor = null;
+
+    /** Whether that menu shows its groups page (see {@link #groupItemsFor}) instead of its main one. */
+    private boolean optionsGroupsPage = false;
 
     /** Whether the group filter's menu is open, below its button. At most one menu is open: opening
      *  either closes the other. */
@@ -533,22 +535,10 @@ public class WaypointListScreen extends Screen {
 
             int buttonX = centerX + 120;
 
+            // No confirmation: the row stays for a few seconds with Undo, which covers a slip.
             var delBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
-                if (ModConfig.get().confirmations.confirmBeforeDelete) {
-                    ClientCompat.setScreen(this.minecraft, new ConfirmScreen(
-                        confirmed -> {
-                            if (confirmed) {
-                                WaypointStore.markForRemoval(wp);
-                            }
-                            ClientCompat.setScreen(this.minecraft, this);
-                        },
-                        I18nHelper.getComponent("menu.confirm_delete_title"),
-                        I18nHelper.getComponent("menu.confirm_delete_text", wp.getName())
-                    ));
-                } else {
-                    WaypointStore.markForRemoval(wp);
-                    refreshItemWidgets();
-                }
+                WaypointStore.markForRemoval(wp);
+                refreshItemWidgets();
             }).pos(buttonX, itemY).size(18, 18)
                     .icon((g, b, hovered) -> ClientCompat.blitTinted(g, Icons.DELETE, b.getX(), b.getY(), 18, 18, UiPalette.ICON_DESTRUCTIVE))
                     .build();
@@ -562,6 +552,8 @@ public class WaypointListScreen extends Screen {
             // this only ever opens one.
             var moreBtn = ModernButton.modernBuilder(Component.literal(""), btn -> {
                 this.optionsFor = wp;
+                this.optionsGroupsPage = false;
+                this.menuScroll = 0;
                 this.groupMenuOpen = false;
             }).pos(buttonX, itemY).size(18, 18)
                     .icon((g, b, hovered) -> Icons.drawMoreGlyph(g, b.getX() + b.getWidth() / 2, b.getY() + b.getHeight() / 2,
@@ -869,6 +861,11 @@ public class WaypointListScreen extends Screen {
                     refreshItemWidgets();
                 }));
 
+        items.add(PopupMenu.Item.of(I18nHelper.getComponent("list.group_menu"), () -> {
+            this.optionsGroupsPage = true;
+            this.menuScroll = 0;
+        }));
+
         String paired = wp.pairedDimension();
         if (paired == null) {
             items.add(PopupMenu.Item.disabled(I18nHelper.getComponent("create.duplicate_unsupported")));
@@ -882,6 +879,51 @@ public class WaypointListScreen extends Screen {
             }));
         }
         addShareItems(items, wp);
+        return items;
+    }
+
+    /**
+     * The row menu's groups page: back to the main page, every group of the world with a tick on the
+     * ones this waypoint is in - a click adds or removes it, and the menu stays open for the next -
+     * and "New group...", which opens the form on its "More options" page with the group field
+     * focused, since a new name has to be typed. A group the waypoint cannot take any more (it has
+     * {@link WaypointGroups#MAX_PER_WAYPOINT}) is greyed out.
+     */
+    private List<PopupMenu.Item> groupItemsFor(Waypoint wp) {
+        List<PopupMenu.Item> items = new ArrayList<>();
+        items.add(PopupMenu.Item.of(I18nHelper.getComponent("list.group_back"), () -> {
+            this.optionsGroupsPage = false;
+            this.menuScroll = 0;
+        }));
+        for (String group : WaypointStore.allGroups()) {
+            boolean assigned = wp.getGroups().contains(group);
+            if (!assigned && !WaypointGroups.canAdd(wp.getGroups(), group)) {
+                items.add(PopupMenu.Item.disabled(Component.literal(group)));
+                continue;
+            }
+            items.add(new PopupMenu.Item(Component.literal(group), true,
+                    assigned ? (g, x, y) -> drawCheckGlyph(g, x + 4, y + 4, UiPalette.TEXT_SUCCESS) : null,
+                    () -> {
+                        List<String> groups = new ArrayList<>(wp.getGroups());
+                        if (assigned) {
+                            groups.remove(group);
+                        } else {
+                            groups.add(group);
+                        }
+                        wp.setGroups(groups);
+                        WaypointStore.saveToFile();
+                        refreshItemWidgets();
+                    }));
+        }
+        if (wp.getGroups().size() >= WaypointGroups.MAX_PER_WAYPOINT) {
+            items.add(PopupMenu.Item.disabled(I18nHelper.getComponent("create.group_full",
+                    String.valueOf(WaypointGroups.MAX_PER_WAYPOINT))));
+        } else {
+            items.add(PopupMenu.Item.of(I18nHelper.getComponent("list.group_new"), () -> {
+                closeMenus();
+                ClientCompat.setScreen(this.minecraft, WaypointCreateScreen.editGroups(wp, this));
+            }));
+        }
         return items;
     }
 
@@ -945,7 +987,10 @@ public class WaypointListScreen extends Screen {
         }
 
         int itemY = this.height / 2 - 60 + row * 22;
-        PopupMenu menu = new PopupMenu(this.font, menuItems(this.optionsFor), 0, 8, 0, MODAL_WIDTH - 2);
+        PopupMenu menu = this.optionsGroupsPage
+                ? new PopupMenu(this.font, groupItemsFor(this.optionsFor), this.menuScroll, 8, 0, MODAL_WIDTH - 2)
+                : new PopupMenu(this.font, menuItems(this.optionsFor), 0, 8, 0, MODAL_WIDTH - 2);
+        this.menuScroll = menu.getScroll();
         return menu.placeAt(this.width / 2 + 138 - menu.getWidth(), itemY,
                 modalLeft(), modalTop(), modalRight(), modalBottom());
     }
@@ -953,6 +998,7 @@ public class WaypointListScreen extends Screen {
     /** Closes whichever menu is open. */
     private void closeMenus() {
         this.optionsFor = null;
+        this.optionsGroupsPage = false;
         this.groupMenuOpen = false;
         this.menuScroll = 0;
     }

@@ -43,9 +43,10 @@ public final class ClientCompat {
 
     private ClientCompat() { }
 
-    /** 26.1 called this {@code setScreen}; this variant also forces a frame. */
+    /** 26.1 had this on {@code Minecraft}. Not {@code setScreenAndShow}: that one renders a frame on
+     *  the spot, without advancing game time, which showed as a flicker on every screen change. */
     public static void setScreen(Minecraft client, Screen screen) {
-        client.setScreenAndShow(screen);
+        client.gui.setScreen(screen);
     }
 
     /** 26.1 had this directly on {@code gui}, without the {@code hud} indirection. */

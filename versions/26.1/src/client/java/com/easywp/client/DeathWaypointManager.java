@@ -131,13 +131,15 @@ public class DeathWaypointManager {
         int maxCount = Math.max(1, ModConfig.get().deathWaypoints.maxCount);
         List<Waypoint> deaths = new ArrayList<>();
         for (Waypoint wp : WaypointStore.waypoints) {
-            if (wp != null && wp.isDeath()) {
+            // One deleted from the list and waiting out its Undo is already gone: it neither takes
+            // a slot nor gets evicted from under that Undo.
+            if (wp != null && wp.isDeath() && !wp.isPendingRemoval()) {
                 deaths.add(wp);
             }
         }
         deaths.sort(Comparator.comparingLong(Waypoint::getCreatedAtMillis));
         while (deaths.size() >= maxCount) {
-            WaypointStore.waypoints.remove(deaths.remove(0));
+            WaypointStore.remove(deaths.remove(0));
         }
 
         String name = I18nHelper.getComponent("death.name", LocalTime.now().format(TIME_FORMAT)).getString();
@@ -152,7 +154,8 @@ public class DeathWaypointManager {
     private static void checkArrival(Minecraft client, ModConfig.DeathWaypoints cfg) {
         deathsScratch.clear();
         for (Waypoint wp : WaypointStore.waypoints) {
-            if (wp != null && wp.isDeath()) {
+            // Not one pending deletion: it is already gone from the world, nothing to arrive at.
+            if (wp != null && wp.isDeath() && !wp.isPendingRemoval()) {
                 deathsScratch.add(wp);
             }
         }
@@ -193,7 +196,7 @@ public class DeathWaypointManager {
             }
 
             if ((now - start) >= (long) (cfg.graceSeconds * 1000.0)) {
-                WaypointStore.waypoints.remove(deathWp);
+                WaypointStore.remove(deathWp);
                 WaypointStore.saveToFile();
                 ClientCompat.setOverlayMessage(client, I18nHelper.getComponent("death.reached"), true);
                 dwellStart.remove(deathWp);

@@ -86,25 +86,28 @@ public class WaypointRenderer {
 
     /*
      * "Looking at it": a waypoint the player is not aiming at is drawn at
-     * ModConfig.lookFade.unlookedOpacityPercent (marker, backdrop and text alike), so a screen full
+     * ModConfig.lookAt.unlookedOpacityPercent (marker, backdrop and text alike), so a screen full
      * of waypoints does not compete with the one being aimed at. Aiming is judged against the
-     * waypoint's drawn rectangle (marker plus label), expanded by a margin: full opacity while the
-     * crosshair is inside it, then a smooth fade over the band around it. Measuring against the
-     * rectangle rather than the waypoint's point means a near waypoint whose icon fills half the
-     * screen counts as looked at anywhere on it, and a far one still has a comfortable target.
+     * waypoint's marker alone - never its label, or a long name would make a bigger target - expanded
+     * by a margin: full opacity while the crosshair is inside it, then a smooth fade over the band
+     * around it. Measuring against the marker's rectangle rather than its point means a near
+     * waypoint whose icon fills half the screen counts as looked at anywhere on it.
      *
-     * The margins are fractions of the screen height, narrower horizontally than vertically: the
-     * label is already wide, and a wide margin on top of it made a waypoint "looked at" from well
-     * off to its side. ModConfig.lookFade.lookAreaSize (1-7, default 3) scales both.
+     * A nearer waypoint covers the ones behind it: while the crosshair is inside a waypoint's area,
+     * every farther one counts as not looked at, even where their areas overlap - so of two markers
+     * partly in front of each other, the farther one lights up only on the part the nearer one does
+     * not cover. See computeLook.
+     *
+     * The margin is a fraction of the screen height. ModConfig.lookAt.lookAreaSize (1-4, default 2)
+     * scales it: see LOOK_AREA_SCALE.
      */
-    private static final float LOOK_MARGIN_X = 0.015f;
-    private static final float LOOK_MARGIN_Y = 0.04f;
-    /** Width of the fade band past the margins, same unit, so sweeping the view across a waypoint
+    private static final float LOOK_MARGIN = 0.015f;
+    /** Width of the fade band past the margin, same unit, so sweeping the view across a waypoint
      *  eases it in and out instead of popping. */
-    private static final float LOOK_FADE_X = 0.03f;
-    private static final float LOOK_FADE_Y = 0.06f;
-    /** Margin multiplier for each lookAreaSize setting, 1 to 7; setting 2 is the base margins above (the default, 3, is 1.5x). */
-    private static final float[] LOOK_AREA_SCALE = {0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 5.0f};
+    private static final float LOOK_FADE = 0.03f;
+    /** Margin multiplier for each lookAreaSize setting, 1 to 4: 1 is the marker itself and nothing
+     *  more, 2 (the default) just a little around it, 3 and 4 a wider reach. */
+    private static final float[] LOOK_AREA_SCALE = {0.0f, 0.5f, 1.0f, 2.0f};
 
     /** Clip-space w below which a point is treated as on or behind the camera plane. */
     private static final float MIN_CLIP_W = 1.0e-4f;
@@ -125,6 +128,8 @@ public class WaypointRenderer {
         float screenX;
         float screenY;
         float markerHeight;
+        /** How much the player is looking at it, 0 to 1 - see computeLook. */
+        float look;
     }
 
     private static final List<WaypointHolder> activeWaypoints = new ArrayList<>();
@@ -257,11 +262,12 @@ public class WaypointRenderer {
         boolean showDistance = ModConfig.get().labelDisplay.showDistance;
         boolean useKm = !ModConfig.get().labelDisplay.metersOnly;
         int markerAlpha = (int) Math.round(255 * Mth.clamp(ModConfig.get().waypointSize.opacityPercent / 100.0, 0.0, 1.0));
-        ModConfig.LookFade lookCfg = ModConfig.get().lookFade;
+        ModConfig.LookFade lookCfg = ModConfig.get().lookAt;
         float unlookedOpacity = (float) Mth.clamp(lookCfg.unlookedOpacityPercent / 100.0, 0.0, 1.0);
         // Favorites fade less when not looked at - their own setting, not a multiplier on the above.
         float favoriteUnlookedOpacity = (float) Mth.clamp(ModConfig.get().favorites.unlookedOpacityPercent / 100.0, 0.0, 1.0);
         float lookAreaScale = LOOK_AREA_SCALE[Mth.clamp(lookCfg.lookAreaSize, 1, LOOK_AREA_SCALE.length) - 1];
+        computeLook(guiWidth, guiHeight, lookAreaScale);
 
         for (WaypointHolder holder : activeWaypoints) {
             Waypoint wp = holder.waypoint;
@@ -271,10 +277,8 @@ public class WaypointRenderer {
             LabelLayout label = labelLayout(holder, textWidth);
             // A focused (highlighted) waypoint is the one the player asked to follow, so it stays
             // fully opaque wherever it is on screen, for as long as it stays focused.
-            float opacity = wp.isFocused()
-                    ? 1.0f
-                    : lookOpacity(holder, label, textWidth, guiWidth, guiHeight,
-                            wp.isFavorite() ? favoriteUnlookedOpacity : unlookedOpacity, lookAreaScale);
+            float unlooked = wp.isFavorite() ? favoriteUnlookedOpacity : unlookedOpacity;
+            float opacity = wp.isFocused() ? 1.0f : unlooked + holder.look * (1.0f - unlooked);
 
             drawMarker(graphics, holder, (Math.round(markerAlpha * opacity) << 24) | (wp.getColor() & 0xFFFFFF));
             drawLabel(graphics, font, label, nameText, textWidth, opacity);
@@ -392,30 +396,45 @@ public class WaypointRenderer {
     }
 
     /**
-     * 1 while the crosshair (the screen centre) is on or near the waypoint's drawn area - marker
-     * and label backdrop together - easing down to {@code unlookedOpacity} as it moves away. See
-     * the LOOK_* constants.
+     * Sets every drawn waypoint's {@code look}, nearest first: a nearer waypoint whose area holds the
+     * crosshair takes it, and every farther one counts as not looked at - their areas may overlap
+     * the nearer one's, but the player is aiming at what is in front. Runs on the list after the
+     * visible limit, so only waypoints actually drawn can cover others.
      */
-    private static float lookOpacity(WaypointHolder holder, LabelLayout label, int textWidth,
-                                     int guiWidth, int guiHeight, float unlookedOpacity, float areaScale) {
+    private static void computeLook(int guiWidth, int guiHeight, float areaScale) {
+        boolean taken = false;
+        for (int i = activeWaypoints.size() - 1; i >= 0; i--) {
+            WaypointHolder holder = activeWaypoints.get(i);
+            holder.look = taken ? 0.0f : lookAmount(holder, guiWidth, guiHeight, areaScale);
+            if (holder.look >= 1.0f) {
+                taken = true;
+            }
+        }
+    }
+
+    /**
+     * 1 while the crosshair (the screen centre) is on the waypoint's marker or within the margin
+     * around it, easing down to 0 across the fade band past it. See the LOOK_* constants.
+     */
+    private static float lookAmount(WaypointHolder holder, int guiWidth, int guiHeight, float areaScale) {
         float markerHalfWidth = holder.markerHeight * MARKER_TEX_W / MARKER_TEX_H * 0.5f;
-        float left = Math.min(holder.screenX - markerHalfWidth, label.textX - label.glyph);
-        float right = Math.max(holder.screenX + markerHalfWidth, label.textX + textWidth * label.glyph);
-        float top = label.textY - label.glyph;
+        float left = holder.screenX - markerHalfWidth;
+        float right = holder.screenX + markerHalfWidth;
+        float top = holder.screenY - holder.markerHeight;
         float bottom = holder.screenY;
 
         float centreX = guiWidth * 0.5f;
         float centreY = guiHeight * 0.5f;
         // How far the crosshair is outside the rectangle on each axis, then outside the margin, in
-        // fade widths - so the fade band is an ellipse around the margin box, narrower sideways.
+        // fade widths - so the fade band is a rounded band around the margin box.
         float dx = Math.max(0.0f, Math.max(left - centreX, centreX - right)) / guiHeight;
         float dy = Math.max(0.0f, Math.max(top - centreY, centreY - bottom)) / guiHeight;
-        float fx = Math.max(0.0f, dx - LOOK_MARGIN_X * areaScale) / LOOK_FADE_X;
-        float fy = Math.max(0.0f, dy - LOOK_MARGIN_Y * areaScale) / LOOK_FADE_Y;
+        float fx = Math.max(0.0f, dx - LOOK_MARGIN * areaScale) / LOOK_FADE;
+        float fy = Math.max(0.0f, dy - LOOK_MARGIN * areaScale) / LOOK_FADE;
 
         float t = Mth.clamp((float) Math.sqrt(fx * fx + fy * fy), 0.0f, 1.0f);
         t = t * t * (3.0f - 2.0f * t); // smoothstep: no visible kink where the fade starts or ends
-        return 1.0f - t * (1.0f - unlookedOpacity);
+        return 1.0f - t;
     }
 
     /** {@code argb} with its alpha multiplied by {@code factor}. */

@@ -236,6 +236,29 @@ public final class WaypointStore {
         saveToFile();
     }
 
+    /**
+     * Removes {@code wp} for good, from anywhere but the list's own delete: a death reached or
+     * evicted, {@code /easywp remove}, a Xaero import. Ends a pending deletion it may have been
+     * waiting out (an Undo afterwards would bring back nothing), and bumps {@link #removalsVersion}
+     * so a list open meanwhile drops its row instead of offering buttons for a waypoint that is gone.
+     * Does not save; the caller does, once, after all its changes.
+     */
+    public static void remove(Waypoint wp) {
+        removeAll(List.of(wp));
+    }
+
+    /** {@link #remove} for several at once. */
+    public static void removeAll(List<Waypoint> gone) {
+        if (gone.isEmpty()) return;
+        for (Waypoint wp : gone) {
+            pendingRemovals.cancel(wp);
+            wp.setPendingRemoval(false);
+        }
+        if (waypoints.removeAll(gone)) {
+            removalsVersion++;
+        }
+    }
+
     /** Drops from the list every pending deletion whose time is up. Every client tick, in a world,
      *  so it happens with the list closed too. */
     public static void tickPendingRemovals() {
@@ -716,9 +739,11 @@ public final class WaypointStore {
         for (Waypoint existing : waypoints) {
             // One pending deletion is about to be gone: it must not keep its twin from being imported.
             if (existing == null || existing.isPendingRemoval()) continue;
+            // Dimensions compared as the rest of the mod reads them: a file old enough to have
+            // none is the Overworld, and must match one that names it.
             if (Objects.equals(existing.getName(), candidate.getName())
                     && existing.getPos().equals(candidate.getPos())
-                    && Objects.equals(existing.getDimension(), candidate.getDimension())) {
+                    && existing.dimensionOrOverworld().equals(candidate.dimensionOrOverworld())) {
                 return true;
             }
         }
@@ -852,7 +877,9 @@ public final class WaypointStore {
 
         public Waypoint toWaypoint() {
             Waypoint wp = new Waypoint(
-                name,
+                // A file edited by hand can leave a name out; everything that shows or matches a
+                // name expects one.
+                name != null ? name : "Waypoint",
                 new BlockPos(x, y, z),
                 color,
                 dimension,

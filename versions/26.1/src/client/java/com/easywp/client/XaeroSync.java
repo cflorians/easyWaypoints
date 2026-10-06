@@ -133,7 +133,7 @@ public final class XaeroSync {
                 doomed.add(wp);
             }
         }
-        WaypointStore.waypoints.removeAll(doomed);
+        WaypointStore.removeAll(doomed);
 
         if (added > 0 || !doomed.isEmpty()) {
             WaypointStore.saveToFile();

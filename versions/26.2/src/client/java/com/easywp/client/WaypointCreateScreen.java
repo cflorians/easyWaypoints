@@ -108,6 +108,8 @@ public class WaypointCreateScreen extends Screen {
     private int lastNameCursor = 0;
     /** Which page is showing: the main form, or "More options" (see {@link #initMorePage}). */
     private boolean morePage = false;
+    /** Focus the group field on the first {@link #setInitialFocus()} - see {@link #editGroups}. */
+    private boolean focusGroupField = false;
     /** Saved as {@code Waypoint.favorite}; toggled on the "More options" page. */
     private boolean favorite = false;
     /** Saved as {@code Waypoint.groups}; edited on the "More options" page. */
@@ -153,7 +155,10 @@ public class WaypointCreateScreen extends Screen {
         this.originalPos = pos != null ? pos : BlockPos.ZERO;
         this.editingWaypoint = null;
         this.returnScreen = returnScreen;
-        this.newDimension = dimension;
+        // Fixed now, not read when saving: the game keeps running behind this screen, and a portal
+        // crossed meanwhile would otherwise file the waypoint, with the coordinates it opened with,
+        // in the other dimension.
+        this.newDimension = dimension != null ? dimension : openingDimension();
         this.initialName = name;
 
         this.selectedColor = WaypointColors.random();
@@ -174,6 +179,21 @@ public class WaypointCreateScreen extends Screen {
         this.selectedColor = waypointToEdit.getColor();
         this.favorite = waypointToEdit.isFavorite();
         this.groups.addAll(waypointToEdit.getGroups());
+    }
+
+    /** Edits {@code waypoint} opened on its "More options" page with the group field focused, for a
+     *  new group asked for from the list's row menu. */
+    static WaypointCreateScreen editGroups(Waypoint waypoint, Screen returnScreen) {
+        WaypointCreateScreen screen = new WaypointCreateScreen(waypoint, returnScreen);
+        screen.morePage = true;
+        screen.focusGroupField = true;
+        return screen;
+    }
+
+    /** The player's dimension as the form opens - {@code this.minecraft} is not set yet then. */
+    private static String openingDimension() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.level != null ? mc.level.dimension().identifier().toString() : DimensionNames.OVERWORLD;
     }
 
     /** Back to the list it came from, or to the game - for save, cancel and Esc alike. */
@@ -732,7 +752,10 @@ public class WaypointCreateScreen extends Screen {
      */
     @Override
     protected void setInitialFocus() {
-        if (this.morePage) {
+        if (this.morePage && this.focusGroupField) {
+            this.focusGroupField = false;
+            this.setInitialFocus(this.groupField);
+        } else if (this.morePage) {
             // The name field is not on this page; focusing it would type into a hidden box.
             super.setInitialFocus();
         } else {
@@ -808,9 +831,12 @@ public class WaypointCreateScreen extends Screen {
                 : DimensionNames.OVERWORLD;
     }
 
-    /** Resolves the name that would actually be saved right now: the typed value, or the same fallback saveWaypoint() uses when it's empty. */
+    /** Resolves the name that would actually be saved right now: the typed value without surrounding
+     *  spaces, or the same fallback saveWaypoint() uses when that leaves nothing. Spaces kept at
+     *  either end made a name only of spaces look unnamed, and one with a trailing space impossible
+     *  to reach with {@code /easywp}, which trims what is typed. */
     private String resolveWaypointName() {
-        String name = this.nameField.getValue();
+        String name = this.nameField.getValue().strip();
         if (name.isEmpty()) {
             name = this.editingWaypoint != null ? this.editingWaypoint.getName() : this.defaultName;
         }
@@ -857,6 +883,12 @@ public class WaypointCreateScreen extends Screen {
             this.editingWaypoint.setFastPing(false);
             this.editingWaypoint.setFavorite(this.favorite);
             this.editingWaypoint.setGroups(groupsToSave());
+            // The game runs on behind this screen: the waypoint may have left the list meanwhile (a
+            // death waypoint reached while its form was open). The edit is what the player asked
+            // for, so it goes back in rather than being saved into a waypoint nothing holds.
+            if (!WaypointStore.waypoints.contains(this.editingWaypoint)) {
+                WaypointStore.waypoints.add(this.editingWaypoint);
+            }
 
             if (this.minecraft.player != null) {
                 // Gray is set as the component's own style instead of being left to the §7 in the

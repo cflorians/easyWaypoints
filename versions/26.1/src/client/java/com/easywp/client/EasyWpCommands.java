@@ -211,7 +211,7 @@ public final class EasyWpCommands {
     private static int remove(CommandContext<FabricClientCommandSource> ctx) {
         Waypoint wp = resolve(ctx);
         if (wp == null) return 0;
-        WaypointStore.waypoints.remove(wp);
+        WaypointStore.remove(wp);
         WaypointStore.saveToFile();
         ctx.getSource().sendFeedback(I18nHelper.getComponent("command.removed", wp.getName()));
         return 1;

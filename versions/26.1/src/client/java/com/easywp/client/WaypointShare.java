@@ -45,20 +45,29 @@ public final class WaypointShare {
      * <p>Plain text, no colour: vanilla strips the section sign from any chat message a player sends
      * before broadcasting it (a long-standing anti-spoofing measure), so no client mod can colour
      * another player's view of it.
+     *
+     * <p>Always something the server accepts: the name loses any character vanilla refuses in chat
+     * (a section sign, a control character - which only an imported name can carry), and is cut
+     * short if the line would pass {@code maxLength}. Either would otherwise get the player
+     * disconnected instead of the message sent. {@code null} only if not even a one-letter name fits.
      */
-    public static String chatLine(Waypoint wp) {
+    public static String chatLine(Waypoint wp, int maxLength) {
         BlockPos pos = wp.getPos();
+        String name = WaypointShareFormat.chatSafe(wp.getName()).strip();
+        if (name.isEmpty()) {
+            name = "Waypoint";
+        }
         if (ModConfig.get().xaeroIntegration.xaeroChatFormat) {
             // The set name is irrelevant to chatShareLine (the chat format carries no set field at
             // all - see its javadoc) but the convenience constructor requires one.
-            XaeroWaypointFormat.XaeroWaypoint xwp = new XaeroWaypointFormat.XaeroWaypoint(
-                    wp.getName(), pos.getX(), pos.getY(), pos.getZ(),
-                    XaeroWaypointFormat.nearestColorOrdinal(wp.getColor()),
-                    XaeroWaypointFormat.DEFAULT_SET_NAME
-            );
-            return XaeroWaypointFormat.chatShareLine(xwp);
+            int colorOrdinal = XaeroWaypointFormat.nearestColorOrdinal(wp.getColor());
+            return WaypointShareFormat.fitLine(name, maxLength, n -> XaeroWaypointFormat.chatShareLine(
+                    new XaeroWaypointFormat.XaeroWaypoint(n, pos.getX(), pos.getY(), pos.getZ(),
+                            colorOrdinal, XaeroWaypointFormat.DEFAULT_SET_NAME)));
         }
-        return plainLine(wp);
+        String dimension = wp.dimensionOrOverworld();
+        return WaypointShareFormat.fitLine(name, maxLength,
+                n -> WaypointShareFormat.format(n, dimension, pos.getX(), pos.getY(), pos.getZ()));
     }
 
     /** Always {@link WaypointShareFormat}'s line, whatever the chat setting - what is copied. */
@@ -71,7 +80,8 @@ public final class WaypointShare {
      *  send it on */
     public static boolean send(Minecraft client, Waypoint wp) {
         if (client.player == null || client.player.connection == null) return false;
-        String line = chatLine(wp);
+        String line = chatLine(wp, WaypointShareFormat.CHAT_MAX_LENGTH);
+        if (line == null) return false;
         remember(line);
         client.player.connection.sendChat(line);
         return true;
@@ -80,9 +90,11 @@ public final class WaypointShare {
     /** Sends {@link #chatLine} to one player with vanilla's {@code /msg}, which every server has. */
     public static boolean sendPrivate(Minecraft client, Waypoint wp, String playerName) {
         if (client.player == null || client.player.connection == null) return false;
-        String line = chatLine(wp);
+        String command = "msg " + playerName + " ";
+        String line = chatLine(wp, WaypointShareFormat.CHAT_MAX_LENGTH - command.length());
+        if (line == null) return false;
         remember(line);
-        client.player.connection.sendCommand("msg " + playerName + " " + line);
+        client.player.connection.sendCommand(command + line);
         return true;
     }
 
@@ -110,7 +122,11 @@ public final class WaypointShare {
         Collection<PlayerInfo> online = connection.getOnlinePlayers();
         for (PlayerInfo info : online) {
             if (info.getProfile().id().equals(client.player.getUUID())) continue;
-            names.add(info.getProfile().name());
+            String name = info.getProfile().name();
+            // Tab-list decorations some server plugins add as fake entries often have blank or
+            // spaced names; no /msg can reach those.
+            if (name == null || name.isBlank() || name.contains(" ")) continue;
+            names.add(name);
         }
         names.sort(String.CASE_INSENSITIVE_ORDER);
         return names;

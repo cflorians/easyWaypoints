@@ -23,12 +23,15 @@ public class ModConfig {
     public DeathWaypoints deathWaypoints = new DeathWaypoints();
     public WaypointSize waypointSize = new WaypointSize();
     public LabelDisplay labelDisplay = new LabelDisplay();
-    public Confirmations confirmations = new Confirmations();
     public Visibility visibility = new Visibility();
     public Ping ping = new Ping();
     public ListOptions list = new ListOptions();
     public XaeroIntegration xaeroIntegration = new XaeroIntegration();
-    public LookFade lookFade = new LookFade();
+    /** Saved as {@code lookAt} since 1.4.0-beta.2, when the look area went from seven sizes to four
+     *  with a different meaning: the old {@code lookFade} group of a config.json is left unread, so
+     *  every config starts on the new defaults instead of keeping a size that now means something
+     *  else. Gson ignores the old key, and it disappears with the next save. */
+    public LookFade lookAt = new LookFade();
     public Favorites favorites = new Favorites();
     public Onboarding onboarding = new Onboarding();
 
@@ -57,19 +60,20 @@ public class ModConfig {
      */
     public static class LookFade {
         /** Opacity, 0-100, of a waypoint the player is not looking at. 100 turns the fade off. */
-        public double unlookedOpacityPercent = 60.0;
-        /** Size of the "looking at it" area around each waypoint, 1-7: 1 smallest, 7 largest. */
-        public int lookAreaSize = 3;
+        public double unlookedOpacityPercent = 50.0;
+        /** Size of the "looking at it" area, 1-4: 1 the marker alone, 2 marker and name, 3 and 4 a
+         *  growing margin past the name. See WaypointRenderer.LOOK_AREA_SCALE. */
+        public int lookAreaSize = 2;
     }
 
     /**
      * How favorite waypoints are drawn. A group of its own for the same reason as LookFade: the
-     * default is not Gson's zero, and inside lookFade a config.json from before it would read 0% -
+     * default is not Gson's zero, and inside lookAt a config.json from before it would read 0% -
      * every favorite would vanish whenever it was not looked at.
      */
     public static class Favorites {
         /** Opacity, 0-100, of a favorite the player is not looking at, in place of
-         *  {@code lookFade.unlookedOpacityPercent}; between that one's default (60) and no fade. */
+         *  {@code lookAt.unlookedOpacityPercent}; between that one's default (50) and no fade. */
         public double unlookedOpacityPercent = 80.0;
     }
 
@@ -92,13 +96,6 @@ public class ModConfig {
          *  round so that Gson's {@code false}, which a config.json from before the setting reads
          *  as, is the default: kilometres on. */
         public boolean metersOnly = false;
-    }
-
-    public static class Confirmations {
-        /** Shows the "Are you sure?" dialog before deleting a waypoint when true. Off by default
-         *  since 1.4.0, when a list deletion became undoable for a few seconds; a config.json that
-         *  already has the key keeps whatever it saved. */
-        public boolean confirmBeforeDelete = false;
     }
 
     public static class Visibility {
@@ -202,9 +199,6 @@ public class ModConfig {
         if (loaded.labelDisplay == null) {
             loaded.labelDisplay = new LabelDisplay();
         }
-        if (loaded.confirmations == null) {
-            loaded.confirmations = new Confirmations();
-        }
         if (loaded.visibility == null) {
             loaded.visibility = new Visibility();
         }
@@ -217,8 +211,8 @@ public class ModConfig {
         if (loaded.xaeroIntegration == null) {
             loaded.xaeroIntegration = new XaeroIntegration();
         }
-        if (loaded.lookFade == null) {
-            loaded.lookFade = new LookFade();
+        if (loaded.lookAt == null) {
+            loaded.lookAt = new LookFade();
         }
         if (loaded.favorites == null) {
             loaded.favorites = new Favorites();

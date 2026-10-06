@@ -120,4 +120,42 @@ class WaypointShareFormatTest {
         assertNull(WaypointShareFormat.findIn("<Steve> hola a todos"));
         assertNull(WaypointShareFormat.findIn("<Steve> vamos >>> ahora"));
     }
+
+    @Test
+    void chatSafeDropsWhatVanillaRefusesInChat() {
+        assertEquals("cBase roja", WaypointShareFormat.chatSafe("§cBase roja"));
+        assertEquals("ab", WaypointShareFormat.chatSafe("a\tb\n"));
+        assertEquals("ab", WaypointShareFormat.chatSafe("a\u007Fb"));
+        assertEquals("Mina ñandú 😀", WaypointShareFormat.chatSafe("Mina ñandú 😀"));
+        assertEquals("", WaypointShareFormat.chatSafe(null));
+    }
+
+    @Test
+    void fitLineCutsOnlyTheNameAndStillParses() {
+        String line = WaypointShareFormat.fitLine("x".repeat(300), WaypointShareFormat.CHAT_MAX_LENGTH,
+                n -> WaypointShareFormat.format(n, NETHER, 12, 64, -30));
+        assertEquals(WaypointShareFormat.CHAT_MAX_LENGTH, line.length());
+        WaypointShareFormat.Shared shared = WaypointShareFormat.parse(line);
+        assertEquals(NETHER, shared.dimension());
+        assertEquals(-30, shared.z());
+        assertEquals(line.length() - " >>> Nether 12 64 -30".length(), shared.name().length());
+    }
+
+    @Test
+    void fitLineLeavesAFittingLineAlone() {
+        assertEquals("Casa >>> Nether 1 2 3", WaypointShareFormat.fitLine("Casa", 256,
+                n -> WaypointShareFormat.format(n, NETHER, 1, 2, 3)));
+    }
+
+    @Test
+    void fitLineNeverSplitsACharacter() {
+        String line = WaypointShareFormat.fitLine("😀".repeat(200), 100, n -> n + "|");
+        assertEquals(true, line.length() <= 100);
+        assertEquals(false, Character.isHighSurrogate(line.charAt(line.length() - 2)));
+    }
+
+    @Test
+    void fitLineGivesUpWhenNothingFits() {
+        assertNull(WaypointShareFormat.fitLine("Casa", 5, n -> n + " >>> Nether 1 2 3"));
+    }
 }

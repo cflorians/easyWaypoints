@@ -42,7 +42,13 @@ sección siguiente), probado en el juego y confirmado: desde aquí cada entrega 
 `beta.1` (congelado de funciones, revisión de idiomas y de `CLAUDE.md`, ver "Beta 1" más abajo)
 probada por el usuario el 2026-10-05 (commit `v1.4.0-beta.1`); sus correcciones van en la `beta.2`.
 
-**Versión en `gradle.properties`:** `mod_version=1.4.0-beta.1` (la 1.3.5 nunca se publicará). Se
+`beta.2` (las correcciones de la beta 1, la revisión de código y el área de mirada solo del
+marcador, ver "Beta 2" más abajo) confirmada por el usuario el 2026-10-06 (commit `v1.4.0-beta.2`).
+
+**Siguiente paso:** publicación de la beta (la hace el usuario) o, si hace falta, otra ronda de
+correcciones antes de la `1.4.0`.
+
+**Versión en `gradle.properties`:** `mod_version=1.4.0-beta.2` (la 1.3.5 nunca se publicará). Se
 cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los jars salen como
 `easywp-1.4.0-alpha.1+26.1.x.jar` hasta la alpha.4; desde la alpha.5 son dos:
 `easywp-<versión>+26.1-26.2.jar` (Minecraft 26.1.x y 26.2) y `easywp-<versión>+26.3.jar`.
@@ -932,6 +938,82 @@ Todas sin cambio visible para el jugador (regla 1).
 (`build.gradle`, `fabric.mod.json`, Java 25), `ModMenuIntegration` como compartido y las versiones
 de Xaero/xaerolib de 26.3.
 
+### Beta 2
+
+Correcciones pedidas por el usuario tras probar la beta 1 (2026-10-05). Todas HECHO en beta.2,
+pendientes de probar.
+
+**Lista de waypoints**
+- **L1 — "Añadir a un grupo" en el `⋯` de la fila.** Entrada nueva tras "Favorito", que cambia el
+  mismo menú a una página de grupos: "‹ Volver", cada grupo del mundo con una marca en los que ya
+  tiene (clic lo añade o lo quita y el menú sigue abierto) y "Nuevo grupo...", que abre el
+  formulario de ese waypoint en "Más opciones" con el campo de grupo enfocado. **Decisión nueva:**
+  un grupo nuevo se escribe en el formulario, no en el menú (el menú no tiene campo de texto); un
+  grupo que ya no cabe (4 por waypoint) sale gris, y con 4 grupos "Nuevo grupo..." se cambia por
+  "Máximo 4 grupos".
+- **L2 — Parpadeo al volver del formulario a la lista.** Causa: `ClientCompat.setScreen` usaba
+  `Minecraft.setScreenAndShow`, que tras cambiar de pantalla dibuja un frame en el acto sin avanzar
+  el tiempo de juego, desde dentro del clic. Ahora usa el `setScreen` normal: `Minecraft.setScreen`
+  en 26.1 y `Gui.setScreen` desde 26.2 (26.2 lo movió; el jar único lo busca por nombre al
+  arrancar, como los demás renombres). Afecta a **todos** los cambios de pantalla del mod.
+
+**Configuración**
+- **C1 — Parpadeo al pulsar "Reiniciar".** Misma causa que L2: cada reset reabre la pantalla.
+- **C2 — Sin confirmación al borrar.** Quitada la opción y el diálogo; el grupo `confirmations` de
+  `config.json` se ignora. Claves quitadas: `config.confirm_delete_toggle`,
+  `menu.confirm_delete_title`, `menu.confirm_delete_text`.
+- **C3 — "Apariencia" pasa a "Apariencia del waypoint"** ("Waypoint Appearance") y queda más cerca
+  del botón de importar: 6 px encima en vez de los 18 de vanilla (una subclase de `OptionsList`
+  con su propia cabecera; las demás secciones mantienen el espacio de vanilla). Primera prueba: el
+  texto quedaba casi pegado a los controles de debajo; se añadieron 6 px debajo del texto para
+  igualar el hueco de las demás cabeceras.
+- **C4 — Área de mirada de 1 a 4, por defecto 2.** 1 = solo el marcador (sin la etiqueta y sin
+  margen); 2 = marcador y nombre con poco margen; 3 = el margen del antiguo valor por defecto;
+  4 = bastante más allá del nombre. Con tooltip.
+- **C4b — Segunda ronda (2026-10-06), pedida tras probar:** el área depende **solo del marcador**,
+  nunca del nombre (un nombre largo daba un área mayor); escala del margen 0 / 0,5 / 1 / 2 (el 2
+  queda justo alrededor del marcador, cerca del 1); margen y atenuación iguales en ambos ejes
+  (1,5 % y 3 % de la altura de pantalla). **El más cercano tapa a los de detrás:** mientras la mira
+  está en el área de un waypoint, los más lejanos cuentan como no mirados aunque sus áreas se
+  solapen; uno lejano que asoma por un lado se ilumina solo en la parte que el cercano no cubre.
+  Tooltip actualizado.
+- **C5 — Opacidad sin mirar por defecto 50 %** (antes 60).
+- **Decisión nueva (C4 y C5):** el grupo de `config.json` pasa de `lookFade` a `lookAt`, para que
+  **todas** las configuraciones tomen los nuevos valores por defecto: si no, un `config.json`
+  existente conservaría su área 3 (que ahora significa otra cosa) y su 60 % (regla 4). El precio:
+  quien había cambiado la opacidad sin mirar la vuelve a tener en 50 %.
+- **C6 — "Tiempo" de los waypoints de muerte** pasa a "Tiempo en el radio: N s" ("Time in Radius"),
+  con un tooltip que explica que es lo que hay que quedarse dentro del radio para que se borre.
+- **C7 — "Máx. visibles" pasa a "Comportamiento".**
+
+**Revisión de código (2026-10-06)** · HECHO en beta.2, pendiente de probar. Revisión de todo lo
+cambiado desde la 1.3.4; arreglados:
+- **R1 — Compartir ya no puede desconectar al jugador.** Un nombre importado con `§` o caracteres
+  de control, o una línea de más de 256, hacía que el servidor echara al jugador. Ahora el nombre se
+  limpia (`WaypointShareFormat.chatSafe`) y se recorta (`fitLine`) en el chat, en privado y en el
+  formato de Xaero. Con tests en `common/` (4 roturas deliberadas detectadas).
+- **R2 — Una edición ya no se pierde** si el waypoint sale de la lista con el formulario abierto
+  (un waypoint de muerte alcanzado): al guardar vuelve a la lista.
+- **R3 — Nombres con espacios:** se guardan sin espacios al principio y al final; uno solo de
+  espacios cuenta como vacío (nombre por defecto, o el que tenía al editar).
+- **R4 — Muertes y deshacer:** el gestor de muertes ignora los waypoints pendientes de borrar, y todo
+  borrado hecho fuera de la lista (muerte, `/easywp remove`, importar de Xaero) usa
+  `WaypointStore.remove`, que cancela el deshacer de ese waypoint y avisa a la lista abierta.
+- **R5 — Importar de otro mundo** compara la dimensión como `dimensionOrOverworld()`: un archivo
+  muy viejo sin dimensión ya no duplica lo que tiene el Overworld.
+- **R6 — Un nombre ausente** en un archivo editado a mano se carga como `Waypoint` en vez de colgar
+  la lista y `/easywp list`.
+- **R7 — La dimensión de un waypoint nuevo se fija al abrir el formulario**: cruzar un portal con
+  él abierto ya no lo guarda en la otra dimensión con las coordenadas de esta.
+- **R8 — "Enviar en privado"** no ofrece entradas de la lista de jugadores con nombre vacío o con
+  espacios (decoraciones de plugins).
+- **Decisión nueva — no arreglado:** Enter con el foco en un botón (p. ej. Cancelar) sigue
+  guardando. Dejar que Enter pulse el botón enfocado haría que, tras elegir un color con el ratón
+  (que enfoca la muestra), Enter eligiera ese color en vez de guardar.
+
+- Claves nuevas: `config.grace_tooltip`, `config.look_area_tooltip`, `list.group_menu`,
+  `list.group_back`, `list.group_new`. Cambiadas: `config.section.appearance`, `config.grace_row`.
+
 ### Descartado para 1.4.0
 
 - **Ocultar etiquetas** de los waypoints que no se miran o más allá de cierta distancia: la
@@ -1053,6 +1135,22 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
 - F13 — Al entrar al primer mundo tras actualizar, a los 2 s sale en el chat el mensaje de
   bienvenida con la tecla de la configuración y las novedades; al salir y volver a entrar, ya no
   sale. Con la tecla de la lista reasignada, el mensaje muestra la nueva.
+
+**beta.2**
+- L1 — `⋯` de una fila → "Añadir a un grupo...": marcar y desmarcar grupos sin salir de la lista;
+  "Nuevo grupo..." abre el formulario en "Más opciones" con el campo de grupo listo para escribir.
+- L2/C1 — Guardar en el formulario abierto desde la lista vuelve sin parpadeo; "Reiniciar" en la
+  configuración, tampoco.
+- C2 — Borrar desde la lista nunca pide confirmación; la opción ya no está en la configuración.
+- C4 — Área de mirada en 1: el waypoint solo se aclara al apuntar al marcador, no al nombre; en 2,
+  un poco alrededor del marcador. Un nombre largo no agranda el área.
+- C4b — Dos waypoints en línea, el lejano asomando por un lado del cercano: apuntando al cercano se
+  ilumina solo él; apuntando a la parte del lejano que asoma, solo el lejano.
+- R1 — Compartir un waypoint importado con `§` en el nombre o con un nombre larguísimo: el mensaje
+  sale (limpio o recortado) y el jugador no es desconectado.
+- R2 — Editar un waypoint de muerte estando en su radio: tras guardar sigue en la lista, renombrado.
+- R3 — Guardar un nombre de solo espacios da el nombre por defecto.
+- R4 — Borrar un waypoint de muerte desde la lista y morir antes de 7 s: "Deshacer" lo devuelve.
 
 **Jar único 26.1+26.2** (desde la alpha.5, se repasa en cada entrega)
 - Jar `+26.1-26.2` en 26.1 y en 26.2: abrir y cerrar lista, formulario y configuración; mensaje
