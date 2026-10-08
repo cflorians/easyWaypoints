@@ -87,6 +87,17 @@ final class PopupMenu {
         return this.height;
     }
 
+    /**
+     * Where the last item's row is drawn - {@code {x, y, width}}, {@link #ITEM_H} tall - or
+     * {@code null} while it is scrolled out. For an owner that puts a text field over that row.
+     */
+    int[] lastRowBounds() {
+        int row = this.items.size() - 1 - this.scroll;
+        if (row < 0 || row >= this.visibleCount) return null;
+        boolean scrolls = this.items.size() > this.visibleCount;
+        return new int[] {this.x + PAD, this.y + PAD + row * ITEM_H, this.width - PAD * 2 - (scrolls ? 4 : 0)};
+    }
+
     /** The scroll offset as clamped here - what the owner should keep for the next frame. */
     int getScroll() {
         return this.scroll;

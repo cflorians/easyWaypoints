@@ -158,5 +158,6 @@
   "easywp.config.look_area_tooltip": "How close to a waypoint's marker you have to aim for it to stop fading: 1 is the marker alone, 4 a wide area around it",
   "easywp.list.group_menu": "Add to a group...",
   "easywp.list.group_back": "‹ Back",
+  "easywp.list.group_new_hint": "Group name...",
   "easywp.list.group_new": "New group..."
 }

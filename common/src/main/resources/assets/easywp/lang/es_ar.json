@@ -158,5 +158,6 @@
   "easywp.config.look_area_tooltip": "Qué tan cerca del marcador de un waypoint tienes que apuntar para que deje de atenuarse: 1 es solo el marcador, 4 un área amplia a su alrededor",
   "easywp.list.group_menu": "Añadir a un grupo...",
   "easywp.list.group_back": "‹ Volver",
+  "easywp.list.group_new_hint": "Nombre del grupo...",
   "easywp.list.group_new": "Nuevo grupo..."
 }

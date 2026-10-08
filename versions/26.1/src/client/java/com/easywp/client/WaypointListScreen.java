@@ -54,6 +54,13 @@ public class WaypointListScreen extends Screen {
      */
     private Waypoint optionsFor = null;
 
+    /** Whether the groups page's last row is the field for typing a new group's name. See
+     *  {@link #typingGroup()}. */
+    private boolean newGroupTyping = false;
+    /** The field behind that row: a widget of this screen (so it takes keys and focus), drawn by hand
+     *  over the menu's row in {@link #extractRenderState}, since the menu is drawn above the widgets. */
+    private EditBox newGroupField;
+
     /** Whether that menu shows its groups page (see {@link #groupItemsFor}) instead of its main one. */
     private boolean optionsGroupsPage = false;
 
@@ -378,6 +385,15 @@ public class WaypointListScreen extends Screen {
 
         this.addRenderableWidget(this.searchField);
 
+        if (this.newGroupField == null) {
+            this.newGroupField = new EditBox(this.font, -1000, -1000, 100, PopupMenu.ITEM_H,
+                    I18nHelper.getComponent("list.group_new"));
+            this.newGroupField.setMaxLength(WaypointGroups.MAX_NAME_LENGTH);
+            this.newGroupField.setHint(I18nHelper.getComponent("list.group_new_hint").withStyle(ChatFormatting.DARK_GRAY));
+        }
+        // Not renderable: drawn over the menu's row, after the menu. Only a child, to get the keys.
+        this.addWidget(this.newGroupField);
+
         this.addRenderableWidget(
             ModernButton.modernBuilder(Component.literal(""), btn -> {
                 ClientCompat.setScreen(this.minecraft, new ModConfigScreen(this));
@@ -470,6 +486,9 @@ public class WaypointListScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
+        if (!typingGroup() && this.getFocused() == this.newGroupField) {
+            this.setFocused(null);
+        }
         if (this.seenRemovalsVersion != WaypointStore.removalsVersion()) {
             refreshItemWidgets();
         }
@@ -863,6 +882,7 @@ public class WaypointListScreen extends Screen {
 
         items.add(PopupMenu.Item.of(I18nHelper.getComponent("list.group_menu"), () -> {
             this.optionsGroupsPage = true;
+            this.newGroupTyping = false;
             this.menuScroll = 0;
         }));
 
@@ -893,6 +913,7 @@ public class WaypointListScreen extends Screen {
         List<PopupMenu.Item> items = new ArrayList<>();
         items.add(PopupMenu.Item.of(I18nHelper.getComponent("list.group_back"), () -> {
             this.optionsGroupsPage = false;
+            stopTypingGroup();
             this.menuScroll = 0;
         }));
         for (String group : WaypointStore.allGroups()) {
@@ -918,13 +939,46 @@ public class WaypointListScreen extends Screen {
         if (wp.getGroups().size() >= WaypointGroups.MAX_PER_WAYPOINT) {
             items.add(PopupMenu.Item.disabled(I18nHelper.getComponent("create.group_full",
                     String.valueOf(WaypointGroups.MAX_PER_WAYPOINT))));
+        } else if (typingGroup()) {
+            // The row the field is drawn over; nothing to read or click in the menu itself.
+            items.add(PopupMenu.Item.disabled(Component.empty()));
         } else {
             items.add(PopupMenu.Item.of(I18nHelper.getComponent("list.group_new"), () -> {
-                closeMenus();
-                ClientCompat.setScreen(this.minecraft, WaypointCreateScreen.editGroups(wp, this));
+                this.newGroupTyping = true;
+                this.newGroupField.setValue("");
+                this.menuScroll = Integer.MAX_VALUE; // clamped to the end, where the field is
+                this.setFocused(this.newGroupField);
             }));
         }
         return items;
+    }
+
+    /** Whether the groups page is asking for a new group's name. */
+    private boolean typingGroup() {
+        return this.newGroupTyping && this.optionsGroupsPage && this.optionsFor != null;
+    }
+
+    private void stopTypingGroup() {
+        this.newGroupTyping = false;
+        if (this.getFocused() == this.newGroupField) {
+            this.setFocused(null);
+        }
+    }
+
+    /** Enter in the field: the typed group goes onto the waypoint (an existing one differing only in
+     *  case is reused), and the page shows it ticked. Blank text keeps the field open. */
+    private void submitNewGroup() {
+        String name = WaypointGroups.resolve(WaypointStore.allGroups(), this.newGroupField.getValue());
+        if (name == null) return;
+        Waypoint wp = this.optionsFor;
+        if (WaypointGroups.canAdd(wp.getGroups(), name)) {
+            List<String> groups = new ArrayList<>(wp.getGroups());
+            groups.add(name);
+            wp.setGroups(groups);
+            WaypointStore.saveToFile();
+            refreshItemWidgets();
+        }
+        stopTypingGroup();
     }
 
     /**
@@ -988,7 +1042,7 @@ public class WaypointListScreen extends Screen {
 
         int itemY = this.height / 2 - 60 + row * 22;
         PopupMenu menu = this.optionsGroupsPage
-                ? new PopupMenu(this.font, groupItemsFor(this.optionsFor), this.menuScroll, 8, 0, MODAL_WIDTH - 2)
+                ? new PopupMenu(this.font, groupItemsFor(this.optionsFor), this.menuScroll, 8, 120, MODAL_WIDTH - 2)
                 : new PopupMenu(this.font, menuItems(this.optionsFor), 0, 8, 0, MODAL_WIDTH - 2);
         this.menuScroll = menu.getScroll();
         return menu.placeAt(this.width / 2 + 138 - menu.getWidth(), itemY,
@@ -997,6 +1051,7 @@ public class WaypointListScreen extends Screen {
 
     /** Closes whichever menu is open. */
     private void closeMenus() {
+        stopTypingGroup();
         this.optionsFor = null;
         this.optionsGroupsPage = false;
         this.groupMenuOpen = false;
@@ -1079,6 +1134,11 @@ public class WaypointListScreen extends Screen {
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         // An open menu takes every click: an item runs (if enabled), anywhere else just closes it,
         // so a click meant to dismiss the menu can never land on a delete button beneath it.
+        if (typingGroup() && this.newGroupField.isMouseOver(event.x(), event.y())) {
+            this.setFocused(this.newGroupField);
+            this.newGroupField.mouseClicked(event, doubleClick);
+            return true;
+        }
         PopupMenu menu = openMenu();
         if (menu != null) {
             if (!menu.click(event.x(), event.y(), event.button())) {
@@ -1228,6 +1288,16 @@ public class WaypointListScreen extends Screen {
         if (menu != null) {
             menu.draw(graphics, this.font, mouseX, mouseY);
         }
+        // The new group's name field, over the last row of the groups page.
+        int[] row = typingGroup() && menu != null ? menu.lastRowBounds() : null;
+        if (row == null) {
+            this.newGroupField.setPosition(-1000, -1000);
+        } else {
+            this.newGroupField.setPosition(row[0], row[1]);
+            this.newGroupField.setWidth(row[2]);
+            graphics.nextStratum();
+            this.newGroupField.extractRenderState(graphics, mouseX, mouseY, a);
+        }
     }
 
     /**
@@ -1237,6 +1307,11 @@ public class WaypointListScreen extends Screen {
      */
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if (typingGroup() && this.getFocused() == this.newGroupField
+                && (event.key() == ClientCompat.KEY_ENTER || event.key() == ClientCompat.KEY_KP_ENTER)) {
+            submitNewGroup();
+            return true;
+        }
         // Esc closes an open menu first, and only a second Esc the list.
         if ((this.optionsFor != null || this.groupMenuOpen) && event.isEscape()) {
             closeMenus();

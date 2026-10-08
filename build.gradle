@@ -357,3 +357,31 @@ subprojects {
 		}
 	}
 }
+
+// The newest publishable jar of every version, in one folder at the repository root (latest/), so
+// they can be picked up without walking into each versions/<x>/build/libs. A Sync, so what a
+// previous build left there is removed: the folder only ever holds the jars of the last build.
+// verification_only subprojects (26.2) are left out - their jar is the 26.1 one, built against 26.2.
+def publishedProjects = {
+	// Only the real version subprojects: ':versions' itself is just a folder, with no jar.
+	subprojects.findAll { it.findProperty('verification_only') != 'true' && it.findProperty('minecraft_version') != null }
+}
+def publishedArchive = { Project p -> p.tasks.findByName('remapJar') ?: p.tasks.getByName('jar') }
+
+tasks.register('collectLatestJars', Sync) {
+	group = 'build'
+	description = 'Copies the last built jar of every published version into latest/'
+	into layout.projectDirectory.dir('latest')
+	dependsOn { publishedProjects().collect { publishedArchive(it) } }
+	from { publishedProjects().collect { publishedArchive(it).archiveFile } }
+}
+
+subprojects {
+	plugins.withId('java') {
+		if (project.findProperty('verification_only') != 'true') {
+			tasks.named('build').configure {
+				finalizedBy rootProject.tasks.named('collectLatestJars')
+			}
+		}
+	}
+}

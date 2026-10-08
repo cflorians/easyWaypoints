@@ -108,8 +108,6 @@ public class WaypointCreateScreen extends Screen {
     private int lastNameCursor = 0;
     /** Which page is showing: the main form, or "More options" (see {@link #initMorePage}). */
     private boolean morePage = false;
-    /** Focus the group field on the first {@link #setInitialFocus()} - see {@link #editGroups}. */
-    private boolean focusGroupField = false;
     /** Saved as {@code Waypoint.favorite}; toggled on the "More options" page. */
     private boolean favorite = false;
     /** Saved as {@code Waypoint.groups}; edited on the "More options" page. */
@@ -179,15 +177,6 @@ public class WaypointCreateScreen extends Screen {
         this.selectedColor = waypointToEdit.getColor();
         this.favorite = waypointToEdit.isFavorite();
         this.groups.addAll(waypointToEdit.getGroups());
-    }
-
-    /** Edits {@code waypoint} opened on its "More options" page with the group field focused, for a
-     *  new group asked for from the list's row menu. */
-    static WaypointCreateScreen editGroups(Waypoint waypoint, Screen returnScreen) {
-        WaypointCreateScreen screen = new WaypointCreateScreen(waypoint, returnScreen);
-        screen.morePage = true;
-        screen.focusGroupField = true;
-        return screen;
     }
 
     /** The player's dimension as the form opens - {@code this.minecraft} is not set yet then. */
@@ -752,10 +741,7 @@ public class WaypointCreateScreen extends Screen {
      */
     @Override
     protected void setInitialFocus() {
-        if (this.morePage && this.focusGroupField) {
-            this.focusGroupField = false;
-            this.setInitialFocus(this.groupField);
-        } else if (this.morePage) {
+        if (this.morePage) {
             // The name field is not on this page; focusing it would type into a hidden box.
             super.setInitialFocus();
         } else {

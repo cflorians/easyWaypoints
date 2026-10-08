@@ -39,3 +39,6 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+
+# last built jars of every version (see collectLatestJars)
+latest/

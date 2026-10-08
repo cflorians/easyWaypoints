@@ -76,7 +76,7 @@ de 26.1 y 26.2, rechazo de cada jar en la versión que no le toca, 26.3 igual qu
   del jar publicado contra las clases reales de 26.1 y de 26.2: toma la rama correcta en cada una
   y resuelve todo lo que necesita.
 - **Declaraciones corregidas:** el rango de Minecraft de `fabric.mod.json` sale de
-  `gradle.properties`: `>=26.1 <26.3-` para el jar común y `~26.3` para el de 26.3. Antes los jars
+  `gradle.properties`: `~26.1 || ~26.2` para el jar común (antes `>=26.1 <26.3-`, que Modrinth no leía) y `~26.3` para el de 26.3. Antes los jars
   de 26.2 y 26.3 declaraban `>=26.2`/`>=26.3`, y Fabric dejaba cargarlos en una versión posterior
   donde fallarían.
 - **Qué cambia al publicar:** dos archivos por entrega en vez de tres. En Modrinth y CurseForge,
@@ -977,6 +977,9 @@ pendientes de probar.
   está en el área de un waypoint, los más lejanos cuentan como no mirados aunque sus áreas se
   solapen; uno lejano que asoma por un lado se ilumina solo en la parte que el cercano no cubre.
   Tooltip actualizado.
+- **L1b — "Nuevo grupo..." sin salir del menú (2026-10-08):** la fila se convierte en un campo de
+  texto dentro del propio menú; Enter aplica el grupo y lo deja marcado, Esc o un clic fuera lo
+  cancelan. Ya no abre el formulario. Clave nueva: `list.group_new_hint`.
 - **C5 — Opacidad sin mirar por defecto 50 %** (antes 60).
 - **Decisión nueva (C4 y C5):** el grupo de `config.json` pasa de `lookFade` a `lookAt`, para que
   **todas** las configuraciones tomen los nuevos valores por defecto: si no, un `config.json`
@@ -1142,6 +1145,9 @@ funcionando. Crece con cada alpha; en las betas se repasa entera, en 26.1, 26.2 
 - L2/C1 — Guardar en el formulario abierto desde la lista vuelve sin parpadeo; "Reiniciar" en la
   configuración, tampoco.
 - C2 — Borrar desde la lista nunca pide confirmación; la opción ya no está en la configuración.
+- L1b — `⋯` → "Añadir a un grupo..." → "Nuevo grupo...": la fila pasa a ser un campo; escribir un
+  nombre y Enter lo añade y lo marca, sin salir de la lista. Esc cancela. Con una "j" escrita en el
+  campo no se cierra la lista.
 - C4 — Área de mirada en 1: el waypoint solo se aclara al apuntar al marcador, no al nombre; en 2,
   un poco alrededor del marcador. Un nombre largo no agranda el área.
 - C4b — Dos waypoints en línea, el lejano asomando por un lado del cercano: apuntando al cercano se
