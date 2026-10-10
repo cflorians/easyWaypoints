@@ -76,7 +76,7 @@ de 26.1 y 26.2, rechazo de cada jar en la versión que no le toca, 26.3 igual qu
   del jar publicado contra las clases reales de 26.1 y de 26.2: toma la rama correcta en cada una
   y resuelve todo lo que necesita.
 - **Declaraciones corregidas:** el rango de Minecraft de `fabric.mod.json` sale de
-  `gradle.properties`: `~26.1 || ~26.2` para el jar común (antes `>=26.1 <26.3-`, que Modrinth no leía) y `~26.3` para el de 26.3. Antes los jars
+  `gradle.properties`: `["~26.1", "~26.2"]` (lista JSON) para el jar común (antes `>=26.1 <26.3-`, que Modrinth no leía; el intento intermedio `~26.1 || ~26.2` no es un rango válido en Fabric y el jar no cargaba) y `~26.3` para el de 26.3. Antes los jars
   de 26.2 y 26.3 declaraban `>=26.2`/`>=26.3`, y Fabric dejaba cargarlos en una versión posterior
   donde fallarían.
 - **Qué cambia al publicar:** dos archivos por entrega en vez de tres. En Modrinth y CurseForge,
