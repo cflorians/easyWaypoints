@@ -389,6 +389,8 @@ public class WaypointListScreen extends Screen {
             this.newGroupField = new EditBox(this.font, -1000, -1000, 100, PopupMenu.ITEM_H,
                     I18nHelper.getComponent("list.group_new"));
             this.newGroupField.setMaxLength(WaypointGroups.MAX_NAME_LENGTH);
+            this.newGroupField.visible = false;
+            this.newGroupField.active = false;
             this.newGroupField.setHint(I18nHelper.getComponent("list.group_new_hint").withStyle(ChatFormatting.DARK_GRAY));
         }
         // Not renderable: drawn over the menu's row, after the menu. Only a child, to get the keys.
@@ -486,7 +488,12 @@ public class WaypointListScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
-        if (!typingGroup() && this.getFocused() == this.newGroupField) {
+        // Outside its menu the field must not exist for Tab navigation or clicks: it sits off screen,
+        // and focus on an invisible box would swallow typing.
+        boolean typing = typingGroup();
+        this.newGroupField.visible = typing;
+        this.newGroupField.active = typing;
+        if (!typing && this.getFocused() == this.newGroupField) {
             this.setFocused(null);
         }
         if (this.seenRemovalsVersion != WaypointStore.removalsVersion()) {
@@ -945,6 +952,8 @@ public class WaypointListScreen extends Screen {
         } else {
             items.add(PopupMenu.Item.of(I18nHelper.getComponent("list.group_new"), () -> {
                 this.newGroupTyping = true;
+                this.newGroupField.visible = true;
+                this.newGroupField.active = true;
                 this.newGroupField.setValue("");
                 this.menuScroll = Integer.MAX_VALUE; // clamped to the end, where the field is
                 this.setFocused(this.newGroupField);

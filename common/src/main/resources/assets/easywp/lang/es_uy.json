@@ -148,7 +148,7 @@
   "easywp.welcome.title": "easyWp %s",
   "easywp.welcome.settings": "Configuración: el engranaje de la lista de waypoints (%s)",
   "easywp.welcome.settings_modmenu": "Configuración: el engranaje de la lista de waypoints (%s) o Mod Menu",
-  "easywp.welcome.news_title": "Novedades:",
+  "easywp.welcome.news_title": "Novedades principales:",
   "easywp.welcome.news.1.4.0.1": "Grupos y favoritos, en \"Más opciones\" (⋯) de la lista",
   "easywp.welcome.news.1.4.0.2": "Compartir en el chat o en privado, o copiar al portapapeles; [+] guarda lo que te compartan",
   "easywp.welcome.news.1.4.0.3": "Comandos: /easywp list, add, focus, share, tp",

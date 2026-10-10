@@ -148,7 +148,7 @@
   "easywp.welcome.title": "easyWp %s",
   "easywp.welcome.settings": "Settings: the gear in the waypoint list (%s)",
   "easywp.welcome.settings_modmenu": "Settings: the gear in the waypoint list (%s) or Mod Menu",
-  "easywp.welcome.news_title": "What's new:",
+  "easywp.welcome.news_title": "Main new features:",
   "easywp.welcome.news.1.4.0.1": "Groups and favorites, in the list's \"More options\" (⋯)",
   "easywp.welcome.news.1.4.0.2": "Share in chat or privately, or copy to the clipboard; [+] saves what others share",
   "easywp.welcome.news.1.4.0.3": "Commands: /easywp list, add, focus, share, tp",

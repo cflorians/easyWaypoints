@@ -19,7 +19,7 @@ está. Al empezar una conversación nueva sobre una versión, leer primero este 
 
 ## Versión 1.4.0
 
-**Estado general:** EN PROGRESO. Planificación cerrada el 2026-10-02. `alpha.1` implementada,
+**Estado general:** LANZADA (1.4.0, 2026-10-10). Planificación cerrada el 2026-10-02. `alpha.1` implementada,
 probada en el juego y confirmada el 2026-10-02 (commit `v1.4.0-alpha.1` en `release/1.4.0`).
 `alpha.2` implementada el 2026-10-02, probada y confirmada el 2026-10-05 (commit
 `v1.4.0-alpha.2`). `alpha.3` implementada, probada y cerrada el 2026-10-05 (commit
@@ -48,7 +48,14 @@ marcador, ver "Beta 2" más abajo) confirmada por el usuario el 2026-10-06 (comm
 **Siguiente paso:** publicación de la beta (la hace el usuario) o, si hace falta, otra ronda de
 correcciones antes de la `1.4.0`.
 
-**Versión en `gradle.properties`:** `mod_version=1.4.0-beta.2` (la 1.3.5 nunca se publicará). Se
+**Versión final `1.4.0` (2026-10-10):** probada por el usuario (los dos jars cargan y funcionan) y
+lanzada: commit `v1.4.0`, fusión a `main` y etiqueta `v1.4.0`; la publicación en Modrinth y CurseForge
+(canal Release) la hace el usuario. Cambios de código respecto a la beta.2: el campo de "Nuevo
+grupo..." de la lista solo existe (visible, activo) mientras se escribe, para que Tab no pueda
+enfocarlo fuera de su menú, y el mensaje de bienvenida dice "Novedades principales:" ("Main new
+features:").
+
+**Versión en `gradle.properties`:** `mod_version=1.4.0` (la 1.3.5 nunca se publicará). Se
 cambia en cada entrega (`1.4.0-alpha.2`, ..., `1.4.0-beta.1`, ..., `1.4.0`). Los jars salen como
 `easywp-1.4.0-alpha.1+26.1.x.jar` hasta la alpha.4; desde la alpha.5 son dos:
 `easywp-<versión>+26.1-26.2.jar` (Minecraft 26.1.x y 26.2) y `easywp-<versión>+26.3.jar`.
