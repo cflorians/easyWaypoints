@@ -6,6 +6,13 @@ A lightweight, modern waypoint mod for Fabric that works alongside vanilla Minec
 [![CurseForge](https://img.shields.io/badge/CurseForge-Easy%20Waypoints-F16436?logo=curseforge)](https://www.curseforge.com/minecraft/mc-mods/easy-waypoints)
 ![License](https://img.shields.io/badge/license-CC0--1.0-blue)
 
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Waypoints in the world](docs/images/waypoints-world.png) | ![Waypoint list](docs/images/waypoint-list.png) |
+| ![Create a waypoint](docs/images/create-waypoint.png) | ![Settings](docs/images/settings.png) |
+
 ## Download
 
 | Platform | Link |

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **easyWp** — a lightweight Fabric mod for Minecraft that adds persistent, per-world waypoints (create/edit/list, hide/focus, favorites, duplicate into the other half of Overworld↔Nether at 1:8, optional TP for operators, automatic death waypoints, and manual two-way import/export with Xaero's Minimap). Client-side only; the common/server entrypoint does nothing but log. Mod ID: `easywp`. Licensed CC0 1.0.
 
-This file is the sole source of technical documentation for the project: how the mod works today. Planned and in-progress work per release (decisions, delivery plan, per-item status) lives in `Historial de versiones.md` at the repository root, in Spanish; read it before working on a release.
+This file is the sole source of technical documentation for the project: how the mod works today.
 
 ## Repository structure
 
